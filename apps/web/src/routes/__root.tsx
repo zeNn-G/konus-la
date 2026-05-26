@@ -8,7 +8,6 @@ import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { useState } from "react";
 
-import Header from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
 import { link, orpc } from "@/utils/orpc";
 
@@ -53,8 +52,7 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="vite-ui-theme"
       >
-        <div className="grid grid-rows-[auto_1fr] h-svh">
-          <Header />
+        <div className="h-svh">
           <Outlet />
         </div>
         <Toaster richColors />
