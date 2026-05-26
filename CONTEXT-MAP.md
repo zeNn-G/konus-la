@@ -1,0 +1,17 @@
+# Context Map
+
+Turborepo monorepo. Each workspace below has its own `CONTEXT.md`.
+
+## Apps
+
+- [Server](./apps/server/CONTEXT.md) — Hono HTTP server.
+- [Web](./apps/web/CONTEXT.md) — React SPA.
+
+## Packages
+
+- [API](./packages/api/CONTEXT.md) — ORPC router and procedures.
+- [Auth](./packages/auth/CONTEXT.md) — Better Auth.
+- [DB](./packages/db/CONTEXT.md) — Drizzle + libSQL.
+- [Env](./packages/env/CONTEXT.md) — Zod-validated env vars.
+- [UI](./packages/ui/CONTEXT.md) — Shared React components.
+- [Config](./packages/config/CONTEXT.md) — Shared TypeScript config.
