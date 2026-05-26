@@ -1,0 +1,24 @@
+{
+  "name": "@konus-la/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@konus-la/db": "workspace:*",
+    "@konus-la/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@konus-la/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

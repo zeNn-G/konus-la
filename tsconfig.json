@@ -1,0 +1,3 @@
+{
+  "extends": "@konus-la/config/tsconfig.base.json"
+}
