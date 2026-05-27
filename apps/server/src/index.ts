@@ -2,77 +2,67 @@ import { createContext } from "@konus-la/api/context";
 import { appRouter } from "@konus-la/api/routers/index";
 import { auth } from "@konus-la/auth";
 import { env } from "@konus-la/env/server";
-import { OpenAPIHandler } from "@orpc/openapi/fetch";
-import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
-import { onError } from "@orpc/server";
+import { LoggingHandlerPlugin } from "@orpc/experimental-pino";
+import { RPCHandler as BunWSRPCHandler } from "@orpc/server/bun-ws";
 import { RPCHandler } from "@orpc/server/fetch";
-import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { CORSPlugin } from "@orpc/server/plugins";
 
-const app = new Hono();
+import { logger } from "./logger";
 
-app.use(logger());
-app.use(
-  "/*",
-  cors({
-    origin: env.CORS_ORIGIN,
-    allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  }),
-);
-
-app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
-
-export const apiHandler = new OpenAPIHandler(appRouter, {
-  plugins: [
-    new OpenAPIReferencePlugin({
-      schemaConverters: [new ZodToJsonSchemaConverter()],
-    }),
-  ],
-  interceptors: [
-    onError((error) => {
-      console.error(error);
-    }),
-  ],
+const corsPlugin = new CORSPlugin({
+  origin: (origin) => (origin === env.CORS_ORIGIN ? origin : null),
+  credentials: true,
+  allowMethods: ["GET", "POST"],
+  allowHeaders: ["Content-Type", "Authorization"],
 });
 
-export const rpcHandler = new RPCHandler(appRouter, {
-  interceptors: [
-    onError((error) => {
-      console.error(error);
-    }),
-  ],
+const loggingPlugin = new LoggingHandlerPlugin({ logger });
+
+const rpcHandler = new RPCHandler(appRouter, {
+  plugins: [corsPlugin, loggingPlugin],
 });
 
-app.use("/*", async (c, next) => {
-  const context = await createContext({ context: c });
-
-  const rpcResult = await rpcHandler.handle(c.req.raw, {
-    prefix: "/rpc",
-    context: context,
-  });
-
-  if (rpcResult.matched) {
-    return c.newResponse(rpcResult.response.body, rpcResult.response);
-  }
-
-  const apiResult = await apiHandler.handle(c.req.raw, {
-    prefix: "/api-reference",
-    context: context,
-  });
-
-  if (apiResult.matched) {
-    return c.newResponse(apiResult.response.body, apiResult.response);
-  }
-
-  await next();
+const wsHandler = new BunWSRPCHandler(appRouter, {
+  plugins: [loggingPlugin],
 });
 
-app.get("/", (c) => {
-  return c.text("OK");
+const server = Bun.serve({
+  async fetch(req, server) {
+    const url = new URL(req.url);
+
+    if (url.pathname === "/ws") {
+      if (server.upgrade(req)) return;
+
+      return new Response("Upgrade failed", { status: 426 });
+    }
+
+    if (url.pathname.startsWith("/api/auth/")) {
+      return auth.handler(req);
+    }
+
+    if (url.pathname.startsWith("/rpc")) {
+      const context = await createContext({ headers: req.headers });
+      const result = await rpcHandler.handle(req, { prefix: "/rpc", context });
+
+      if (result.matched) return result.response;
+
+      return new Response("Not Found", { status: 404 });
+    }
+
+    if (url.pathname === "/") {
+      return new Response("OK");
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+  websocket: {
+    message(ws, message) {
+      wsHandler.message(ws, message, { context: { auth: null, session: null } });
+    },
+    close(ws) {
+      wsHandler.close(ws);
+    },
+  },
 });
 
-export default app;
+logger.info({ port: server.port }, "server listening");

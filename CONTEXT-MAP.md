@@ -4,7 +4,7 @@ Turborepo monorepo. Each workspace below has its own `CONTEXT.md`.
 
 ## Apps
 
-- [Server](./apps/server/CONTEXT.md) — Hono HTTP server.
+- [Server](./apps/server/CONTEXT.md) — Bun runtime; HTTP + WebSocket via ORPC.
 - [Web](./apps/web/CONTEXT.md) — React SPA.
 
 ## Packages

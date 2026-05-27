@@ -14,12 +14,13 @@
     "@konus-la/auth": "workspace:*",
     "@konus-la/db": "workspace:*",
     "@konus-la/env": "workspace:*",
-    "@orpc/openapi": "catalog:",
+    "@orpc/experimental-pino": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "better-auth": "catalog:",
     "dotenv": "catalog:",
-    "hono": "catalog:",
+    "pino": "catalog:",
+    "pino-pretty": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

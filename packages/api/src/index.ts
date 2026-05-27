@@ -2,6 +2,9 @@ import { ORPCError, os } from "@orpc/server";
 
 import type { Context } from "./context";
 
+export type { EventMap } from "./realtime/events";
+export { publisher } from "./realtime/publisher";
+
 export const o = os.$context<Context>();
 
 export const publicProcedure = o;

@@ -15,15 +15,14 @@
     "@konus-la/db": "workspace:*",
     "@konus-la/env": "workspace:*",
     "@orpc/client": "catalog:",
-    "@orpc/openapi": "catalog:",
+    "@orpc/experimental-pino": "catalog:",
+    "@orpc/experimental-publisher": "^1.13.14",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
-    "dotenv": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@konus-la/config": "workspace:*",
-    "hono": "catalog:",
     "typescript": "catalog:"
   }
 }
