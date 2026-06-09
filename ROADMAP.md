@@ -89,12 +89,15 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 
 ### Auth + user profile
 
-- Better Auth, email/password only, signup wrapped by invite-code validator.
-- Profile extensions on the `user` table:
+- Better Auth, email/password only, signup wrapped by invite-code validator (Better Auth hooks).
+- Profile fields on the `user` table:
   - `username` — unique, lowercase, `^[a-z0-9_]{3,20}$`, immutable post-signup, used for `@mentions`.
-  - `displayName` — mutable, what shows in chat.
-  - `avatarUrl` — nullable; dicebear fallback in client when null.
-  - `instanceBanned` — boolean.
+    The only column added in Phase 1. Reserved: `everyone`, `here`, `admin`, `system`, `owner`.
+  - **displayName = Better Auth's `name`** — mutable, what shows in chat (no separate column).
+  - **avatarUrl = Better Auth's `image`** — nullable; Dicebear fallback in client when null. No setter
+    in v1 (object storage is post-v1), so it stays null and everyone gets a generated avatar.
+  - **instanceBanned = admin plugin's `banned`** (+ `banReason` / `banExpires`); owner = admin plugin
+    `role: 'admin'`. No hand-rolled boolean.
 - WS auth via session cookie on upgrade. Cookie tightened to `SameSite=Lax` (same-origin deploy makes the cross-site default unnecessary).
 
 ### Clients & notifications
@@ -148,25 +151,34 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 Each phase ends with something demoable. Earlier phases unblock later ones.
 
 ### Phase 0 — Foundations
+
 - Drop Hono; switch `apps/server/src/index.ts` to `Bun.serve`.
 - Wire pino logging.
 - Add `packages/env` vars for `PUBLIC_IP`, `MAX_GUILDS_PER_USER`, mediasoup port range.
 - Add shared `EventMap` types + `MemoryPublisher` setup (in `packages/api` or a new `packages/realtime`).
 
-### Phase 1 — Users, signup gate, profile
-- Extend `user` table: `username`, `displayName`, `avatarUrl`, `instanceBanned`.
-- `SignupCode` table + admin route to mint codes.
-- Wrap Better Auth signup to validate + consume a code.
-- Profile edit ORPC procedures.
-- Web: signup flow with code field, basic profile page, dicebear avatar fallback.
+### Phase 1 — Users, signup gate, profile ✅
+
+- Extend `user`: add `username` (the only new domain column). **displayName reuses Better Auth's
+  `name`; avatarUrl reuses `image`; instanceBanned + owner role come from the Better Auth admin plugin**
+  (`banned` / `role`) — adopted this phase. See [ADR 0003](docs/adr/0003-phase1-auth-hooks.md).
+- `SignupCode` table + admin ORPC surface `signupCode.create / list / revoke` (Instance Owner only).
+- Wrap Better Auth signup via hooks: validate + consume a code (passed as the `x-signup-code` header),
+  set the first user as Instance Owner, capture an immutable `username` (Better Auth `additionalField`).
+- `profile.update` ORPC procedure (displayName only; username immutable, enforced by a `user.update`
+  hook that strips it).
+- Web: signup / login / profile / admin-codes routes, TanStack Router auth guards, Dicebear avatar
+  fallback (seeded by username) in `@konus-la/ui`.
 
 ### Phase 2 — Guilds, memberships, invites
+
 - Tables: `Guild`, `GuildMembership`, `GuildInvite`, `GuildBan`.
 - ORPC: `guild.create / list / get`, `guildInvite.create / consume`, `guildMember.kick / ban / unban / setRole`, `guild.transferOwnership / delete`.
 - Per-user cap enforced on `guild.create`.
 - Web: guild list rail, create-guild modal, join-by-code page, settings page (members list, role chips).
 
 ### Phase 3 — Text channels, messages, presence, typing
+
 - Tables: `Channel`, `Message`, `ChannelReadState`.
 - ORPC: `channel.create / delete / list`, `chat.sendMessage / edit / delete / history`, `channel.markRead`, `typing.start`.
 - Event iterators: `message.created / updated / deleted`, `typing`, `presence.update`.
@@ -174,12 +186,14 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Web: channel sidebar, message list (cursor-paginated, infinite scroll), composer with markdown + `@mention` parsing, unread badges, typing line, presence dots.
 
 ### Phase 4 — DMs (1:1 + group)
+
 - Tables: `ChannelParticipant`.
 - ORPC: `dm.openWithUser / createGroup / addParticipant / removeParticipant / leave`.
 - Reuse all chat code (DM is just a channel with `kind='dm'`).
 - Web: DM list, group-DM creation modal, DM channel view.
 
 ### Phase 5 — Voice / video MVP
+
 - `apps/server/src/sfu/` module: worker bootstrap with Bun workaround, `rooms: Map`, helpers.
 - ORPC voice procedures: `voice.getRouterRtpCapabilities`, `voice.createTransport`, `voice.connectTransport`, `voice.produce`, `voice.consume`, `voice.closeProducer`, `voice.leave`.
 - `VoiceState` table + WS events: `voice.peerJoined / peerLeft / producerAdded / producerClosed / peerMutedSelf / peerDeafenedSelf / serverMuteSet`.
@@ -187,17 +201,20 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Web: mediasoup-client integration, voice connection bar, tile grid, mute / deafen / leave controls, screen-share + webcam buttons, device pickers (in/out), per-peer volume sliders.
 
 ### Phase 6 — Moderation & audit
+
 - Tables: `AuditLogEntry`, `Report`.
 - `auditLog.record(...)` helper called from every mod procedure (back-fill earlier phases).
 - ORPC: `mod.kick / ban / unban / muteVoice / disconnectVoice / instanceBan`, `report.create / list / resolve`.
 - Web: audit log list view per guild, report inbox.
 
 ### Phase 7 — Notifications & in-app polish
+
 - Browser Notifications API integration; sound + tab-title flicker.
 - Per-channel mute pref in localStorage; default Mentions-only.
 - Master output volume slider; voice settings page.
 
 ### Phase 8 — Deployment
+
 - Dockerfile (multi-stage: build web → copy into bun runtime image).
 - `docker-compose.yml` with `bun-server` + `caddy`.
 - Caddyfile with TLS + WS upgrade pass-through.
@@ -205,6 +222,7 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Smoke-test runbook.
 
 ### Post-v1 (parked / additive)
+
 - File / image attachments (object storage + upload pipeline).
 - Reactions on messages.
 - Threads.
