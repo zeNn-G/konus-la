@@ -13,7 +13,6 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { FieldError } from "@/components/field-error";
 import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/(auth)/login")({
@@ -75,7 +74,11 @@ function LoginComponent() {
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
                   />
-                  <FieldError errors={field.state.meta.errors} />
+                  {field.state.meta.errors.map((error) => (
+                    <p key={error?.message} className="text-red-500">
+                      {error?.message}
+                    </p>
+                  ))}
                 </div>
               )}
             </form.Field>
@@ -93,7 +96,11 @@ function LoginComponent() {
                     onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
                   />
-                  <FieldError errors={field.state.meta.errors} />
+                  {field.state.meta.errors.map((error) => (
+                    <p key={error?.message} className="text-red-500">
+                      {error?.message}
+                    </p>
+                  ))}
                 </div>
               )}
             </form.Field>
