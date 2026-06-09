@@ -1,19 +1,17 @@
-import { auth } from "@konus-la/auth";
 import type { LoggerContext } from "@orpc/experimental-pino";
 
 export type CreateContextOptions = {
   headers: Headers;
 };
 
+/**
+ * Base request context. The Better Auth session is resolved lazily inside the auth
+ * middleware (see `protectedProcedure`) so public procedures don't pay for `getSession`.
+ */
 export interface Context extends LoggerContext {
-  auth: null;
-  session: Awaited<ReturnType<typeof auth.api.getSession>>;
+  headers: Headers;
 }
 
 export async function createContext({ headers }: CreateContextOptions): Promise<Context> {
-  const session = await auth.api.getSession({ headers });
-  return {
-    auth: null,
-    session,
-  };
+  return { headers };
 }

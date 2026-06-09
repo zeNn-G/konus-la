@@ -18,6 +18,21 @@ const corsPlugin = new CORSPlugin({
 
 const loggingPlugin = new LoggingHandlerPlugin({ logger });
 
+// The ORPC CORSPlugin only covers /rpc. Better Auth's handler (/api/auth/*) needs its own CORS,
+// including the custom `x-signup-code` header (which forces a browser preflight on sign-up).
+const AUTH_ALLOWED_HEADERS = "Content-Type, Authorization, x-signup-code";
+
+function authCorsHeaders(req: Request): Headers {
+  const headers = new Headers();
+  const origin = req.headers.get("origin");
+  if (origin === env.CORS_ORIGIN) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.set("Vary", "Origin");
+  }
+  return headers;
+}
+
 const rpcHandler = new RPCHandler(appRouter, {
   plugins: [corsPlugin, loggingPlugin],
 });
@@ -37,7 +52,19 @@ const server = Bun.serve({
     }
 
     if (url.pathname.startsWith("/api/auth/")) {
-      return auth.handler(req);
+      if (req.method === "OPTIONS") {
+        const headers = authCorsHeaders(req);
+        headers.set("Access-Control-Allow-Methods", "GET, POST");
+        headers.set("Access-Control-Allow-Headers", AUTH_ALLOWED_HEADERS);
+        headers.set("Access-Control-Max-Age", "86400");
+        return new Response(null, { status: 204, headers });
+      }
+
+      const response = await auth.handler(req);
+      for (const [key, value] of authCorsHeaders(req)) {
+        response.headers.set(key, value);
+      }
+      return response;
     }
 
     if (url.pathname.startsWith("/rpc")) {
@@ -57,7 +84,9 @@ const server = Bun.serve({
   },
   websocket: {
     message(ws, message) {
-      wsHandler.message(ws, message, { context: { auth: null, session: null } });
+      // No upgrade-request headers wired yet (Phase 5 concern); protected procedures over
+      // WS resolve to UNAUTHORIZED until then. Public procedures still work.
+      wsHandler.message(ws, message, { context: { headers: new Headers() } });
     },
     close(ws) {
       wsHandler.close(ws);
