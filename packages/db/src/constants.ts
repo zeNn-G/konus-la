@@ -11,3 +11,19 @@ export const RESERVED_USERNAMES = new Set(["everyone", "here", "admin", "system"
 export function isUsernameAllowed(username: string): boolean {
   return USERNAME_REGEX.test(username) && !RESERVED_USERNAMES.has(username);
 }
+
+/**
+ * Human-shareable code generation, used by both signup codes and guild invites.
+ * The alphabet is base32-ish with ambiguous glyphs (0/O/1/I/L) removed so codes are
+ * safe to read aloud and retype.
+ */
+export const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/** Generate a random code of `length` characters drawn from {@link CODE_ALPHABET}. */
+export function randomCode(length = 10): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return out;
+}

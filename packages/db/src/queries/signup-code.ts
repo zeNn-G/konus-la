@@ -3,18 +3,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../index";
 import { user } from "../schema/auth";
 import { signupCode } from "../schema/signup-code";
-
-/** Unambiguous base32-ish alphabet (no 0/O/1/I/L) for human-shareable codes. */
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const CODE_LENGTH = 10;
-
-function randomCode(): string {
-  const bytes = new Uint8Array(CODE_LENGTH);
-  crypto.getRandomValues(bytes);
-  let out = "";
-  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
-  return out;
-}
+import { randomCode } from "../constants";
 
 /**
  * A signup code that may still be claimed: exists, not yet used, and not expired.
