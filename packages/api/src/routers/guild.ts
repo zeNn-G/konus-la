@@ -4,6 +4,7 @@ import {
   countOwnedGuilds,
   createGuildWithOwner,
   createInvite,
+  deleteGuild,
   deleteInvite,
   getGuildForViewer,
   isGuildOwner,
@@ -13,6 +14,7 @@ import {
   listGuildMembers,
   listInvites,
   listUserGuilds,
+  transferOwnership,
   unbanMember,
 } from "@konus-la/db";
 import { env } from "@konus-la/env/server";
@@ -58,6 +60,35 @@ export const guildRouter = {
       if (!result) throw new ORPCError("NOT_FOUND");
       const members = await listGuildMembers(input.guildId);
       return { guild: result.guild, members, viewer: { isOwner: result.isOwner } };
+    }),
+
+  /**
+   * Hand ownership to another member. The target must already be a member; the old owner
+   * stays an ordinary member afterwards (single-column `ownerId` update). Owner only.
+   */
+  transferOwnership: protectedProcedure
+    .input(z.object({ guildId: z.string(), newOwnerUserId: z.string() }))
+    .use(requireGuildOwner)
+    .handler(async ({ input, context }) => {
+      if (input.newOwnerUserId === context.user.id) {
+        throw new ORPCError("BAD_REQUEST", { message: "You already own this guild." });
+      }
+      const transferred = await transferOwnership(input.guildId, input.newOwnerUserId);
+      if (!transferred) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "The new owner must already be a member of the guild.",
+        });
+      }
+      return { ok: true } as const;
+    }),
+
+  /** Permanently delete a guild; FK cascades drop all roles, memberships, invites, and bans. */
+  delete: protectedProcedure
+    .input(z.object({ guildId: z.string() }))
+    .use(requireGuildOwner)
+    .handler(async ({ input }) => {
+      await deleteGuild(input.guildId);
+      return { ok: true } as const;
     }),
 
   /** Shareable, multi-use invite codes. Time-only expiry; no max-uses cap. */
