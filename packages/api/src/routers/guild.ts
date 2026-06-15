@@ -1,13 +1,19 @@
 import {
+  banMember,
   consumeInvite,
   countOwnedGuilds,
   createGuildWithOwner,
   createInvite,
   deleteInvite,
   getGuildForViewer,
+  isGuildOwner,
+  kickMember,
+  leaveGuild,
+  listBans,
   listGuildMembers,
   listInvites,
   listUserGuilds,
+  unbanMember,
 } from "@konus-la/db";
 import { env } from "@konus-la/env/server";
 import { ORPCError } from "@orpc/server";
@@ -113,6 +119,78 @@ export const guildRouter = {
       .handler(async ({ input }) => {
         const removed = await deleteInvite(input.inviteId, input.guildId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "Invite not found." });
+        return { ok: true } as const;
+      }),
+  },
+
+  /** Membership moderation. Owner-gated except `leave` (self-service). */
+  member: {
+    /** Remove a member; they may rejoin. The owner can't be targeted. Owner only. */
+    kick: protectedProcedure
+      .input(z.object({ guildId: z.string(), userId: z.string() }))
+      .use(requireGuildOwner)
+      .handler(async ({ input, context }) => {
+        // The caller is the owner (gate above), so target === owner iff target === caller.
+        if (input.userId === context.user.id) {
+          throw new ORPCError("BAD_REQUEST", { message: "The owner can't be removed." });
+        }
+        const removed = await kickMember(input.guildId, input.userId);
+        if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
+        return { ok: true } as const;
+      }),
+
+    /** Ban a user (drops membership + bars rejoin). The owner can't be targeted. Owner only. */
+    ban: protectedProcedure
+      .input(
+        z.object({
+          guildId: z.string(),
+          userId: z.string(),
+          reason: z.string().trim().max(500).nullish(),
+        }),
+      )
+      .use(requireGuildOwner)
+      .handler(async ({ input, context }) => {
+        if (input.userId === context.user.id) {
+          throw new ORPCError("BAD_REQUEST", { message: "The owner can't be banned." });
+        }
+        await banMember({
+          guildId: input.guildId,
+          userId: input.userId,
+          reason: input.reason ?? null,
+          bannedByUserId: context.user.id,
+        });
+        return { ok: true } as const;
+      }),
+
+    /** Lift a ban. Owner only. */
+    unban: protectedProcedure
+      .input(z.object({ guildId: z.string(), userId: z.string() }))
+      .use(requireGuildOwner)
+      .handler(async ({ input }) => {
+        const removed = await unbanMember(input.guildId, input.userId);
+        if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't banned." });
+        return { ok: true } as const;
+      }),
+
+    /** Banned users for a guild. Owner only. */
+    banList: protectedProcedure
+      .input(z.object({ guildId: z.string() }))
+      .use(requireGuildOwner)
+      .handler(async ({ input }) => {
+        return listBans(input.guildId);
+      }),
+
+    /** Leave a guild (self only). The owner must transfer ownership or delete instead. */
+    leave: protectedProcedure
+      .input(z.object({ guildId: z.string() }))
+      .use(requireGuildMember)
+      .handler(async ({ input, context }) => {
+        if (await isGuildOwner(input.guildId, context.user.id)) {
+          throw new ORPCError("FORBIDDEN", {
+            message: "The owner can't leave; transfer ownership or delete the guild.",
+          });
+        }
+        await leaveGuild(input.guildId, context.user.id);
         return { ok: true } as const;
       }),
   },
