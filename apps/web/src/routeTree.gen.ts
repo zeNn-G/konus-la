@@ -15,8 +15,10 @@ import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as appProfileRouteImport } from './routes/(app)/profile'
 import { Route as appAdminRouteRouteImport } from './routes/(app)/admin/route'
-import { Route as appGuildsGuildIdRouteImport } from './routes/(app)/guilds/$guildId'
 import { Route as appAdminCodesRouteImport } from './routes/(app)/admin/codes'
+import { Route as appGuildsGuildIdRouteRouteImport } from './routes/(app)/guilds/$guildId/route'
+import { Route as appGuildsGuildIdIndexRouteImport } from './routes/(app)/guilds/$guildId/index'
+import { Route as appGuildsGuildIdSettingsRouteImport } from './routes/(app)/guilds/$guildId/settings'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
@@ -47,16 +49,27 @@ const appAdminRouteRoute = appAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => appRouteRoute,
 } as any)
-const appGuildsGuildIdRoute = appGuildsGuildIdRouteImport.update({
-  id: '/guilds/$guildId',
-  path: '/guilds/$guildId',
-  getParentRoute: () => appRouteRoute,
-} as any)
 const appAdminCodesRoute = appAdminCodesRouteImport.update({
   id: '/codes',
   path: '/codes',
   getParentRoute: () => appAdminRouteRoute,
 } as any)
+const appGuildsGuildIdRouteRoute = appGuildsGuildIdRouteRouteImport.update({
+  id: '/guilds/$guildId',
+  path: '/guilds/$guildId',
+  getParentRoute: () => appRouteRoute,
+} as any)
+const appGuildsGuildIdIndexRoute = appGuildsGuildIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => appGuildsGuildIdRouteRoute,
+} as any)
+const appGuildsGuildIdSettingsRoute =
+  appGuildsGuildIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => appGuildsGuildIdRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/admin': typeof appAdminRouteRouteWithChildren
@@ -64,8 +77,10 @@ export interface FileRoutesByFullPath {
   '/login': typeof authLoginRoute
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
+  '/guilds/$guildId': typeof appGuildsGuildIdRouteRouteWithChildren
   '/admin/codes': typeof appAdminCodesRoute
-  '/guilds/$guildId': typeof appGuildsGuildIdRoute
+  '/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
+  '/guilds/$guildId/': typeof appGuildsGuildIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/admin': typeof appAdminRouteRouteWithChildren
@@ -74,7 +89,8 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
   '/admin/codes': typeof appAdminCodesRoute
-  '/guilds/$guildId': typeof appGuildsGuildIdRoute
+  '/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
+  '/guilds/$guildId': typeof appGuildsGuildIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -84,8 +100,10 @@ export interface FileRoutesById {
   '/(auth)/login': typeof authLoginRoute
   '/(auth)/signup': typeof authSignupRoute
   '/(app)/': typeof appIndexRoute
+  '/(app)/guilds/$guildId': typeof appGuildsGuildIdRouteRouteWithChildren
   '/(app)/admin/codes': typeof appAdminCodesRoute
-  '/(app)/guilds/$guildId': typeof appGuildsGuildIdRoute
+  '/(app)/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
+  '/(app)/guilds/$guildId/': typeof appGuildsGuildIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -95,8 +113,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/'
-    | '/admin/codes'
     | '/guilds/$guildId'
+    | '/admin/codes'
+    | '/guilds/$guildId/settings'
+    | '/guilds/$guildId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/admin'
@@ -105,6 +125,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/'
     | '/admin/codes'
+    | '/guilds/$guildId/settings'
     | '/guilds/$guildId'
   id:
     | '__root__'
@@ -114,8 +135,10 @@ export interface FileRouteTypes {
     | '/(auth)/login'
     | '/(auth)/signup'
     | '/(app)/'
-    | '/(app)/admin/codes'
     | '/(app)/guilds/$guildId'
+    | '/(app)/admin/codes'
+    | '/(app)/guilds/$guildId/settings'
+    | '/(app)/guilds/$guildId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -168,19 +191,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof appAdminRouteRouteImport
       parentRoute: typeof appRouteRoute
     }
-    '/(app)/guilds/$guildId': {
-      id: '/(app)/guilds/$guildId'
-      path: '/guilds/$guildId'
-      fullPath: '/guilds/$guildId'
-      preLoaderRoute: typeof appGuildsGuildIdRouteImport
-      parentRoute: typeof appRouteRoute
-    }
     '/(app)/admin/codes': {
       id: '/(app)/admin/codes'
       path: '/codes'
       fullPath: '/admin/codes'
       preLoaderRoute: typeof appAdminCodesRouteImport
       parentRoute: typeof appAdminRouteRoute
+    }
+    '/(app)/guilds/$guildId': {
+      id: '/(app)/guilds/$guildId'
+      path: '/guilds/$guildId'
+      fullPath: '/guilds/$guildId'
+      preLoaderRoute: typeof appGuildsGuildIdRouteRouteImport
+      parentRoute: typeof appRouteRoute
+    }
+    '/(app)/guilds/$guildId/': {
+      id: '/(app)/guilds/$guildId/'
+      path: '/'
+      fullPath: '/guilds/$guildId/'
+      preLoaderRoute: typeof appGuildsGuildIdIndexRouteImport
+      parentRoute: typeof appGuildsGuildIdRouteRoute
+    }
+    '/(app)/guilds/$guildId/settings': {
+      id: '/(app)/guilds/$guildId/settings'
+      path: '/settings'
+      fullPath: '/guilds/$guildId/settings'
+      preLoaderRoute: typeof appGuildsGuildIdSettingsRouteImport
+      parentRoute: typeof appGuildsGuildIdRouteRoute
     }
   }
 }
@@ -197,18 +234,33 @@ const appAdminRouteRouteWithChildren = appAdminRouteRoute._addFileChildren(
   appAdminRouteRouteChildren,
 )
 
+interface appGuildsGuildIdRouteRouteChildren {
+  appGuildsGuildIdSettingsRoute: typeof appGuildsGuildIdSettingsRoute
+  appGuildsGuildIdIndexRoute: typeof appGuildsGuildIdIndexRoute
+}
+
+const appGuildsGuildIdRouteRouteChildren: appGuildsGuildIdRouteRouteChildren = {
+  appGuildsGuildIdSettingsRoute: appGuildsGuildIdSettingsRoute,
+  appGuildsGuildIdIndexRoute: appGuildsGuildIdIndexRoute,
+}
+
+const appGuildsGuildIdRouteRouteWithChildren =
+  appGuildsGuildIdRouteRoute._addFileChildren(
+    appGuildsGuildIdRouteRouteChildren,
+  )
+
 interface appRouteRouteChildren {
   appAdminRouteRoute: typeof appAdminRouteRouteWithChildren
   appProfileRoute: typeof appProfileRoute
   appIndexRoute: typeof appIndexRoute
-  appGuildsGuildIdRoute: typeof appGuildsGuildIdRoute
+  appGuildsGuildIdRouteRoute: typeof appGuildsGuildIdRouteRouteWithChildren
 }
 
 const appRouteRouteChildren: appRouteRouteChildren = {
   appAdminRouteRoute: appAdminRouteRouteWithChildren,
   appProfileRoute: appProfileRoute,
   appIndexRoute: appIndexRoute,
-  appGuildsGuildIdRoute: appGuildsGuildIdRoute,
+  appGuildsGuildIdRouteRoute: appGuildsGuildIdRouteRouteWithChildren,
 }
 
 const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
