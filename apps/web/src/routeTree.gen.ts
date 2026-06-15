@@ -15,6 +15,7 @@ import { Route as authSignupRouteImport } from './routes/(auth)/signup'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as appProfileRouteImport } from './routes/(app)/profile'
 import { Route as appAdminRouteRouteImport } from './routes/(app)/admin/route'
+import { Route as appGuildsGuildIdRouteImport } from './routes/(app)/guilds/$guildId'
 import { Route as appAdminCodesRouteImport } from './routes/(app)/admin/codes'
 
 const appRouteRoute = appRouteRouteImport.update({
@@ -46,6 +47,11 @@ const appAdminRouteRoute = appAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => appRouteRoute,
 } as any)
+const appGuildsGuildIdRoute = appGuildsGuildIdRouteImport.update({
+  id: '/guilds/$guildId',
+  path: '/guilds/$guildId',
+  getParentRoute: () => appRouteRoute,
+} as any)
 const appAdminCodesRoute = appAdminCodesRouteImport.update({
   id: '/codes',
   path: '/codes',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
   '/admin/codes': typeof appAdminCodesRoute
+  '/guilds/$guildId': typeof appGuildsGuildIdRoute
 }
 export interface FileRoutesByTo {
   '/admin': typeof appAdminRouteRouteWithChildren
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
   '/admin/codes': typeof appAdminCodesRoute
+  '/guilds/$guildId': typeof appGuildsGuildIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,12 +85,27 @@ export interface FileRoutesById {
   '/(auth)/signup': typeof authSignupRoute
   '/(app)/': typeof appIndexRoute
   '/(app)/admin/codes': typeof appAdminCodesRoute
+  '/(app)/guilds/$guildId': typeof appGuildsGuildIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/admin' | '/profile' | '/login' | '/signup' | '/' | '/admin/codes'
+  fullPaths:
+    | '/admin'
+    | '/profile'
+    | '/login'
+    | '/signup'
+    | '/'
+    | '/admin/codes'
+    | '/guilds/$guildId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/admin' | '/profile' | '/login' | '/signup' | '/' | '/admin/codes'
+  to:
+    | '/admin'
+    | '/profile'
+    | '/login'
+    | '/signup'
+    | '/'
+    | '/admin/codes'
+    | '/guilds/$guildId'
   id:
     | '__root__'
     | '/(app)'
@@ -92,6 +115,7 @@ export interface FileRouteTypes {
     | '/(auth)/signup'
     | '/(app)/'
     | '/(app)/admin/codes'
+    | '/(app)/guilds/$guildId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -144,6 +168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof appAdminRouteRouteImport
       parentRoute: typeof appRouteRoute
     }
+    '/(app)/guilds/$guildId': {
+      id: '/(app)/guilds/$guildId'
+      path: '/guilds/$guildId'
+      fullPath: '/guilds/$guildId'
+      preLoaderRoute: typeof appGuildsGuildIdRouteImport
+      parentRoute: typeof appRouteRoute
+    }
     '/(app)/admin/codes': {
       id: '/(app)/admin/codes'
       path: '/codes'
@@ -170,12 +201,14 @@ interface appRouteRouteChildren {
   appAdminRouteRoute: typeof appAdminRouteRouteWithChildren
   appProfileRoute: typeof appProfileRoute
   appIndexRoute: typeof appIndexRoute
+  appGuildsGuildIdRoute: typeof appGuildsGuildIdRoute
 }
 
 const appRouteRouteChildren: appRouteRouteChildren = {
   appAdminRouteRoute: appAdminRouteRouteWithChildren,
   appProfileRoute: appProfileRoute,
   appIndexRoute: appIndexRoute,
+  appGuildsGuildIdRoute: appGuildsGuildIdRoute,
 }
 
 const appRouteRouteWithChildren = appRouteRoute._addFileChildren(
