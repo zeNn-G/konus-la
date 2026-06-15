@@ -3,8 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { HomeIcon } from "lucide-react";
 
-import { CreateGuildDialog } from "@/components/create-guild-dialog";
-import { JoinGuildDialog } from "@/components/join-guild-dialog";
+import { AddGuildDialog } from "@/components/add-guild-dialog";
 import { orpc } from "@/utils/orpc";
 
 /**
@@ -45,8 +44,7 @@ export function GuildRail() {
       ))}
 
       <div className="mt-auto flex flex-col items-center gap-2">
-        <CreateGuildDialog />
-        <JoinGuildDialog />
+        <AddGuildDialog />
       </div>
     </nav>
   );
