@@ -19,3 +19,4 @@ export const db = createDb();
 export * from "./constants";
 export * from "./queries/users";
 export * from "./queries/signup-code";
+export * from "./queries/guild";
