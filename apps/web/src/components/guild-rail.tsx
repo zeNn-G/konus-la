@@ -1,9 +1,10 @@
-import { Button } from "@konus-la/ui/components/button";
 import { GuildIcon } from "@konus-la/ui/components/guild-icon";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { HomeIcon, LogInIcon, PlusIcon } from "lucide-react";
+import { HomeIcon } from "lucide-react";
 
+import { CreateGuildDialog } from "@/components/create-guild-dialog";
+import { JoinGuildDialog } from "@/components/join-guild-dialog";
 import { orpc } from "@/utils/orpc";
 
 /**
@@ -43,14 +44,9 @@ export function GuildRail() {
         </Link>
       ))}
 
-      {/* Create + join triggers. Their dialogs are wired up in sub-phase 2.8. */}
       <div className="mt-auto flex flex-col items-center gap-2">
-        <Button size="icon" variant="outline" aria-label="Create a guild" title="Create a guild">
-          <PlusIcon className="size-5" />
-        </Button>
-        <Button size="icon" variant="ghost" aria-label="Join a guild" title="Join a guild">
-          <LogInIcon className="size-5" />
-        </Button>
+        <CreateGuildDialog />
+        <JoinGuildDialog />
       </div>
     </nav>
   );
