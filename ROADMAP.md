@@ -24,17 +24,16 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 
 ### Channel features
 
-- **Text channels:** send / edit / delete / reply, basic markdown. ❌ no file attachments, no threads, no reactions in v1 (reactions parked as post-v1 nice-to-have).
+- **Text channels:** send / edit / delete / reply, basic markdown; channel rename (`channel.update`, added in Phase 3 — hard deletes made name typos too expensive). ❌ no file attachments, no threads, no reactions in v1 (reactions parked as post-v1 nice-to-have).
 - **Voice channels (full set day one):** audio + webcam video + screenshare. No simulcast.
 - **DMs:** 1:1 **and** group DMs (size cap via env). Modeled as `Channel { kind: 'dm', guildId: null }` + a `ChannelParticipant` table — same message + WS paths as guild channels. Voice in DMs deferred (schema supports it).
 
 ### Realtime transport
 
-- **Single transport: ORPC over WebSocket** (`@orpc/server/bun-ws`).
-- Client → server: ORPC procedures (chat, mediasoup signaling, moderation).
-- Server → client: ORPC **event iterators** (typed async iterables).
-- WS auth: Better Auth session cookie on the upgrade request; reject if invalid; `{ userId, sessionId }` becomes the per-connection ORPC context.
-- Server-side pub/sub: `@orpc/experimental-publisher/memory` `MemoryPublisher<EventMap>` — a single in-process bus. Redis adapter swap available if/when needed.
+- **Hybrid transport** (amended in Phase 3, see [ADR 0005](docs/adr/0005-per-user-topic-realtime-hybrid-transport.md)): queries/mutations stay on the fetch `RPCLink`; ONE WebSocket (`@orpc/server/bun-ws`) carries only the `realtime.events` event-iterator subscription (and presence, via socket lifecycle). Phase 5 may route `voice.*` signaling over the same socket.
+- Server → client: ORPC **event iterators** — a single per-connection iterator on the user's own `user:{userId}` topic carrying a discriminated `RealtimeEvent` union; recipient sets are computed at publish time (`publishTo(userIds, event)`).
+- WS auth: Better Auth session cookie validated on the upgrade request (Origin-checked, 401 before upgrade); upgrade headers ride the per-connection context so `requireAuth` re-checks per call. ✅ Phase 3.
+- Server-side pub/sub: `@orpc/experimental-publisher/memory` `MemoryPublisher<EventMap>` with `resumeRetentionSeconds: 120` (`lastEventId` resume; clients invalidate all queries on reconnect as the silent-gap fallback). Redis adapter swap available if/when needed.
 
 ### Server runtime
 
@@ -138,6 +137,8 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 - **Channel** — text, voice, or DM. Either belongs to a Guild or is a DM (no guild).
 - **ChannelParticipant** — only used for DM channels (1:1 or group).
 - **Message** — a text post in a channel; ULID-keyed; cursor-paginated.
+- **ChannelReadState** — per-user per-channel read watermark (`lastReadMessageId`, forward-only) + mention counter; missing row = everything unread.
+- **RealtimeEvent** — the discriminated union of server→client events, delivered on the recipient's own `user:{userId}` topic.
 - **VoiceState** — DB row reflecting "user X is currently in channel Y; flags (selfMute / selfDeaf / serverMute)".
 - **Room** — in-memory mediasoup state for one occupied voice channel (`router` + `peers` map).
 - **Peer** — in-memory state for one user inside one Room (transports + producers + consumers).
@@ -177,13 +178,17 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Per-user cap enforced on `guild.create`.
 - Web: guild list rail, create-guild modal, join-by-code page, settings page (members list, role chips).
 
-### Phase 3 — Text channels, messages, presence, typing
+### Phase 3 — Text channels, messages, presence, typing ✅
 
-- Tables: `Channel`, `Message`, `ChannelReadState`.
-- ORPC: `channel.create / delete / list`, `chat.sendMessage / edit / delete / history`, `channel.markRead`, `typing.start`.
-- Event iterators: `message.created / updated / deleted`, `typing`, `presence.update`.
-- Presence map in memory; debounced offline broadcast.
-- Web: channel sidebar, message list (cursor-paginated, infinite scroll), composer with markdown + `@mention` parsing, unread badges, typing line, presence dots.
+- Tables: `Channel`, `Message` (ULID PK), `ChannelReadState`. `guild.create` seeds `#general`.
+- ORPC: `channel.create / update / delete / list`, `chat.sendMessage / editMessage / deleteMessage / history`, `channel.markRead` (forward-only watermark), `typing.start`. Rate limits land here (`@orpc/experimental-ratelimit`, per-user; invite.create retrofitted).
+- Event iterators: single `realtime.events` per connection on `user:{userId}` topics — `message.created / updated / deleted`, `typing`, `presence.update / snapshot`, `readState.updated`, `channel.created / updated / deleted`. See [ADR 0005](docs/adr/0005-per-user-topic-realtime-hybrid-transport.md).
+- WS auth (session cookie at upgrade) — pulled forward from Phase 5; presence map in memory with 5 s debounced offline broadcast.
+- Web: channel sidebar (unread bold + mention badge), message list (cursor-paginated, infinite scroll, no virtualization), textarea composer with markdown + `@mention` autocomplete (no TipTap), typing line, presence dots, `useRealtime()` dispatcher.
+
+### Phase 3.5 — Guild roles (parked)
+
+- Admin role assignment (`guild.member.setRole`), `requireGuildAdmin` gate widening channel management + moderation beyond the owner; `guild.memberRemoved` event so kicked members' clients react. Deferred from Phase 3 to keep it channel-focused.
 
 ### Phase 4 — DMs (1:1 + group)
 
