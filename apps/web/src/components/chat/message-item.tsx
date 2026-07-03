@@ -3,7 +3,7 @@ import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { CornerUpLeftIcon, PencilIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/chat/message-markdown";
@@ -42,6 +42,16 @@ export function MessageItem({
   const isAuthor = message.author.id === selfUserId;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow the edit box to its content (a fixed-rows textarea is a scrolling slit
+  // for long messages). Also drop the caret at the end when editing starts.
+  useLayoutEffect(() => {
+    const el = editRef.current;
+    if (!editing || !el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  }, [editing, draft]);
 
   const edit = useMutation(
     orpc.chat.editMessage.mutationOptions({
@@ -111,11 +121,16 @@ export function MessageItem({
           {editing ? (
             <div className="mt-1 flex flex-col gap-1">
               <textarea
+                ref={editRef}
                 value={draft}
                 autoFocus
-                rows={2}
+                rows={1}
                 maxLength={2000}
-                className="w-full resize-y rounded border border-foreground/20 bg-background px-2 py-1 text-sm outline-none focus:border-foreground/40"
+                onFocus={(e) => {
+                  const end = e.target.value.length;
+                  e.target.setSelectionRange(end, end);
+                }}
+                className="w-full resize-none rounded border border-foreground/20 bg-background px-2 py-1 text-sm outline-none focus:border-foreground/40"
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {

@@ -32,6 +32,7 @@ export function MessageList({
   const history = useInfiniteQuery(historyInfiniteOptions(channelId));
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const prependingRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
@@ -41,22 +42,33 @@ export function MessageList({
   const messages = (history.data?.pages.flatMap((page) => page.messages) ?? []).toReversed();
   const newestId = messages.at(-1)?.id;
 
-  // Pin-to-bottom on new messages; restore position when older pages were prepended.
+  // Restore the visual position when older pages were prepended above.
   useLayoutEffect(() => {
     const container = scrollRef.current;
-    if (!container) return;
     const prepend = prependingRef.current;
-    if (prepend) {
+    if (container && prepend) {
       prependingRef.current = null;
       container.scrollTop = prepend.scrollTop + (container.scrollHeight - prepend.scrollHeight);
-      return;
     }
-    if (pinnedRef.current) {
-      container.scrollTop = container.scrollHeight;
-      if (!initialScrollDone && messages.length > 0) setInitialScrollDone(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll reacts to content growth only
   }, [newestId, messages.length]);
+
+  // Pin-to-bottom on ANY content growth while pinned — a ResizeObserver on the content
+  // (not a one-shot on data arrival) is what keeps the initial load at the bottom even
+  // as markdown/blocks finish laying out, and follows new messages thereafter.
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (prependingRef.current) return; // older-page restore owns this frame
+      if (pinnedRef.current) {
+        container.scrollTop = container.scrollHeight;
+      }
+      setInitialScrollDone(true);
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   // Top sentinel → fetch older page (after the initial bottom-scroll settled).
   useEffect(() => {
@@ -65,11 +77,7 @@ export function MessageList({
     if (!sentinel || !container || !initialScrollDone) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (
-          entries[0]?.isIntersecting &&
-          history.hasNextPage &&
-          !history.isFetchingNextPage
-        ) {
+        if (entries[0]?.isIntersecting && history.hasNextPage && !history.isFetchingNextPage) {
           prependingRef.current = {
             scrollHeight: container.scrollHeight,
             scrollTop: container.scrollTop,
@@ -96,34 +104,36 @@ export function MessageList({
         pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
       }}
     >
-      <div ref={sentinelRef} />
-      {!history.hasNextPage && (
-        <p className="px-4 pt-6 pb-2 text-xs text-muted-foreground">
-          This is the beginning of the channel.
-        </p>
-      )}
-      {history.isFetchingNextPage && (
-        <p className="px-4 py-2 text-xs text-muted-foreground">Loading older messages…</p>
-      )}
-      {messages.map((message, index) => {
-        const previous = messages[index - 1];
-        const grouped =
-          previous !== undefined &&
-          previous.author.id === message.author.id &&
-          message.replyTo === null &&
-          message.createdAt.getTime() - previous.createdAt.getTime() < GROUP_WINDOW_MS;
-        return (
-          <MessageItem
-            key={message.id}
-            message={message}
-            grouped={grouped}
-            selfUserId={selfUserId}
-            isGuildOwner={isGuildOwner}
-            memberUsernames={memberUsernames}
-            onReply={onReply}
-          />
-        );
-      })}
+      <div ref={contentRef}>
+        <div ref={sentinelRef} />
+        {!history.hasNextPage && (
+          <p className="px-4 pt-6 pb-2 text-xs text-muted-foreground">
+            This is the beginning of the channel.
+          </p>
+        )}
+        {history.isFetchingNextPage && (
+          <p className="px-4 py-2 text-xs text-muted-foreground">Loading older messages…</p>
+        )}
+        {messages.map((message, index) => {
+          const previous = messages[index - 1];
+          const grouped =
+            previous !== undefined &&
+            previous.author.id === message.author.id &&
+            message.replyTo === null &&
+            message.createdAt.getTime() - previous.createdAt.getTime() < GROUP_WINDOW_MS;
+          return (
+            <MessageItem
+              key={message.id}
+              message={message}
+              grouped={grouped}
+              selfUserId={selfUserId}
+              isGuildOwner={isGuildOwner}
+              memberUsernames={memberUsernames}
+              onReply={onReply}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

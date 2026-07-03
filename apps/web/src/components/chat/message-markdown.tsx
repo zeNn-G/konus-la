@@ -1,4 +1,5 @@
 import Markdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 const MENTION_HREF_PREFIX = "#mention-";
@@ -38,7 +39,9 @@ export function MessageMarkdown({
   return (
     <div className="prose-sm max-w-none space-y-1 break-words [&_blockquote]:border-l-2 [&_blockquote]:border-foreground/20 [&_blockquote]:pl-2 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:list-disc [&_ul]:pl-5">
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        // remark-breaks: every newline is a hard break (Discord behavior) — without it,
+        // single newlines soft-wrap and multi-line messages collapse into one line.
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         allowedElements={[
           "p",
           "a",
@@ -53,9 +56,22 @@ export function MessageMarkdown({
           "blockquote",
           "br",
           "hr",
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6",
         ]}
         unwrapDisallowed
         components={{
+          // Compact chat-scale headings (Discord-style), not document-scale.
+          h1: ({ children }) => <h1 className="text-xl font-bold">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-lg font-bold">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-base font-bold">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-sm font-bold">{children}</h4>,
+          h5: ({ children }) => <h5 className="text-sm font-bold">{children}</h5>,
+          h6: ({ children }) => <h6 className="text-sm font-bold">{children}</h6>,
           a: ({ href, children }) => {
             if (href?.startsWith(MENTION_HREF_PREFIX)) {
               return (
