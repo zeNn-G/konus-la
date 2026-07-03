@@ -22,6 +22,7 @@
     "dotenv": "catalog:",
     "drizzle-orm": "^0.45.1",
     "libsql": "0.5.22",
+    "ulid": "^3.0.2",
     "zod": "catalog:"
   },
   "devDependencies": {

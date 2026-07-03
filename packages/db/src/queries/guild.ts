@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "../index";
 import { user } from "../schema/auth";
+import { channel } from "../schema/channel";
 import { guild, guildBan, guildInvite, guildMembership, guildRole } from "../schema/guild";
 import { randomCode } from "../constants";
 
@@ -40,6 +41,14 @@ export async function createGuildWithOwner(input: { name: string; ownerUserId: s
     });
 
     await tx.insert(guildMembership).values({ userId: input.ownerUserId, guildId });
+
+    // Every guild starts with a #general so a fresh guild is never an empty screen.
+    await tx.insert(channel).values({
+      id: crypto.randomUUID(),
+      guildId,
+      kind: "text",
+      name: "general",
+    });
 
     return createdGuild;
   });

@@ -8,6 +8,13 @@
       "when": 1781532234370,
       "tag": "0000_magenta_may_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783079783379,
+      "tag": "0001_tidy_kronos",
+      "breakpoints": true
     }
   ]
 }
