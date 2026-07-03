@@ -1,11 +1,12 @@
 import { auth } from "@konus-la/auth";
-import { isGuildMember, isGuildOwner } from "@konus-la/db";
+import { getChannel, isGuildMember, isGuildOwner } from "@konus-la/db";
 import { ORPCError, os } from "@orpc/server";
 
 import type { Context } from "./context";
 
-export type { EventMap } from "./realtime/events";
+export type { ChatMessage, EventMap, RealtimeEvent } from "./realtime/events";
 export { publisher } from "./realtime/publisher";
+export { presenceConnectionClosed, presenceConnectionOpened } from "./realtime/presence";
 
 export const o = os.$context<Context>();
 
@@ -42,7 +43,10 @@ export const adminProcedure = protectedProcedure.use(async ({ context, next }) =
 // The authenticated context shape that `requireAuth` injects. The per-guild middlewares
 // below require it, so they may only be chained onto an already-protected procedure.
 type SessionData = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
-type AuthedContext = Context & { session: SessionData["session"]; user: SessionData["user"] };
+export type AuthedContext = Context & {
+  session: SessionData["session"];
+  user: SessionData["user"];
+};
 
 // Per-guild access-control middlewares. Unlike `adminProcedure`, these gate on a
 // `guildId` taken from VALIDATED input, so they must be registered AFTER `.input()`:
@@ -68,4 +72,25 @@ export const requireGuildOwner = os
       throw new ORPCError("FORBIDDEN");
     }
     return next();
+  });
+
+/**
+ * Channel-scoped membership gate for procedures keyed by `channelId`: loads the channel,
+ * requires the caller to be a member of its guild, and injects the loaded `channel`
+ * (with a non-null `guildId`) so handlers don't re-query. DM channels (`guildId` null)
+ * are rejected until Phase 4 gives them a participant check. FORBIDDEN doubles as
+ * no-peek for nonexistent channels.
+ */
+export const requireChannelMember = os
+  .$context<AuthedContext>()
+  .middleware(async ({ context, next }, input: { channelId: string }) => {
+    const channelRow = await getChannel(input.channelId);
+    if (!channelRow?.guildId || !(await isGuildMember(channelRow.guildId, context.user.id))) {
+      throw new ORPCError("FORBIDDEN");
+    }
+    return next({
+      context: {
+        channel: { ...channelRow, guildId: channelRow.guildId },
+      },
+    });
   });

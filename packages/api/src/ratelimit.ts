@@ -1,0 +1,30 @@
+import type { Ratelimiter } from "@orpc/experimental-ratelimit";
+import { createRatelimitMiddleware } from "@orpc/experimental-ratelimit";
+import { MemoryRatelimiter } from "@orpc/experimental-ratelimit/memory";
+import type { Middleware } from "@orpc/server";
+
+import type { AuthedContext } from "./index";
+
+/**
+ * Per-user sliding-window limits (in-memory — single process, matching the MemoryPublisher).
+ * One limiter instance per rule; keys are `rule:userId`. Exceeding throws TOO_MANY_REQUESTS.
+ *
+ * Dev note: `bun --hot` resets the windows.
+ */
+
+export const sendMessageLimiter = new MemoryRatelimiter({ maxRequests: 30, window: 10_000 });
+export const markReadLimiter = new MemoryRatelimiter({ maxRequests: 60, window: 60_000 });
+export const typingLimiter = new MemoryRatelimiter({ maxRequests: 1, window: 1_000 });
+export const inviteCreateLimiter = new MemoryRatelimiter({ maxRequests: 5, window: 3_600_000 });
+
+/** Rate-limit an authenticated procedure by caller id. Chain after `protectedProcedure`. */
+export function perUserRatelimit(
+  rule: string,
+  limiter: Ratelimiter,
+  // `any` slots mirror the lib's own Middleware signature for output/errors.
+): Middleware<AuthedContext, Record<never, never>, unknown, any, any, Record<never, never>> {
+  return createRatelimitMiddleware<AuthedContext>({
+    limiter: () => limiter,
+    key: ({ context }) => `${rule}:${context.user.id}`,
+  });
+}

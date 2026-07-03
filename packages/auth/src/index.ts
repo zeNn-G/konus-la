@@ -102,7 +102,9 @@ export function createAuth() {
     baseURL: env.BETTER_AUTH_URL,
     advanced: {
       defaultCookieAttributes: {
-        sameSite: "none",
+        // Same-origin deploy (and same-site dev) — Lax keeps CSRF protection and
+        // still rides the WS upgrade request. See ROADMAP "Auth + user profile".
+        sameSite: "lax",
         secure: true,
         httpOnly: true,
       },

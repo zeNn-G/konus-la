@@ -1,3 +1,4 @@
+import { presenceConnectionClosed, presenceConnectionOpened } from "@konus-la/api";
 import { createContext } from "@konus-la/api/context";
 import { appRouter } from "@konus-la/api/routers/index";
 import { auth } from "@konus-la/auth";
@@ -41,12 +42,36 @@ const wsHandler = new BunWSRPCHandler(appRouter, {
   plugins: [loggingPlugin],
 });
 
-const server = Bun.serve({
+/**
+ * Per-connection state stashed at upgrade time. Keeping the upgrade request's headers means
+ * `requireAuth` works unchanged over WS (it re-resolves the session per procedure call —
+ * that re-check at subscription start is deliberate; see ADR 0005).
+ */
+type WSData = {
+  userId: string;
+  headers: Headers;
+};
+
+const server = Bun.serve<WSData, string>({
   async fetch(req, server) {
     const url = new URL(req.url);
 
     if (url.pathname === "/ws") {
-      if (server.upgrade(req)) return;
+      // Cookies ride the upgrade request, so guard against cross-site WS (CSWSH): a browser
+      // always sends Origin here. Absent Origin = non-browser client; the cookie check below
+      // still gates it.
+      const origin = req.headers.get("origin");
+      if (origin && origin !== env.CORS_ORIGIN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      const session = await auth.api.getSession({ headers: req.headers });
+      if (!session) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const data: WSData = { userId: session.user.id, headers: req.headers };
+      if (server.upgrade(req, { data })) return;
 
       return new Response("Upgrade failed", { status: 426 });
     }
@@ -83,13 +108,18 @@ const server = Bun.serve({
     return new Response("Not Found", { status: 404 });
   },
   websocket: {
+    open(ws) {
+      // Only successfully upgraded (= authenticated) sockets reach here.
+      void presenceConnectionOpened(ws.data.userId).catch((error) => {
+        logger.error({ error }, "presence online broadcast failed");
+      });
+    },
     message(ws, message) {
-      // No upgrade-request headers wired yet (Phase 5 concern); protected procedures over
-      // WS resolve to UNAUTHORIZED until then. Public procedures still work.
-      wsHandler.message(ws, message, { context: { headers: new Headers() } });
+      wsHandler.message(ws, message, { context: { headers: ws.data.headers } });
     },
     close(ws) {
       wsHandler.close(ws);
+      presenceConnectionClosed(ws.data.userId);
     },
   },
 });

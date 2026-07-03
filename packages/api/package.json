@@ -16,7 +16,8 @@
     "@konus-la/env": "workspace:*",
     "@orpc/client": "catalog:",
     "@orpc/experimental-pino": "catalog:",
-    "@orpc/experimental-publisher": "^1.13.14",
+    "@orpc/experimental-publisher": "^1.14.6",
+    "@orpc/experimental-ratelimit": "^1.14.6",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "zod": "catalog:"

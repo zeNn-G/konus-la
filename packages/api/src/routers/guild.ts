@@ -22,6 +22,7 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
 import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
+import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 
 /**
  * Guild lifecycle + read access. Per-guild authorization is enforced by the
@@ -102,6 +103,7 @@ export const guildRouter = {
         }),
       )
       .use(requireGuildOwner)
+      .use(perUserRatelimit("inviteCreate", inviteCreateLimiter))
       .handler(async ({ input, context }) => {
         const expiresAt =
           input.expiresInSeconds != null
