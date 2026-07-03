@@ -3,6 +3,7 @@ import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { GuildRail } from "@/components/guild-rail";
 import { UserCard } from "@/components/user-card";
 import { requireSession } from "@/lib/auth-guard";
+import { useRealtime } from "@/lib/use-realtime";
 
 export const Route = createFileRoute("/(app)")({
   beforeLoad: async () => ({
@@ -12,6 +13,8 @@ export const Route = createFileRoute("/(app)")({
 });
 
 function AppLayout() {
+  const { session } = Route.useRouteContext();
+  useRealtime(session.user.id);
   return (
     <div className="flex min-h-svh flex-col">
       <header className="border-b border-foreground/10">

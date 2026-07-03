@@ -1,0 +1,170 @@
+import { Button } from "@konus-la/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@konus-la/ui/components/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@konus-la/ui/components/dropdown-menu";
+import { cn } from "@konus-la/ui/lib/utils";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { HashIcon, MoreVerticalIcon, PlusIcon } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+
+import { ChannelNameDialog } from "@/components/channel-name-dialog";
+import type { ChannelListItem } from "@/lib/use-realtime";
+import { orpc, queryClient } from "@/utils/orpc";
+
+/**
+ * Per-guild channel rail: `channel.list` rows with unread bold + mention badge, owner-only
+ * create / rename / delete. Live updates arrive via the realtime dispatcher (setQueryData
+ * for read-state, invalidation for structural changes) — no polling.
+ */
+export function ChannelSidebar({ guildId }: { guildId: string }) {
+  const channels = useQuery(orpc.channel.list.queryOptions({ input: { guildId } }));
+  const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
+  const isOwner = guild.data?.viewer.isOwner ?? false;
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<ChannelListItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChannelListItem | null>(null);
+
+  const deleteChannel = useMutation(
+    orpc.channel.delete.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: orpc.channel.list.key() });
+        setDeleteTarget(null);
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
+
+  return (
+    <aside className="flex w-56 shrink-0 flex-col border-r border-foreground/10">
+      <Link
+        to="/guilds/$guildId"
+        params={{ guildId }}
+        activeOptions={{ exact: true }}
+        className="border-b border-foreground/10 px-4 py-3 text-sm font-medium hover:bg-muted"
+        activeProps={{ className: "bg-muted" }}
+      >
+        {guild.data?.guild.name ?? "…"}
+      </Link>
+
+      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+        <span className="text-xs font-medium text-muted-foreground">Channels</span>
+        {isOwner && (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Create channel"
+            title="Create channel"
+            onClick={() => setCreateOpen(true)}
+          >
+            <PlusIcon className="size-4" />
+          </Button>
+        )}
+      </div>
+
+      <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+        {channels.data?.map((channel) => (
+          <div key={channel.id} className="group relative">
+            <Link
+              to="/guilds/$guildId/channels/$channelId"
+              params={{ guildId, channelId: channel.id }}
+              className={cn(
+                "flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                channel.unread && "font-semibold text-foreground",
+              )}
+              activeProps={{ className: "bg-muted text-foreground" }}
+            >
+              <HashIcon className="size-4 shrink-0 opacity-60" />
+              <span className="truncate">{channel.name}</span>
+              {channel.mentionsCount > 0 && (
+                <span className="ml-auto rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white">
+                  {channel.mentionsCount}
+                </span>
+              )}
+            </Link>
+
+            {isOwner && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Channel options for #${channel.name}`}
+                      className={cn(
+                        "absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 data-popup-open:opacity-100",
+                        channel.mentionsCount > 0 && "bg-background",
+                      )}
+                    />
+                  }
+                >
+                  <MoreVerticalIcon className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => setRenameTarget(channel)}>
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(channel)}>
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        ))}
+      </nav>
+
+      <ChannelNameDialog guildId={guildId} open={createOpen} onOpenChange={setCreateOpen} />
+      {renameTarget && (
+        <ChannelNameDialog
+          key={renameTarget.id}
+          guildId={guildId}
+          channel={renameTarget}
+          open
+          onOpenChange={(open) => !open && setRenameTarget(null)}
+        />
+      )}
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete #{deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every message in this channel is deleted with it. There is no undo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteTarget) {
+                  deleteChannel.mutate({ guildId, channelId: deleteTarget.id });
+                }
+              }}
+            >
+              Delete channel
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </aside>
+  );
+}

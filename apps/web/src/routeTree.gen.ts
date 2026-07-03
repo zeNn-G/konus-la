@@ -19,6 +19,7 @@ import { Route as appAdminCodesRouteImport } from './routes/(app)/admin/codes'
 import { Route as appGuildsGuildIdRouteRouteImport } from './routes/(app)/guilds/$guildId/route'
 import { Route as appGuildsGuildIdIndexRouteImport } from './routes/(app)/guilds/$guildId/index'
 import { Route as appGuildsGuildIdSettingsRouteImport } from './routes/(app)/guilds/$guildId/settings'
+import { Route as appGuildsGuildIdChannelsChannelIdRouteImport } from './routes/(app)/guilds/$guildId/channels/$channelId'
 
 const appRouteRoute = appRouteRouteImport.update({
   id: '/(app)',
@@ -70,6 +71,12 @@ const appGuildsGuildIdSettingsRoute =
     path: '/settings',
     getParentRoute: () => appGuildsGuildIdRouteRoute,
   } as any)
+const appGuildsGuildIdChannelsChannelIdRoute =
+  appGuildsGuildIdChannelsChannelIdRouteImport.update({
+    id: '/channels/$channelId',
+    path: '/channels/$channelId',
+    getParentRoute: () => appGuildsGuildIdRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/admin': typeof appAdminRouteRouteWithChildren
@@ -81,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/admin/codes': typeof appAdminCodesRoute
   '/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
   '/guilds/$guildId/': typeof appGuildsGuildIdIndexRoute
+  '/guilds/$guildId/channels/$channelId': typeof appGuildsGuildIdChannelsChannelIdRoute
 }
 export interface FileRoutesByTo {
   '/admin': typeof appAdminRouteRouteWithChildren
@@ -91,6 +99,7 @@ export interface FileRoutesByTo {
   '/admin/codes': typeof appAdminCodesRoute
   '/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
   '/guilds/$guildId': typeof appGuildsGuildIdIndexRoute
+  '/guilds/$guildId/channels/$channelId': typeof appGuildsGuildIdChannelsChannelIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -104,6 +113,7 @@ export interface FileRoutesById {
   '/(app)/admin/codes': typeof appAdminCodesRoute
   '/(app)/guilds/$guildId/settings': typeof appGuildsGuildIdSettingsRoute
   '/(app)/guilds/$guildId/': typeof appGuildsGuildIdIndexRoute
+  '/(app)/guilds/$guildId/channels/$channelId': typeof appGuildsGuildIdChannelsChannelIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/admin/codes'
     | '/guilds/$guildId/settings'
     | '/guilds/$guildId/'
+    | '/guilds/$guildId/channels/$channelId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/admin'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/admin/codes'
     | '/guilds/$guildId/settings'
     | '/guilds/$guildId'
+    | '/guilds/$guildId/channels/$channelId'
   id:
     | '__root__'
     | '/(app)'
@@ -139,6 +151,7 @@ export interface FileRouteTypes {
     | '/(app)/admin/codes'
     | '/(app)/guilds/$guildId/settings'
     | '/(app)/guilds/$guildId/'
+    | '/(app)/guilds/$guildId/channels/$channelId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -219,6 +232,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof appGuildsGuildIdSettingsRouteImport
       parentRoute: typeof appGuildsGuildIdRouteRoute
     }
+    '/(app)/guilds/$guildId/channels/$channelId': {
+      id: '/(app)/guilds/$guildId/channels/$channelId'
+      path: '/channels/$channelId'
+      fullPath: '/guilds/$guildId/channels/$channelId'
+      preLoaderRoute: typeof appGuildsGuildIdChannelsChannelIdRouteImport
+      parentRoute: typeof appGuildsGuildIdRouteRoute
+    }
   }
 }
 
@@ -237,11 +257,14 @@ const appAdminRouteRouteWithChildren = appAdminRouteRoute._addFileChildren(
 interface appGuildsGuildIdRouteRouteChildren {
   appGuildsGuildIdSettingsRoute: typeof appGuildsGuildIdSettingsRoute
   appGuildsGuildIdIndexRoute: typeof appGuildsGuildIdIndexRoute
+  appGuildsGuildIdChannelsChannelIdRoute: typeof appGuildsGuildIdChannelsChannelIdRoute
 }
 
 const appGuildsGuildIdRouteRouteChildren: appGuildsGuildIdRouteRouteChildren = {
   appGuildsGuildIdSettingsRoute: appGuildsGuildIdSettingsRoute,
   appGuildsGuildIdIndexRoute: appGuildsGuildIdIndexRoute,
+  appGuildsGuildIdChannelsChannelIdRoute:
+    appGuildsGuildIdChannelsChannelIdRoute,
 }
 
 const appGuildsGuildIdRouteRouteWithChildren =

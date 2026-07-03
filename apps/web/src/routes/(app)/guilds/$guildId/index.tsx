@@ -1,10 +1,12 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { GuildIcon } from "@konus-la/ui/components/guild-icon";
+import { cn } from "@konus-la/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { SettingsIcon } from "lucide-react";
 
+import { usePresence } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
 export const Route = createFileRoute("/(app)/guilds/$guildId/")({
@@ -13,7 +15,9 @@ export const Route = createFileRoute("/(app)/guilds/$guildId/")({
 
 function GuildView() {
   const { guildId } = Route.useParams();
+  const { session } = Route.useRouteContext();
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
+  const presence = usePresence();
 
   if (guild.isPending) {
     return <div className="px-4 py-8 text-muted-foreground">Loading…</div>;
@@ -45,9 +49,20 @@ function GuildView() {
         <ul className="mt-2 flex flex-col divide-y divide-foreground/10">
           {members.map((m) => {
             const isOwner = m.userId === g.ownerId;
+            // Your own dot is always green — you're looking at the page.
+            const online = m.userId === session.user.id || presence[m.userId] === true;
             return (
               <li key={m.userId} className="flex items-center gap-3 py-2">
-                <Avatar seed={m.username ?? m.userId} src={m.image} className="size-7" />
+                <div className="relative">
+                  <Avatar seed={m.username ?? m.userId} src={m.image} className="size-7" />
+                  <span
+                    aria-label={online ? "Online" : "Offline"}
+                    className={cn(
+                      "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
+                      online ? "bg-green-500" : "bg-muted-foreground/40",
+                    )}
+                  />
+                </div>
                 <span className="text-sm">{m.displayName || m.username || m.userId}</span>
                 {m.username && <span className="text-xs text-muted-foreground">@{m.username}</span>}
                 <span className="ml-auto text-xs text-muted-foreground">
