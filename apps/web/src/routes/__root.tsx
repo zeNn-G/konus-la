@@ -52,7 +52,7 @@ function RootComponent() {
         disableTransitionOnChange
         storageKey="vite-ui-theme"
       >
-        <div className="h-svh">
+        <div className="h-svh overflow-hidden">
           <Outlet />
         </div>
         <Toaster richColors />

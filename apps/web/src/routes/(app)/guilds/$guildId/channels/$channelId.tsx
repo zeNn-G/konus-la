@@ -60,7 +60,6 @@ function ChannelView() {
     mark();
     window.addEventListener("focus", mark);
     return () => window.removeEventListener("focus", mark);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation object identity churns
   }, [newestMessageId, channelId]);
 
   // Reset transient state when switching channels.

@@ -16,7 +16,7 @@ function AppLayout() {
   const { session } = Route.useRouteContext();
   useRealtime(session.user.id);
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex h-full flex-col">
       <header className="border-b border-foreground/10">
         <div className="flex items-center justify-between px-4 py-2">
           <Link to="/" className="text-sm font-medium">

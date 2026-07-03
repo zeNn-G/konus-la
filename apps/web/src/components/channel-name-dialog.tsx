@@ -27,9 +27,7 @@ export function normalizeChannelName(raw: string): string {
 }
 
 const nameSchema = z.object({
-  name: z
-    .string()
-    .regex(CHANNEL_NAME_REGEX, "1–32 characters: lowercase letters, digits, dashes."),
+  name: z.string().regex(CHANNEL_NAME_REGEX, "1–32 characters: lowercase letters, digits, dashes."),
 });
 
 type Props = {
@@ -89,9 +87,7 @@ export function ChannelNameDialog({ guildId, channel, open, onOpenChange }: Prop
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{channel ? `Rename #${channel.name}` : "Create a channel"}</DialogTitle>
-          <DialogDescription>
-            Lowercase letters, digits, and dashes — like a Discord channel.
-          </DialogDescription>
+          <DialogDescription>Lowercase letters, digits, and dashes.</DialogDescription>
         </DialogHeader>
 
         <form

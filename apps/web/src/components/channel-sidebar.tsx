@@ -92,7 +92,13 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
               <HashIcon className="size-4 shrink-0 opacity-60" />
               <span className="truncate">{channel.name}</span>
               {channel.mentionsCount > 0 && (
-                <span className="ml-auto rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white">
+                <span
+                  className={cn(
+                    "ml-auto rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white",
+                    // Owners get a kebab in the same spot on hover — the badge yields to it.
+                    isOwner && "group-hover:hidden group-has-data-popup-open:hidden",
+                  )}
+                >
                   {channel.mentionsCount}
                 </span>
               )}
@@ -106,10 +112,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                       size="icon-sm"
                       variant="ghost"
                       aria-label={`Channel options for #${channel.name}`}
-                      className={cn(
-                        "absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 data-popup-open:opacity-100",
-                        channel.mentionsCount > 0 && "bg-background",
-                      )}
+                      className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
                 >
