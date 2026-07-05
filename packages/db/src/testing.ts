@@ -27,7 +27,12 @@ export function closeTestDb(): void {
 }
 
 /** Insert a bare user row (no credentials — tests authenticate via the mocked session). */
-export async function seedTestUser(input: { id: string; username: string; name?: string }) {
+export async function seedTestUser(input: {
+  id: string;
+  username: string;
+  name?: string;
+  role?: "admin" | "user";
+}) {
   const [row] = await db
     .insert(user)
     .values({
@@ -35,6 +40,7 @@ export async function seedTestUser(input: { id: string; username: string; name?:
       name: input.name ?? input.username,
       email: `${input.id}@test.local`,
       username: input.username,
+      role: input.role ?? "user",
     })
     .returning();
   if (!row) throw new Error(`Failed to seed user ${input.id}`);
