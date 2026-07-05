@@ -9,7 +9,10 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest --watch"
+  },
   "dependencies": {
     "@konus-la/auth": "workspace:*",
     "@konus-la/db": "workspace:*",
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@konus-la/config": "workspace:*",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
