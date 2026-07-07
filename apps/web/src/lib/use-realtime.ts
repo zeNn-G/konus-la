@@ -47,7 +47,7 @@ export function historyInfiniteKey(channelId: string) {
   });
 }
 
-type HistoryCache = InfiniteData<HistoryPage, string | undefined>;
+export type HistoryCache = InfiniteData<HistoryPage, string | undefined>;
 
 function patchHistory(
   client: QueryClient,
@@ -57,6 +57,25 @@ function patchHistory(
   client.setQueryData<HistoryCache>(historyInfiniteKey(channelId), (old) =>
     old ? { ...old, pages: patch(old.pages) } : old,
   );
+}
+
+/**
+ * Collapse a channel's history cache to the newest `keep` messages as one synthetic page.
+ * Call only while the reader sits at the live edge — dropping pages under a reader who
+ * scrolled up would yank their position. Dropped messages imply older history exists, and
+ * the server pages `WHERE id < before`, so the oldest kept id is a gap-free cursor.
+ */
+export function trimHistory(client: QueryClient, channelId: string, keep: number) {
+  client.setQueryData<HistoryCache>(historyInfiniteKey(channelId), (old) => {
+    if (!old) return old;
+    const all = old.pages.flatMap((page) => page.messages); // newest-first
+    const oldestKept = all.at(keep - 1);
+    if (all.length <= keep || !oldestKept) return old;
+    return {
+      pages: [{ messages: all.slice(0, keep), nextCursor: oldestKept.id }],
+      pageParams: [undefined],
+    };
+  });
 }
 
 function patchChannelLists(

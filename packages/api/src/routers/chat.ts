@@ -6,6 +6,7 @@ import {
   isGuildMember,
   isGuildOwner,
   listGuildMemberUserIds,
+  markChannelRead,
   updateMessage,
 } from "@konus-la/db";
 import { ORPCError } from "@orpc/server";
@@ -75,6 +76,23 @@ export const chatRouter = {
         message,
         mentionedUserIds: result.mentionedUserIds,
       });
+
+      // Your own send is by definition your newest read message — advance the watermark
+      // here so clients never need a markRead round-trip for their own sends, and confirm
+      // to the author's tabs exactly like channel.markRead does.
+      const applied = await markChannelRead({
+        userId: context.user.id,
+        channelId: input.channelId,
+        messageId: message.id,
+      });
+      if (applied) {
+        await publishTo([context.user.id], {
+          type: "readState.updated",
+          channelId: input.channelId,
+          lastReadMessageId: message.id,
+          mentionsCount: 0,
+        });
+      }
 
       return message;
     }),

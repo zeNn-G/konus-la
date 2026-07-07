@@ -65,6 +65,32 @@ describe("chat.sendMessage", () => {
     expect(asMemberSees.mentionsCount).toBe(0);
   });
 
+  test("sending advances the author's own read watermark", async () => {
+    const channel = await createChannel({ guildId, name: "self-read" });
+
+    // Someone else's message leaves you unread…
+    await call(
+      appRouter.chat.sendMessage,
+      { channelId: channel.id, content: "from alice" },
+      asUser(OWNER),
+    );
+    expect(await viewerChannel(channel.id, MEMBER)).toMatchObject({ unread: true });
+
+    // …but your own send marks everything up to it read, with no markRead call.
+    await call(
+      appRouter.chat.sendMessage,
+      { channelId: channel.id, content: "reply from bob" },
+      asUser(MEMBER),
+    );
+    expect(await viewerChannel(channel.id, MEMBER)).toMatchObject({
+      unread: false,
+      mentionsCount: 0,
+    });
+
+    // The other party is still unread.
+    expect(await viewerChannel(channel.id, OWNER)).toMatchObject({ unread: true });
+  });
+
   test("non-member → FORBIDDEN; unauthenticated → UNAUTHORIZED", async () => {
     await expectCode(
       call(appRouter.chat.sendMessage, { channelId: chatId, content: "hi" }, asUser(OUTSIDER)),

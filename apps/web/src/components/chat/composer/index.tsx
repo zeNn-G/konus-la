@@ -1,5 +1,6 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
+import { useMessageScroller } from "@konus-la/ui/components/message-scroller";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { SendHorizontalIcon } from "lucide-react";
@@ -67,6 +68,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
       onError: (error) => toast.error(error.message),
     }),
   );
+  const { scrollToEnd } = useMessageScroller();
   const typing = useMutation(orpc.typing.start.mutationOptions({ onError: () => {} }));
 
   const suggestions = mention
@@ -159,6 +161,10 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
   const submit = () => {
     const content = replaceShortcodes(value);
     if (!content.trim() || send.isPending) return;
+    // Jump to the live edge on send, even from deep in history — being at the edge
+    // re-engages auto-follow, so the message scrolls into view when the author's own
+    // realtime event lands it in the cache.
+    scrollToEnd({ behavior: "auto" });
     send.mutate(
       {
         channelId,
