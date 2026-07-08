@@ -32,11 +32,15 @@ const TYPING_THROTTLE_MS = 4_000;
 export type MentionMember = { username: string; displayName: string; image: string | null };
 
 type Props = {
-  channelId: string;
+  /** Null in the DM draft view — no channel exists until the first send. */
+  channelId: string | null;
   channelName: string;
   members: MentionMember[];
   replyTo: ChatMessage | null;
   onCancelReply: () => void;
+  /** Overrides the default sendMessage mutation (the draft view opens the DM first). */
+  onSend?: (input: { content: string }) => Promise<unknown>;
+  placeholder?: string;
 };
 
 /**
@@ -46,7 +50,15 @@ type Props = {
  * always store plain unicode). The sent message lands in the cache via the author's own
  * realtime event — no optimistic insert.
  */
-export function Composer({ channelId, channelName, members, replyTo, onCancelReply }: Props) {
+export function Composer({
+  channelId,
+  channelName,
+  members,
+  replyTo,
+  onCancelReply,
+  onSend,
+  placeholder,
+}: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingSentRef = useRef(0);
   const [value, setValue] = useState("");
@@ -74,6 +86,8 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
       onError: (error) => toast.error(error.message),
     }),
   );
+  const [customSendPending, setCustomSendPending] = useState(false);
+  const sendPending = send.isPending || customSendPending;
   const { scrollToEnd } = useMessageScroller();
   const typing = useMutation(orpc.typing.start.mutationOptions({ onError: () => {} }));
 
@@ -184,24 +198,30 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
 
   const submit = () => {
     const content = replaceShortcodes(value);
-    if (!content.trim() || send.isPending) return;
+    if (!content.trim() || sendPending) return;
     // Jump to the live edge on send, even from deep in history — being at the edge
     // re-engages auto-follow, so the message scrolls into view when the author's own
     // realtime event lands it in the cache.
     scrollToEnd({ behavior: "auto" });
+    const clear = () => {
+      setValue("");
+      onCancelReply();
+      requestAnimationFrame(autoGrow);
+    };
+    if (onSend) {
+      setCustomSendPending(true);
+      onSend({ content })
+        .then(clear)
+        .catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : "Failed to send.");
+        })
+        .finally(() => setCustomSendPending(false));
+      return;
+    }
+    if (!channelId) return;
     send.mutate(
-      {
-        channelId,
-        content,
-        replyToMessageId: replyTo?.id ?? null,
-      },
-      {
-        onSuccess: () => {
-          setValue("");
-          onCancelReply();
-          requestAnimationFrame(autoGrow);
-        },
-      },
+      { channelId, content, replyToMessageId: replyTo?.id ?? null },
+      { onSuccess: clear },
     );
   };
 
@@ -265,7 +285,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
           value={value}
           rows={1}
           maxLength={MAX_LENGTH}
-          placeholder={`Message #${channelName}`}
+          placeholder={placeholder ?? `Message #${channelName}`}
           className="max-h-50 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent py-2 text-sm outline-none scrollbar-thin"
           onChange={(e) => {
             const el = e.target;
@@ -290,7 +310,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
             autoGrow();
             refreshTokens();
             const now = Date.now();
-            if (next.trim() && now - lastTypingSentRef.current > TYPING_THROTTLE_MS) {
+            if (channelId && next.trim() && now - lastTypingSentRef.current > TYPING_THROTTLE_MS) {
               lastTypingSentRef.current = now;
               typing.mutate({ channelId });
             }
@@ -340,7 +360,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
           size="icon-sm"
           variant="ghost"
           aria-label="Send message"
-          disabled={!value.trim() || send.isPending}
+          disabled={!value.trim() || sendPending}
           className="my-1 text-primary disabled:text-muted-foreground"
           onMouseDown={(e) => e.preventDefault()} // keep textarea focus
           onClick={submit}

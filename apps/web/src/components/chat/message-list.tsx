@@ -56,6 +56,10 @@ type Props = {
   isGuildOwner: boolean;
   memberUsernames: ReadonlySet<string>;
   onReply: (message: ChatMessage) => void;
+  /** Overrides the guild-channel empty state — DMs speak of conversations, not channels. */
+  emptyState?: { icon: React.ReactNode; title: string; description: string };
+  /** The start-of-history line above the oldest message (same wording concern). */
+  historyStartLabel?: string;
 };
 
 /**
@@ -73,6 +77,8 @@ export function MessageList({
   isGuildOwner,
   memberUsernames,
   onReply,
+  emptyState,
+  historyStartLabel,
 }: Props) {
   const history = useInfiniteQuery(historyInfiniteOptions(channelId));
   const queryClient = useQueryClient();
@@ -133,12 +139,16 @@ export function MessageList({
     return (
       <Empty className="flex-1">
         <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <HashIcon />
-          </EmptyMedia>
-          <EmptyTitle>Welcome to #{channelName}</EmptyTitle>
+          {emptyState ? (
+            <EmptyMedia>{emptyState.icon}</EmptyMedia>
+          ) : (
+            <EmptyMedia variant="icon">
+              <HashIcon />
+            </EmptyMedia>
+          )}
+          <EmptyTitle>{emptyState?.title ?? `Welcome to #${channelName}`}</EmptyTitle>
           <EmptyDescription>
-            This is the beginning of the channel. Say something!
+            {emptyState?.description ?? "This is the beginning of the channel. Say something!"}
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -153,7 +163,7 @@ export function MessageList({
         <div ref={sentinelRef} />
         {!history.hasNextPage && (
           <p className="px-4 pt-6 pb-2 text-xs text-muted-foreground">
-            This is the beginning of the channel.
+            {historyStartLabel ?? "This is the beginning of the channel."}
           </p>
         )}
         {history.isFetchingNextPage && (

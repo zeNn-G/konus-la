@@ -10,6 +10,18 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
 - **`(app)/`** — the authenticated area. `(app)/route.tsx` is a layout that guards every child once
   (`beforeLoad` → `requireSession`) and renders the shared shell: a top header (+ `UserCard`) over a
   persistent left **guild rail** + main content. Its resolved session flows into child route context.
+  - **`(app)/index.tsx`** — Home IS the DM zone: the **DM sidebar** (`components/dm/dm-sidebar.tsx` —
+    `dm.list` rows re-sorted by `lastActivityAt`, unread bold + mention badge, New DM / New group
+    triggers) beside an empty-state pane.
+  - **`(app)/dms/`** — `route.tsx` repeats the DM-sidebar-plus-outlet layout; `$channelId.tsx` is the
+    conversation view (existence + roster from `dm.get`, NEVER `dm.list` — empty 1:1s are filtered
+    there; eviction is tombstone-driven — see Realtime below — with a `dm.get` error as the fallback
+    redirect for direct URLs or removals missed while offline). fresh
+    `dms/new/$userId.tsx` is the **draft view**: no channel exists; the first send runs
+    `dm.openWithUser` (idempotent) → `chat.sendMessage` → navigate. `lib/use-message-user.ts` routes
+    "Message this user" clicks to the existing 1:1 or the draft. Group management is a header
+    members-popover (owner-only remove, add-people search) + kebab (rename / leave) in
+    `components/dm/`.
   - **`(app)/admin/`** — nested layout that adds the Instance-Owner gate (`requireAdmin`) for `/admin/*`.
   - **`(app)/guilds/$guildId/`** — a guild. `route.tsx` is the guild layout: a **channel sidebar**
     (`components/channel-sidebar.tsx` — unread bold + red mention badge, owner-only create/rename/delete via
@@ -31,6 +43,13 @@ Mutations refetch via TanStack Query invalidation of `guild.list`.
   event runs through a single dispatcher switch — `setQueryData` for messages/typing/presence/read-state,
   `invalidateQueries` for structural `channel.*` events. On every reconnect it invalidates ALL queries
   (missed-events gaps beyond the server's 2-min resume retention are silent).
+- **DM events in the dispatcher**: `guildId === null` routes `message.created` / `channel.*` to the
+  `dm.list` cache (`patchDmList`; a message for an unlisted DM channel invalidates instead — that's how a
+  brand-new 1:1 reaches the recipient's sidebar). `readState.updated` patches both list caches (keyed
+  rows, wrong list is a no-op). `dm.participant.removed` for the OWN user drops the sidebar row and
+  raises the `dmEvictedKey` tombstone; the mounted conversation view watches it, navigates home, and
+  removes the history/typing/`dm.get` caches only AFTER leaving — invalidating them while still
+  mounted would refetch as a non-participant and toast FORBIDDEN.
 - **Key discipline**: the channel view and the dispatcher MUST build history keys through
   `historyInfiniteOptions` / `historyInfiniteKey` — a hand-built key silently misses the cache.
 - **Typing / presence** live in plain client-only query keys (`["realtime", ...]`) read via

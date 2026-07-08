@@ -23,3 +23,4 @@ export * from "./queries/signup-code";
 export * from "./queries/guild";
 export * from "./queries/channel";
 export * from "./queries/chat";
+export * from "./queries/dm";

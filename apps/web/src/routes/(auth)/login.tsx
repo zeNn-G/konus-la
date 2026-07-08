@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { authClient } from "@/lib/auth-client";
+import { queryClient } from "@/utils/orpc";
 
 export const Route = createFileRoute("/(auth)/login")({
   component: LoginComponent,
@@ -35,6 +36,8 @@ function LoginComponent() {
         { email: value.email, password: value.password },
         {
           onSuccess: () => {
+            // Whatever account was cached before this sign-in isn't ours to keep.
+            queryClient.clear();
             navigate({ to: "/" });
             toast.success("Signed in.");
           },

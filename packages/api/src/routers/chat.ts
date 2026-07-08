@@ -3,11 +3,10 @@ import {
   getHistoryPage,
   getMessageMeta,
   insertMessage,
-  isGuildMember,
   isGuildOwner,
-  listGuildMemberUserIds,
   markChannelRead,
   updateMessage,
+  userBelongsToChannel,
 } from "@konus-la/db";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
@@ -15,7 +14,7 @@ import { z } from "zod";
 import { protectedProcedure, requireChannelMember } from "../index";
 import { perUserRatelimit, sendMessageLimiter, typingLimiter } from "../ratelimit";
 import type { ChatMessage } from "../realtime/events";
-import { publishTo } from "../realtime/publishers";
+import { channelRecipientUserIds, publishTo } from "../realtime/publishers";
 
 const contentSchema = z
   .string()
@@ -70,7 +69,7 @@ export const chatRouter = {
         replyTo: result.replyTo,
       };
 
-      await publishTo(await listGuildMemberUserIds(context.channel.guildId), {
+      await publishTo(await channelRecipientUserIds(context.channel), {
         type: "message.created",
         guildId: context.channel.guildId,
         message,
@@ -102,18 +101,17 @@ export const chatRouter = {
     .input(z.object({ messageId: z.string(), content: contentSchema }))
     .handler(async ({ input, context }) => {
       const meta = await getMessageMeta(input.messageId);
-      if (!meta?.guildId) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
+      if (!meta) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
       if (meta.authorId !== context.user.id) {
         throw new ORPCError("FORBIDDEN", { message: "You can only edit your own messages." });
       }
-      if (!(await isGuildMember(meta.guildId, context.user.id))) {
-        throw new ORPCError("FORBIDDEN");
-      }
+      const stillThere = await userBelongsToChannel(meta.channelId, meta.guildId, context.user.id);
+      if (!stillThere) throw new ORPCError("FORBIDDEN");
 
       const updated = await updateMessage(input.messageId, input.content);
       if (!updated?.editedAt) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
 
-      await publishTo(await listGuildMemberUserIds(meta.guildId), {
+      await publishTo(await channelRecipientUserIds({ id: meta.channelId, guildId: meta.guildId }), {
         type: "message.updated",
         guildId: meta.guildId,
         channelId: meta.channelId,
@@ -124,20 +122,24 @@ export const chatRouter = {
       return { ok: true } as const;
     }),
 
-  /** Hard-delete a message — allowed for its author or the guild owner. */
+  /**
+   * Hard-delete a message — allowed for its author or the guild owner. In DMs deletion is
+   * author-only: the group owner moderates people (removeParticipant), never messages.
+   */
   deleteMessage: protectedProcedure
     .input(z.object({ messageId: z.string() }))
     .handler(async ({ input, context }) => {
       const meta = await getMessageMeta(input.messageId);
-      if (!meta?.guildId) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
+      if (!meta) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
 
-      const isAuthor =
-        meta.authorId === context.user.id && (await isGuildMember(meta.guildId, context.user.id));
-      const isOwner = await isGuildOwner(meta.guildId, context.user.id);
-      if (!isAuthor && !isOwner) throw new ORPCError("FORBIDDEN");
+      const allowed =
+        (meta.authorId === context.user.id &&
+          (await userBelongsToChannel(meta.channelId, meta.guildId, context.user.id))) ||
+        (meta.guildId !== null && (await isGuildOwner(meta.guildId, context.user.id)));
+      if (!allowed) throw new ORPCError("FORBIDDEN");
 
       await deleteMessageRow(input.messageId);
-      await publishTo(await listGuildMemberUserIds(meta.guildId), {
+      await publishTo(await channelRecipientUserIds({ id: meta.channelId, guildId: meta.guildId }), {
         type: "message.deleted",
         guildId: meta.guildId,
         channelId: meta.channelId,
@@ -176,7 +178,7 @@ export const typingRouter = {
     .use(requireChannelMember)
     .use(perUserRatelimit("typing", typingLimiter))
     .handler(async ({ input, context }) => {
-      const memberIds = await listGuildMemberUserIds(context.channel.guildId);
+      const memberIds = await channelRecipientUserIds(context.channel);
       await publishTo(
         memberIds.filter((id) => id !== context.user.id),
         {

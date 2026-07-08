@@ -4,7 +4,7 @@ import { monotonicFactory } from "ulid";
 
 import { db } from "../index";
 import { user } from "../schema/auth";
-import { channel, channelReadState, message } from "../schema/channel";
+import { channel, channelParticipant, channelReadState, message } from "../schema/channel";
 import { guildMembership } from "../schema/guild";
 import { extractMentionCandidates } from "../mention";
 
@@ -22,7 +22,7 @@ export type InsertMessageResult =
   | {
       status: "ok";
       message: typeof message.$inferSelect;
-      /** Guild members mentioned by `@username` (author excluded) — the mention-badge targets. */
+      /** Members mentioned by `@username` (author excluded) — the mention-badge targets. */
       mentionedUserIds: string[];
       /** Parent snippet for the reply header — fetched here so the created-event carries it. */
       replyTo: ReplyPreviewRow;
@@ -31,12 +31,13 @@ export type InsertMessageResult =
 
 /**
  * Insert a message atomically: validate the reply target lives in the same channel, write
- * the row (ULID id), then resolve `@username` candidates against the guild's members and
- * bump their mention counters. Mentions are counted on insert ONLY (edits never recount).
+ * the row (ULID id), then resolve `@username` candidates against the channel's audience —
+ * guild members when `guildId` is set, DM participants when null — and bump their mention
+ * counters. Mentions are counted on insert ONLY (edits never recount).
  */
 export async function insertMessage(input: {
   channelId: string;
-  guildId: string;
+  guildId: string | null;
   authorId: string;
   content: string;
   replyToMessageId?: string | null;
@@ -76,16 +77,24 @@ export async function insertMessage(input: {
     const candidates = extractMentionCandidates(input.content);
     let mentionedUserIds: string[] = [];
     if (candidates.length > 0) {
-      const mentioned = await tx
-        .select({ userId: user.id })
-        .from(user)
-        .innerJoin(guildMembership, eq(guildMembership.userId, user.id))
-        .where(
-          and(
-            eq(guildMembership.guildId, input.guildId),
-            inArray(user.username, candidates),
-          ),
-        );
+      const mentioned = input.guildId
+        ? await tx
+            .select({ userId: user.id })
+            .from(user)
+            .innerJoin(guildMembership, eq(guildMembership.userId, user.id))
+            .where(
+              and(eq(guildMembership.guildId, input.guildId), inArray(user.username, candidates)),
+            )
+        : await tx
+            .select({ userId: user.id })
+            .from(user)
+            .innerJoin(channelParticipant, eq(channelParticipant.userId, user.id))
+            .where(
+              and(
+                eq(channelParticipant.channelId, input.channelId),
+                inArray(user.username, candidates),
+              ),
+            );
       mentionedUserIds = mentioned
         .map((row) => row.userId)
         .filter((id) => id !== input.authorId);

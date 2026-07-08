@@ -50,4 +50,7 @@ coverage
 tmp
 temp
 
+# Playwright MCP session artifacts (snapshots, console logs, run_code scripts)
+.playwright-mcp/
+
 local.db

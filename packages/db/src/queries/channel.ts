@@ -4,6 +4,8 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { db } from "../index";
 import { channel, channelReadState, message } from "../schema/channel";
 import { guildMembership } from "../schema/guild";
+import { isChannelParticipant, listDmCoParticipantUserIds } from "./dm";
+import { isGuildMember } from "./guild";
 
 // ---------------------------------------------------------------------------
 // Channel lifecycle
@@ -41,7 +43,19 @@ export async function deleteChannel(channelId: string, guildId: string) {
   return deleted;
 }
 
-/** Minimal channel lookup for membership gating. */
+/**
+ * Whether `userId` may act inside a channel: guild membership for guild channels, a
+ * `channelParticipant` row for DMs (`guildId` null).
+ */
+export async function userBelongsToChannel(
+  channelId: string,
+  guildId: string | null,
+  userId: string,
+): Promise<boolean> {
+  return guildId ? isGuildMember(guildId, userId) : isChannelParticipant(channelId, userId);
+}
+
+/** Channel lookup for membership gating; carries the DM fields so handlers don't re-query. */
 export async function getChannel(channelId: string) {
   const [row] = await db
     .select({
@@ -49,6 +63,8 @@ export async function getChannel(channelId: string) {
       guildId: channel.guildId,
       kind: channel.kind,
       name: channel.name,
+      isGroup: channel.isGroup,
+      ownerId: channel.ownerId,
     })
     .from(channel)
     .where(eq(channel.id, channelId))
@@ -118,8 +134,8 @@ export async function listGuildMemberUserIds(guildId: string): Promise<string[]>
 }
 
 /**
- * Distinct users sharing at least one guild with `userId` (excluding the subject) — the
- * presence broadcast scope.
+ * Distinct users sharing at least one guild OR one DM channel with `userId` (excluding the
+ * subject) — the presence broadcast scope.
  */
 export async function listCoMemberUserIds(userId: string): Promise<string[]> {
   const own = alias(guildMembership, "own");
@@ -128,7 +144,8 @@ export async function listCoMemberUserIds(userId: string): Promise<string[]> {
     .from(own)
     .innerJoin(guildMembership, eq(guildMembership.guildId, own.guildId))
     .where(and(eq(own.userId, userId), ne(guildMembership.userId, userId)));
-  return rows.map((row) => row.userId);
+  const viaDm = await listDmCoParticipantUserIds(userId);
+  return [...new Set([...rows.map((row) => row.userId), ...viaDm])];
 }
 
 // ---------------------------------------------------------------------------

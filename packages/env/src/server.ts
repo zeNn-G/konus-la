@@ -11,6 +11,7 @@ export const env = createEnv({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PUBLIC_IP: z.string().default("127.0.0.1"),
     MAX_GUILDS_PER_USER: z.coerce.number().int().positive().default(5),
+    MAX_DM_GROUP_SIZE: z.coerce.number().int().min(3).default(10),
     MEDIASOUP_RTC_MIN_PORT: z.coerce.number().int().default(40000),
     MEDIASOUP_RTC_MAX_PORT: z.coerce.number().int().default(40100),
   },

@@ -5,7 +5,9 @@ import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/libsql/migrator";
 
 import { db } from "./index";
+import { dmPairKeyFor } from "./queries/dm";
 import { user } from "./schema/auth";
+import { channel, channelParticipant } from "./schema/channel";
 import { guildMembership } from "./schema/guild";
 
 /**
@@ -55,4 +57,42 @@ export async function getTestUser(id: string) {
 /** Add an existing user to an existing guild (skips the invite flow). */
 export async function seedTestMembership(guildId: string, userId: string): Promise<void> {
   await db.insert(guildMembership).values({ guildId, userId });
+}
+
+/**
+ * Insert a DM channel with its participant rows, bypassing the dm router. 1:1 channels
+ * (`isGroup: false`) require exactly two participants and get their `dmPairKey` computed.
+ * `joinedAtOffsetsMs` (parallel to `participantIds`) makes owner-transfer ordering
+ * deterministic — offsets are added to a fixed base timestamp.
+ */
+export async function seedTestDmChannel(input: {
+  isGroup: boolean;
+  participantIds: string[];
+  ownerId?: string;
+  name?: string;
+  joinedAtOffsetsMs?: number[];
+}): Promise<string> {
+  if (!input.isGroup && input.participantIds.length !== 2) {
+    throw new Error("A seeded 1:1 DM needs exactly two participants");
+  }
+  const channelId = crypto.randomUUID();
+  const base = Date.parse("2026-01-01T00:00:00Z");
+  await db.insert(channel).values({
+    id: channelId,
+    kind: "dm",
+    isGroup: input.isGroup,
+    name: input.name ?? null,
+    ownerId: input.isGroup ? (input.ownerId ?? input.participantIds[0]) : null,
+    dmPairKey: input.isGroup
+      ? null
+      : dmPairKeyFor(input.participantIds[0] as string, input.participantIds[1] as string),
+  });
+  await db.insert(channelParticipant).values(
+    input.participantIds.map((userId, i) => ({
+      channelId,
+      userId,
+      joinedAt: new Date(base + (input.joinedAtOffsetsMs?.[i] ?? i * 1000)),
+    })),
+  );
+  return channelId;
 }

@@ -14,10 +14,19 @@ import { guild } from "./guild";
 
 /**
  * Channel — a place messages live. Either belongs to a Guild (`guildId` set, `name` set)
- * or is a DM (`guildId` null — Phase 4; participants live in a future ChannelParticipant
- * table). `kind` carries the full enum from day one so voice (Phase 5) and DMs are purely
- * additive; only `text` is creatable in Phase 3. Names are lowercase slugs, unique per
- * guild (SQLite treats NULL guildIds as distinct, so DMs never collide).
+ * or is a DM (`guildId` null; participants live in `channelParticipant`). `kind` carries
+ * the full enum from day one so voice (Phase 5) is purely additive; guild channels are
+ * `text`/`voice`, DMs are `kind: 'dm'`. Guild channel names are lowercase slugs, unique
+ * per guild (SQLite treats NULL guildIds as distinct, so DMs never collide); group-DM
+ * names are free text.
+ *
+ * DM flavors (ADR 0006): a 1:1 (`isGroup` false) is the unique conversation between two
+ * users — `dmPairKey` is the sorted `"idA:idB"` pair and its unique index (NULLs distinct,
+ * so guild channels and group DMs never participate) makes creation race-proof idempotent.
+ * A group (`isGroup` true) has mutable participants and an owner (`ownerId`, ADR 0004
+ * column-not-flag precedent); a 1:1 never upgrades to a group. The
+ * kind/isGroup/dmPairKey/ownerId invariant is enforced by the two creation paths in
+ * `queries/dm.ts`, not a CHECK constraint (drizzle-kit would rebuild the table).
  */
 export const channel = sqliteTable(
   "channel",
@@ -27,6 +36,9 @@ export const channel = sqliteTable(
     guildId: text("guild_id").references(() => guild.id, { onDelete: "cascade" }),
     kind: text("kind", { enum: ["text", "voice", "dm"] }).notNull(),
     name: text("name"),
+    isGroup: integer("is_group", { mode: "boolean" }).default(false).notNull(),
+    dmPairKey: text("dm_pair_key"),
+    ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -37,7 +49,34 @@ export const channel = sqliteTable(
   },
   (table) => [
     uniqueIndex("channel_guild_id_name_uq").on(table.guildId, table.name),
+    uniqueIndex("channel_dm_pair_key_uq").on(table.dmPairKey),
     index("channel_guild_id_idx").on(table.guildId),
+  ],
+);
+
+/**
+ * ChannelParticipant — a user's membership in a DM channel (1:1 or group). Only used when
+ * `channel.kind = 'dm'`. Membership is the ONLY key to a DM's history: leaving or being
+ * removed deletes this row (and the user's read state), cutting off all access. PK
+ * `(userId, channelId)` serves the per-user DM list; the channelId index serves event
+ * fan-out and participant rosters.
+ */
+export const channelParticipant = sqliteTable(
+  "channel_participant",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channel.id, { onDelete: "cascade" }),
+    joinedAt: integer("joined_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.channelId] }),
+    index("channel_participant_channel_id_idx").on(table.channelId),
   ],
 );
 
@@ -102,6 +141,7 @@ export const channelRelations = relations(channel, ({ one, many }) => ({
     references: [guild.id],
   }),
   messages: many(message),
+  participants: many(channelParticipant),
 }));
 
 export const messageRelations = relations(message, ({ one }) => ({
@@ -118,6 +158,18 @@ export const messageRelations = relations(message, ({ one }) => ({
     fields: [message.replyToMessageId],
     references: [message.id],
     relationName: "messageReplyTo",
+  }),
+}));
+
+export const channelParticipantRelations = relations(channelParticipant, ({ one }) => ({
+  channel: one(channel, {
+    fields: [channelParticipant.channelId],
+    references: [channel.id],
+  }),
+  user: one(user, {
+    fields: [channelParticipant.userId],
+    references: [user.id],
+    relationName: "channelParticipantUser",
   }),
 }));
 

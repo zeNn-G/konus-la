@@ -190,12 +190,13 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 
 - Admin role assignment (`guild.member.setRole`), `requireGuildAdmin` gate widening channel management + moderation beyond the owner; `guild.memberRemoved` event so kicked members' clients react. Deferred from Phase 3 to keep it channel-focused.
 
-### Phase 4 — DMs (1:1 + group)
+### Phase 4 — DMs (1:1 + group) ✅
 
-- Tables: `ChannelParticipant`.
-- ORPC: `dm.openWithUser / createGroup / addParticipant / removeParticipant / leave`.
-- Reuse all chat code (DM is just a channel with `kind='dm'`).
-- Web: DM list, group-DM creation modal, DM channel view.
+- Tables: `ChannelParticipant`; `channel` gains `isGroup` / `dmPairKey` / `ownerId`. See [ADR 0006](docs/adr/0006-participant-keyed-dm-channels.md).
+- 1:1 and group DMs are distinct flavors: 1:1s are pair-unique (`dmPairKey`), draft-created on first message (Teams-style), never upgrade to groups; groups have a creator-owner (add = anyone, remove = owner, owner-leave auto-transfers, last-leaver deletes), optional free-text name, `MAX_DM_GROUP_SIZE` cap (default 10, ≥3 at creation).
+- ORPC: `dm.openWithUser / createGroup / addParticipant / removeParticipant / leave / rename / list / get` + `user.search / get` (instance-wide directory for the pickers).
+- Reused all chat code (DM is just a channel with `kind='dm'`): `requireChannelMember` branches to a participant check, fan-out to participant sets, mentions resolve against participants, presence unions DM co-participants. DM message deletion is author-only.
+- Web: Home (`/`) is the DM zone (sidebar + empty pane), `/dms/$channelId` conversation view, `/dms/new/$userId` draft view, new-DM/new-group pickers, group members popover + rename/leave menu, "Message" action on guild member rows.
 
 ### Phase 5 — Voice / video MVP
 

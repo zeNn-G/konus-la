@@ -15,6 +15,13 @@
       "when": 1783079783379,
       "tag": "0001_tidy_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783529459424,
+      "tag": "0002_mature_justin_hammer",
+      "breakpoints": true
     }
   ]
 }

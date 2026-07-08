@@ -1,5 +1,5 @@
 import { auth } from "@konus-la/auth";
-import { getChannel, isGuildMember, isGuildOwner } from "@konus-la/db";
+import { getChannel, isGuildMember, isGuildOwner, userBelongsToChannel } from "@konus-la/db";
 import { ORPCError, os } from "@orpc/server";
 
 import type { Context } from "./context";
@@ -76,21 +76,19 @@ export const requireGuildOwner = os
 
 /**
  * Channel-scoped membership gate for procedures keyed by `channelId`: loads the channel,
- * requires the caller to be a member of its guild, and injects the loaded `channel`
- * (with a non-null `guildId`) so handlers don't re-query. DM channels (`guildId` null)
- * are rejected until Phase 4 gives them a participant check. FORBIDDEN doubles as
- * no-peek for nonexistent channels.
+ * requires the caller to belong to it — guild membership for guild channels, a
+ * `channelParticipant` row for DMs (`guildId` null) — and injects the loaded `channel`
+ * so handlers don't re-query. FORBIDDEN doubles as no-peek for nonexistent channels.
  */
 export const requireChannelMember = os
   .$context<AuthedContext>()
   .middleware(async ({ context, next }, input: { channelId: string }) => {
     const channelRow = await getChannel(input.channelId);
-    if (!channelRow?.guildId || !(await isGuildMember(channelRow.guildId, context.user.id))) {
+    if (!channelRow) throw new ORPCError("FORBIDDEN");
+
+    if (!(await userBelongsToChannel(channelRow.id, channelRow.guildId, context.user.id))) {
       throw new ORPCError("FORBIDDEN");
     }
-    return next({
-      context: {
-        channel: { ...channelRow, guildId: channelRow.guildId },
-      },
-    });
+
+    return next({ context: { channel: channelRow } });
   });
