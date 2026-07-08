@@ -7,8 +7,8 @@ import { requireAdmin } from "@/lib/auth-guard";
  * adds the Instance-Owner (`role: 'admin'`) gate for everything under `/admin`.
  */
 export const Route = createFileRoute("/(app)/admin")({
-  beforeLoad: async () => {
-    await requireAdmin();
+  beforeLoad: async ({ context }) => {
+    await requireAdmin(context.queryClient);
   },
   component: () => <Outlet />,
 });

@@ -1,26 +1,38 @@
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 
 import { authClient } from "./auth-client";
 
 /**
- * beforeLoad guard: require an authenticated session or bounce to /login.
- *
- * Guards live on the `(app)` / `(app)/admin` layouts, so TanStack Router's match caching
- * already de-dupes these calls across hover preloads — no client-side session cache needed.
- * Each fresh navigation (e.g. right after sign-in/out) re-runs this with a live `getSession`,
- * which is what keeps auth transitions correct.
+ * The current session, read through the query cache: hover preloads re-run route
+ * `beforeLoad` unconditionally (router-core runs it even for already-active layout
+ * matches; `defaultPreloadStaleTime` only gates loaders), so guards share this one entry
+ * instead of firing a /get-session request per hover. Past the 30s
+ * window the next guard refetches, so server-side changes (expiry, revocation, role) still
+ * surface. Auth transitions always re-check live: sign-in clears the query cache and
+ * sign-out hard-reloads the app, so neither can leave a stale session behind.
  */
-export async function requireSession() {
-  const { data } = await authClient.getSession();
+const sessionQuery = queryOptions({
+  queryKey: ["auth", "session"],
+  queryFn: async () => (await authClient.getSession()).data,
+  staleTime: 30_000,
+});
+
+/** beforeLoad guard: require an authenticated session or bounce to /login. */
+export async function requireSession(queryClient: QueryClient) {
+  const data = await queryClient.fetchQuery(sessionQuery);
   if (!data?.user) {
     throw redirect({ to: "/login" });
   }
   return data;
 }
 
-/** beforeLoad guard: require the Instance Owner (global `admin` role) or bounce home. */
-export async function requireAdmin() {
-  const data = await requireSession();
+/**
+ * beforeLoad guard: require the Instance Owner (global `admin` role) or bounce home.
+ * Reads the same cached session as `requireSession` — one fetch covers both guards.
+ */
+export async function requireAdmin(queryClient: QueryClient) {
+  const data = await requireSession(queryClient);
   if (data.user.role !== "admin") {
     throw redirect({ to: "/" });
   }

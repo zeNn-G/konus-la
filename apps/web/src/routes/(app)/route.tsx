@@ -6,8 +6,8 @@ import { requireSession } from "@/lib/auth-guard";
 import { useRealtime } from "@/lib/use-realtime";
 
 export const Route = createFileRoute("/(app)")({
-  beforeLoad: async () => ({
-    session: await requireSession(),
+  beforeLoad: async ({ context }) => ({
+    session: await requireSession(context.queryClient),
   }),
   component: AppLayout,
 });

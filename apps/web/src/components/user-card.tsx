@@ -1,6 +1,6 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
-import { Link, getRouteApi, useRouter } from "@tanstack/react-router";
+import { Link, getRouteApi } from "@tanstack/react-router";
 
 import { authClient } from "@/lib/auth-client";
 
@@ -9,7 +9,6 @@ const appRoute = getRouteApi("/(app)");
 
 /** Header chip: avatar + name, admin shortcut, and sign-out. Rendered by the app layout. */
 export function UserCard() {
-  const router = useRouter();
   const { session } = appRoute.useRouteContext();
   const username = session.user.username ?? session.user.email;
 
@@ -33,7 +32,7 @@ export function UserCard() {
           await authClient.signOut({
             fetchOptions: {
               onSuccess: () => {
-                router.navigate({ to: "/login" });
+                window.location.href = "/login";
               },
             },
           });
