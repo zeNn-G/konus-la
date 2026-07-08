@@ -7,6 +7,7 @@ import { SendHorizontalIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { caretRectInTextarea } from "@/components/chat/composer/caret-rect";
 import {
   type CaretToken,
   emojiTokenAtCaret,
@@ -55,6 +56,11 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
   const [emojiIndex, setEmojiIndex] = useState(0);
   const [, setEmojiReady] = useState(false);
   const navSourceRef = useRef<NavSource>("mouse");
+  // Escape/outside-press dismissals must outlive the next keyup: refreshTokens still sees
+  // the token at the caret and would reopen the menu, so the dismissed token's key is
+  // suppressed until the token itself changes.
+  const dismissedMentionRef = useRef("");
+  const dismissedEmojiRef = useRef("");
 
   useEffect(() => {
     // Warm the shortcode dataset before the first `:` — shares the browser cache
@@ -90,17 +96,35 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
+  const dismissMention = () => {
+    dismissedMentionRef.current = tokenKey(mention);
+    setMention(null);
+  };
+
+  const dismissEmoji = () => {
+    dismissedEmojiRef.current = tokenKey(emojiToken);
+    setEmojiToken(null);
+  };
+
   // Only reset a list's highlight when its token actually changed — this runs on every
   // keyup, including the arrow keys that move the highlight.
   const refreshTokens = () => {
     const el = textareaRef.current;
     if (!el) return;
-    const nextMention = mentionTokenAtCaret(el.value, el.selectionStart);
+    let nextMention = mentionTokenAtCaret(el.value, el.selectionStart);
+    if (dismissedMentionRef.current) {
+      if (tokenKey(nextMention) === dismissedMentionRef.current) nextMention = null;
+      else dismissedMentionRef.current = "";
+    }
     if (tokenKey(nextMention) !== tokenKey(mention)) {
       setMention(nextMention);
       setMentionIndex(0);
     }
-    const nextEmoji = nextMention ? null : emojiTokenAtCaret(el.value, el.selectionStart);
+    let nextEmoji = nextMention ? null : emojiTokenAtCaret(el.value, el.selectionStart);
+    if (dismissedEmojiRef.current) {
+      if (tokenKey(nextEmoji) === dismissedEmojiRef.current) nextEmoji = null;
+      else dismissedEmojiRef.current = "";
+    }
     if (tokenKey(nextEmoji) !== tokenKey(emojiToken)) {
       setEmojiToken(nextEmoji);
       setEmojiIndex(0);
@@ -189,8 +213,11 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
           activeIndex={mentionIndex}
           itemKey={(member) => member.username}
           navSource={navSourceRef}
+          anchorRect={() => caretRectInTextarea(textareaRef.current, mention.start)}
+          inputRef={textareaRef}
           onHighlight={setMentionIndex}
           onSelect={(member) => insertMention(member.username)}
+          onDismiss={dismissMention}
         >
           {(member) => (
             <>
@@ -208,8 +235,11 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
           activeIndex={emojiIndex}
           itemKey={(entry) => entry.shortcode}
           navSource={navSourceRef}
+          anchorRect={() => caretRectInTextarea(textareaRef.current, emojiToken?.start ?? 0)}
+          inputRef={textareaRef}
           onHighlight={setEmojiIndex}
           onSelect={(entry) => insertEmojiForToken(entry.emoji)}
+          onDismiss={dismissEmoji}
         >
           {(entry) => (
             <>
@@ -279,7 +309,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
                   const selected = suggestions[mentionIndex];
                   if (selected) insertMention(selected.username);
                 },
-                dismiss: () => setMention(null),
+                dismiss: dismissMention,
               })
             ) {
               return;
@@ -294,7 +324,7 @@ export function Composer({ channelId, channelName, members, replyTo, onCancelRep
                   const selected = emojiSuggestions[emojiIndex];
                   if (selected) insertEmojiForToken(selected.emoji);
                 },
-                dismiss: () => setEmojiToken(null),
+                dismiss: dismissEmoji,
               })
             ) {
               return;
