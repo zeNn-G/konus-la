@@ -3,7 +3,7 @@ import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { CornerUpLeftIcon, PencilIcon, Trash2Icon } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/chat/message-markdown";
@@ -31,7 +31,9 @@ type Props = {
  * edit/delete mutations here don't touch the cache themselves (the author receives
  * their own events).
  */
-export function MessageItem({
+export const MessageItem = memo(MessageItemRow);
+
+function MessageItemRow({
   message,
   grouped,
   selfUserId,

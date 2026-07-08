@@ -1,0 +1,15 @@
+{
+  "name": "@konus-la/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "vitest run"
+  },
+  "devDependencies": {
+    "@konus-la/config": "workspace:*",
+    "@konus-la/db": "workspace:*",
+    "playwright": "^1.61.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

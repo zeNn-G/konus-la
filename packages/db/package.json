@@ -10,6 +10,8 @@
     }
   },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
     "db:local": "turso dev --db-file local.db",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@konus-la/config": "workspace:*",
     "drizzle-kit": "^0.31.8",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

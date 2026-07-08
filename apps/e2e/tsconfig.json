@@ -1,0 +1,6 @@
+{
+  "extends": "@konus-la/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  }
+}

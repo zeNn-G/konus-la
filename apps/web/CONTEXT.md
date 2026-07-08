@@ -35,13 +35,19 @@ Mutations refetch via TanStack Query invalidation of `guild.list`.
   `historyInfiniteOptions` / `historyInfiniteKey` — a hand-built key silently misses the cache.
 - **Typing / presence** live in plain client-only query keys (`["realtime", ...]`) read via
   `useTypingEntries` / `usePresence`; no fetcher behind them.
-- **Chat components** (`components/chat/`): `message-list` (infinite scroll, pinned-to-bottom, no
-  virtualization), `message-item` (hover reply/edit/delete; cache updates come from the author's own
-  realtime events, never from mutation handlers), `message-markdown` (react-markdown + GFM, mention pills),
-  `composer` (raw-markdown textarea, Enter sends, `@` autocomplete, 4 s typing throttle), `typing-line`.
+- **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
+  `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
+  live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —
+  instead the history cache is trimmed to the newest ~150 messages whenever the reader is back at the live
+  edge, so long sessions stay bounded), `message-item` (hover reply/edit/delete; cache updates come from
+  the author's own realtime events, never from mutation handlers), `message-markdown` (react-markdown +
+  GFM, mention pills), `composer` (raw-markdown textarea, Enter sends, `@` autocomplete, 4 s typing
+  throttle; sending jumps the reader to the live edge), `typing-line`. The channel route wraps list +
+  composer in one `MessageScrollerProvider` keyed by channel.
 - **markRead** fires whenever the viewed channel's newest message changes while the window is focused —
-  including the viewer's own messages, otherwise a later refetch resurrects a phantom unread. The caller tab
-  patches its own sidebar cache in `onSuccess`; other tabs get the `readState.updated` event.
+  EXCEPT when that newest message is the viewer's own: `chat.sendMessage` advances the author's watermark
+  server-side and confirms via `readState.updated`, so a client markRead per own send is pure noise. The
+  caller tab patches its own sidebar cache in `onSuccess`; other tabs get the `readState.updated` event.
 
 Guards live on the **layouts**, not individual pages — so a page like `profile` or `admin/codes` has no
 `beforeLoad`; it inherits the session from its parent layout's context.

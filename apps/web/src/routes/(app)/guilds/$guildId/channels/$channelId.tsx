@@ -1,12 +1,14 @@
+import { MessageScrollerProvider } from "@konus-la/ui/components/message-scroller";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { HashIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { TypingLine } from "@/components/chat/typing-line";
-import type { ChannelListItem, ChatMessage } from "@/lib/use-realtime";
+import type { ChannelListItem, ChatMessage, HistoryCache } from "@/lib/use-realtime";
+import { historyInfiniteKey } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export const Route = createFileRoute("/(app)/guilds/$guildId/channels/$channelId")({
@@ -46,31 +48,51 @@ function ChannelView() {
     }),
   );
 
-  // Advance the watermark on open, on every new message while focused (own messages too —
-  // otherwise a later refetch resurrects a phantom unread), and when focus returns.
+  // Advance the watermark on open, on every new message while focused, and when focus
+  // returns. Own sends are skipped: sendMessage advances the watermark server-side and
+  // confirms via readState.updated, so a markRead round-trip per send is pure noise.
   // Server-side the upsert is forward-only, so redundant calls are harmless.
   const newestMessageId = channel?.newestMessageId ?? null;
+  const selfUserId = session.user.id;
   useEffect(() => {
     if (!newestMessageId) return;
     const mark = () => {
-      if (document.hasFocus()) {
-        markRead.mutate({ channelId, messageId: newestMessageId });
-      }
+      if (!document.hasFocus()) return;
+      const newest = queryClient.getQueryData<HistoryCache>(historyInfiniteKey(channelId))
+        ?.pages[0]?.messages[0];
+      if (newest?.id === newestMessageId && newest.author.id === selfUserId) return;
+      markRead.mutate({ channelId, messageId: newestMessageId });
     };
     mark();
     window.addEventListener("focus", mark);
     return () => window.removeEventListener("focus", mark);
-  }, [newestMessageId, channelId]);
+  }, [newestMessageId, channelId, selfUserId]);
 
   // Reset transient state when switching channels.
   useEffect(() => setReplyTo(null), [channelId]);
 
-  if (!channel) return null;
-
-  const members = guild.data?.members ?? [];
-  const memberUsernames = new Set(
-    members.flatMap((member) => (member.username ? [member.username] : [])),
+  const members = guild.data?.members;
+  const memberUsernames = useMemo(
+    () => new Set((members ?? []).flatMap((member) => (member.username ? [member.username] : []))),
+    [members],
   );
+  const mentionMembers = useMemo(
+    () =>
+      (members ?? []).flatMap((member) =>
+        member.username && member.userId !== selfUserId
+          ? [
+              {
+                username: member.username,
+                displayName: member.displayName || member.username,
+                image: member.image,
+              },
+            ]
+          : [],
+      ),
+    [members, selfUserId],
+  );
+
+  if (!channel) return null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -79,32 +101,27 @@ function ChannelView() {
         <h1 className="text-sm font-medium">{channel.name}</h1>
       </header>
 
-      <MessageList
-        channelId={channelId}
-        selfUserId={session.user.id}
-        isGuildOwner={guild.data?.viewer.isOwner ?? false}
-        memberUsernames={memberUsernames}
-        onReply={setReplyTo}
-      />
+      {/* One scroller context per channel (keyed so scroll state resets on switch),
+          shared with the composer so sending returns the reader to the live edge. */}
+      <MessageScrollerProvider key={channelId} autoScroll defaultScrollPosition="end">
+        <MessageList
+          channelId={channelId}
+          channelName={channel.name ?? ""}
+          selfUserId={session.user.id}
+          isGuildOwner={guild.data?.viewer.isOwner ?? false}
+          memberUsernames={memberUsernames}
+          onReply={setReplyTo}
+        />
 
-      <TypingLine channelId={channelId} />
-      <Composer
-        channelId={channelId}
-        channelName={channel.name ?? ""}
-        members={members.flatMap((member) =>
-          member.username && member.userId !== session.user.id
-            ? [
-                {
-                  username: member.username,
-                  displayName: member.displayName || member.username,
-                  image: member.image,
-                },
-              ]
-            : [],
-        )}
-        replyTo={replyTo}
-        onCancelReply={() => setReplyTo(null)}
-      />
+        <TypingLine channelId={channelId} />
+        <Composer
+          channelId={channelId}
+          channelName={channel.name ?? ""}
+          members={mentionMembers}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+        />
+      </MessageScrollerProvider>
     </div>
   );
 }
