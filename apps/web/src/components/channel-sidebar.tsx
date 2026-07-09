@@ -15,6 +15,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@konus-la/ui/components/dropdown-menu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+} from "@konus-la/ui/components/sidebar";
+import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +30,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { ChannelNameDialog } from "@/components/channel-name-dialog";
+import { UserCard } from "@/components/user-card";
 import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -51,33 +59,47 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   );
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-foreground/10">
-      <Link
-        to="/guilds/$guildId"
-        params={{ guildId }}
-        activeOptions={{ exact: true }}
-        className="border-b border-foreground/10 px-4 py-3 text-sm font-medium hover:bg-muted"
-        activeProps={{ className: "bg-muted" }}
-      >
-        {guild.data?.guild.name ?? "…"}
-      </Link>
+    <Sidebar collapsible="none" className="min-w-0 flex-1">
+      <SidebarHeader className="gap-0 border-b border-sidebar-border p-0">
+        <Link
+          to="/guilds/$guildId"
+          params={{ guildId }}
+          activeOptions={{ exact: true }}
+          className="px-4 py-3 text-sm font-medium hover:bg-sidebar-accent"
+          activeProps={{ className: "bg-sidebar-accent" }}
+        >
+          {guild.data ? (
+            guild.data.guild.name
+          ) : (
+            <Skeleton className="my-0.5 h-4 w-24" />
+          )}
+        </Link>
+      </SidebarHeader>
 
-      <div className="flex items-center justify-between px-4 pt-3 pb-1">
-        <span className="text-xs font-medium text-muted-foreground">Channels</span>
-        {isOwner && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Create channel"
-            title="Create channel"
-            onClick={() => setCreateOpen(true)}
-          >
-            <PlusIcon className="size-4" />
-          </Button>
-        )}
-      </div>
+      <SidebarContent>
+        <div className="flex items-center justify-between px-4 pt-3 pb-1">
+          <span className="text-xs font-medium text-muted-foreground">Channels</span>
+          {isOwner && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Create channel"
+              title="Create channel"
+              onClick={() => setCreateOpen(true)}
+            >
+              <PlusIcon className="size-4" />
+            </Button>
+          )}
+        </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+        <nav className="flex flex-col gap-0.5 px-2 pb-2">
+          {channels.isPending &&
+            Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="flex items-center gap-1.5 px-2 py-1.5">
+                <Skeleton className="size-4 shrink-0" />
+                <Skeleton className="h-4 flex-1" />
+              </div>
+            ))}
         {channels.data?.map((channel) => (
           <div key={channel.id} className="group relative">
             <Link
@@ -130,7 +152,12 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
             )}
           </div>
         ))}
-      </nav>
+        </nav>
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border">
+        <UserCard />
+      </SidebarFooter>
 
       <ChannelNameDialog guildId={guildId} open={createOpen} onOpenChange={setCreateOpen} />
       {renameTarget && (
@@ -168,6 +195,6 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </aside>
+    </Sidebar>
   );
 }

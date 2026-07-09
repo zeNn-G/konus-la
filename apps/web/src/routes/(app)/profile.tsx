@@ -9,6 +9,7 @@ import {
 } from "@konus-la/ui/components/card";
 import { Input } from "@konus-la/ui/components/input";
 import { Label } from "@konus-la/ui/components/label";
+import { SidebarTrigger } from "@konus-la/ui/components/sidebar";
 import { useMutation } from "@tanstack/react-query";
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -42,7 +43,10 @@ function ProfileComponent() {
   const username = session.user.username ?? session.user.email;
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-8">
+    <div className="mx-auto w-full max-w-lg px-4 py-8">
+      <div className="pb-2 md:hidden">
+        <SidebarTrigger className="-ml-1" />
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>

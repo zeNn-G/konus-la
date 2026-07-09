@@ -36,23 +36,24 @@ export type ChatMessage = {
 export type RealtimeEvent =
   | {
       type: "message.created";
-      guildId: string;
+      /** Null for DM channels — the client routes by `message.channelId` either way. */
+      guildId: string | null;
       message: ChatMessage;
       /** So the recipient can bump its own mention badge without a refetch. */
       mentionedUserIds: string[];
     }
   | {
       type: "message.updated";
-      guildId: string;
+      guildId: string | null;
       channelId: string;
       messageId: string;
       content: string;
       editedAt: Date;
     }
-  | { type: "message.deleted"; guildId: string; channelId: string; messageId: string }
+  | { type: "message.deleted"; guildId: string | null; channelId: string; messageId: string }
   | {
       type: "typing";
-      guildId: string;
+      guildId: string | null;
       channelId: string;
       userId: string;
       username: string;
@@ -63,8 +64,8 @@ export type RealtimeEvent =
   | { type: "presence.update"; userId: string; online: boolean }
   | {
       /**
-       * First event of every subscription: who (among users sharing a guild with the
-       * subscriber) is online right now. The subscriber itself is excluded — it knows.
+       * First event of every subscription: who (among users sharing a guild or a DM with
+       * the subscriber) is online right now. The subscriber itself is excluded — it knows.
        */
       type: "presence.snapshot";
       onlineUserIds: string[];
@@ -77,11 +78,24 @@ export type RealtimeEvent =
       mentionsCount: number;
     }
   | {
+      /** `guildId: null` = a DM channel (group creation / rename) → refresh the DM list. */
       type: "channel.created" | "channel.updated";
-      guildId: string;
+      guildId: string | null;
       channel: { id: string; name: string | null; kind: string; createdAt: Date };
     }
-  | { type: "channel.deleted"; guildId: string; channelId: string };
+  | { type: "channel.deleted"; guildId: string; channelId: string }
+  | { type: "dm.participant.added"; channelId: string; userId: string }
+  | {
+      /**
+       * Someone left or was removed from a group DM. Receiving this with your OWN userId is
+       * the one and only "this DM is gone for you" signal — `channel.deleted` never fires
+       * for DMs (the last leaver's deletion publishes `removed` to the leaver alone).
+       * Remaining participants receive the same event and just refresh the roster.
+       */
+      type: "dm.participant.removed";
+      channelId: string;
+      userId: string;
+    };
 
 /** Dynamic per-user topics: one subscription per connection, on the subscriber's own topic. */
 export type EventMap = Record<`user:${string}`, RealtimeEvent>;

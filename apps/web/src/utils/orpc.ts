@@ -7,6 +7,15 @@ import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Freshness is realtime-driven: the dispatcher patches message/read-state caches
+      // directly and invalidates on structural events + reconnect, so remounting a view
+      // within this window must not refetch (every sidebar/guild navigation was firing
+      // list/get requests for data the socket already keeps current).
+      staleTime: 30_000,
+    },
+  },
   queryCache: new QueryCache({
     onError: (error, query) => {
       toast.error(`Error: ${error.message}`, {

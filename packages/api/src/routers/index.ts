@@ -3,10 +3,12 @@ import type { RouterClient } from "@orpc/server";
 import { publicProcedure } from "../index";
 import { channelRouter } from "./channel";
 import { chatRouter, typingRouter } from "./chat";
+import { dmRouter } from "./dm";
 import { guildRouter } from "./guild";
 import { profileRouter } from "./profile";
 import { realtimeRouter } from "./realtime";
 import { signupCodeRouter } from "./signup-code";
+import { userRouter } from "./user";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -14,10 +16,12 @@ export const appRouter = {
   }),
   signupCode: signupCodeRouter,
   profile: profileRouter,
+  user: userRouter,
   guild: guildRouter,
   channel: channelRouter,
   chat: chatRouter,
   typing: typingRouter,
+  dm: dmRouter,
   realtime: realtimeRouter,
 };
 export type AppRouter = typeof appRouter;

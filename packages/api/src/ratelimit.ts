@@ -16,6 +16,11 @@ export const sendMessageLimiter = new MemoryRatelimiter({ maxRequests: 30, windo
 export const markReadLimiter = new MemoryRatelimiter({ maxRequests: 60, window: 60_000 });
 export const typingLimiter = new MemoryRatelimiter({ maxRequests: 1, window: 1_000 });
 export const inviteCreateLimiter = new MemoryRatelimiter({ maxRequests: 5, window: 3_600_000 });
+export const dmOpenLimiter = new MemoryRatelimiter({ maxRequests: 30, window: 60_000 });
+export const dmCreateGroupLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 3_600_000 });
+/** Shared instance for add/remove/leave/rename — distinct rules keep distinct windows. */
+export const dmMutateLimiter = new MemoryRatelimiter({ maxRequests: 30, window: 60_000 });
+export const userSearchLimiter = new MemoryRatelimiter({ maxRequests: 20, window: 10_000 });
 
 /** Rate-limit an authenticated procedure by caller id. Chain after `protectedProcedure`. */
 export function perUserRatelimit(

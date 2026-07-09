@@ -1,3 +1,5 @@
+import { listChannelParticipantUserIds, listGuildMemberUserIds } from "@konus-la/db";
+
 import type { RealtimeEvent } from "./events";
 import { publisher } from "./publisher";
 
@@ -12,4 +14,14 @@ export async function publishTo(userIds: Iterable<string>, event: RealtimeEvent)
     publishes.push(publisher.publish(`user:${userId}`, event));
   }
   await Promise.all(publishes);
+}
+
+/** The recipient set of a channel's events: guild members, or DM participants when guild-less. */
+export async function channelRecipientUserIds(channel: {
+  id: string;
+  guildId: string | null;
+}): Promise<string[]> {
+  return channel.guildId
+    ? listGuildMemberUserIds(channel.guildId)
+    : listChannelParticipantUserIds(channel.id);
 }

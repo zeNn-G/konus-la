@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@konus-la/ui/components/card";
+import { SidebarTrigger } from "@konus-la/ui/components/sidebar";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -43,7 +44,10 @@ function AdminCodesComponent() {
   );
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div className="mx-auto w-full max-w-2xl px-4 py-8">
+      <div className="pb-2 md:hidden">
+        <SidebarTrigger className="-ml-1" />
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Signup codes</CardTitle>

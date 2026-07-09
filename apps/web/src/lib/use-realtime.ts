@@ -8,11 +8,13 @@ import { useQuery } from "@tanstack/react-query";
 import ReconnectingWebSocket from "partysocket/ws";
 import { useEffect } from "react";
 
+import { invalidateDmConversation } from "@/lib/dm";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export type HistoryPage = Awaited<ReturnType<AppRouterClient["chat"]["history"]>>;
 export type ChatMessage = HistoryPage["messages"][number];
 export type ChannelListItem = Awaited<ReturnType<AppRouterClient["channel"]["list"]>>[number];
+export type DmListItem = Awaited<ReturnType<AppRouterClient["dm"]["list"]>>[number];
 
 export type TypingEntry = {
   userId: string;
@@ -24,6 +26,13 @@ export type TypingEntry = {
 /** Client-only cache keys — no fetcher behind them; the realtime dispatcher writes them. */
 export const PRESENCE_KEY = ["realtime", "presence"] as const;
 export const typingQueryKey = (channelId: string) => ["realtime", "typing", channelId] as const;
+/**
+ * Tombstone set when THIS user leaves / is removed from a DM. The mounted conversation
+ * view watches it, navigates away, and only then cleans the caches — invalidating or
+ * removing them while the view is still mounted refires the queries as a non-participant
+ * and every one comes back as a FORBIDDEN toast.
+ */
+export const dmEvictedKey = (channelId: string) => ["realtime", "dm-evicted", channelId] as const;
 
 const historyInput = (channelId: string) => (pageParam: string | undefined) =>
   pageParam ? { channelId, before: pageParam } : { channelId };
@@ -90,6 +99,24 @@ function patchChannelLists(
   );
 }
 
+/** The dm.list analog of patchChannelLists — one input-less cache, keyed rows. */
+function patchDmList(
+  client: QueryClient,
+  channelId: string,
+  patch: (row: DmListItem) => DmListItem,
+) {
+  client.setQueriesData<DmListItem[]>({ queryKey: orpc.dm.list.key() }, (old) =>
+    old?.map((row) => (row.id === channelId ? patch(row) : row)),
+  );
+}
+
+/** True when the dm.list cache exists and already carries this conversation. */
+function dmListHasChannel(client: QueryClient, channelId: string): boolean {
+  return client
+    .getQueriesData<DmListItem[]>({ queryKey: orpc.dm.list.key() })
+    .some(([, rows]) => rows?.some((row) => row.id === channelId));
+}
+
 function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent) {
   switch (event.type) {
     case "presence.snapshot": {
@@ -137,6 +164,21 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
         mentionsCount:
           channel.mentionsCount + (event.mentionedUserIds.includes(selfUserId) ? 1 : 0),
       }));
+      if (event.guildId === null) {
+        if (dmListHasChannel(client, message.channelId)) {
+          patchDmList(client, message.channelId, (row) => ({
+            ...row,
+            newestMessageId: message.id,
+            unread: fromSelf ? row.unread : true,
+            mentionsCount: row.mentionsCount + (event.mentionedUserIds.includes(selfUserId) ? 1 : 0),
+            lastActivityAt: message.createdAt.getTime(),
+          }));
+        } else {
+          // First message of a fresh 1:1 (or a group we were just added to) — the row
+          // doesn't exist yet, only the server can build it.
+          void client.invalidateQueries({ queryKey: orpc.dm.list.key() });
+        }
+      }
       // A delivered message beats the typing indicator's 5s expiry.
       client.setQueryData<TypingEntry[]>(typingQueryKey(message.channelId), (old = []) =>
         old.filter((entry) => entry.userId !== message.author.id),
@@ -168,20 +210,58 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       break;
     }
     case "readState.updated": {
-      // Another tab/device of THIS user read the channel.
+      // Another tab/device of THIS user read the channel. The event carries no guildId, so
+      // patch both lists — the row is keyed, the wrong list is a no-op.
       patchChannelLists(client, event.channelId, (channel) => ({
         ...channel,
         unread:
           channel.newestMessageId !== null && event.lastReadMessageId < channel.newestMessageId,
         mentionsCount: event.mentionsCount,
       }));
+      patchDmList(client, event.channelId, (row) => ({
+        ...row,
+        unread: row.newestMessageId !== null && event.lastReadMessageId < row.newestMessageId,
+        mentionsCount: event.mentionsCount,
+      }));
       break;
     }
     case "channel.created":
-    case "channel.updated":
+    case "channel.updated": {
+      // Structural, low-frequency → refetch the sidebar. Null guildId = a DM (group
+      // created / renamed): refresh the DM list and the open conversation's roster.
+      if (event.guildId === null) {
+        void invalidateDmConversation(client, event.channel.id);
+      } else {
+        void client.invalidateQueries({ queryKey: orpc.channel.list.key() });
+      }
+      break;
+    }
     case "channel.deleted": {
-      // Structural, low-frequency → refetch the sidebar.
       void client.invalidateQueries({ queryKey: orpc.channel.list.key() });
+      break;
+    }
+    case "dm.participant.added": {
+      if (event.userId === selfUserId) {
+        // Re-added after an earlier eviction: drop the tombstone or the view would
+        // bounce us straight back out.
+        client.removeQueries({ queryKey: dmEvictedKey(event.channelId) });
+      }
+      void invalidateDmConversation(client, event.channelId);
+      break;
+    }
+    case "dm.participant.removed": {
+      if (event.userId === selfUserId) {
+        // We left or were removed — drop the sidebar row and raise the tombstone. The
+        // conversation view (if mounted) navigates away and cleans the caches AFTER
+        // unmounting; touching dm.get/history here would refetch them as a
+        // non-participant and toast FORBIDDEN.
+        client.setQueriesData<DmListItem[]>({ queryKey: orpc.dm.list.key() }, (old) =>
+          old?.filter((row) => row.id !== event.channelId),
+        );
+        client.setQueryData(dmEvictedKey(event.channelId), true);
+      } else {
+        void invalidateDmConversation(client, event.channelId);
+      }
       break;
     }
   }
