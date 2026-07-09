@@ -6,6 +6,7 @@ import {
   EmptyTitle,
 } from "@konus-la/ui/components/empty";
 import { MessageScrollerProvider } from "@konus-la/ui/components/message-scroller";
+import { SidebarTrigger } from "@konus-la/ui/components/sidebar";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -57,7 +58,8 @@ function DmDraftView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-foreground/10 px-4 py-2">
+      <header className="flex items-center gap-2 border-b border-foreground/10 px-3 py-2 md:px-4">
+        <SidebarTrigger className="md:hidden" />
         <Avatar seed={username} src={target.data.image} className="size-6" />
         <h1 className="truncate text-sm font-medium">{name}</h1>
         <span className="text-xs text-muted-foreground">@{username}</span>

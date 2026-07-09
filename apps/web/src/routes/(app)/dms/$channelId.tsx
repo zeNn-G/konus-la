@@ -1,5 +1,6 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { MessageScrollerProvider } from "@konus-la/ui/components/message-scroller";
+import { SidebarTrigger } from "@konus-la/ui/components/sidebar";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { UsersIcon } from "lucide-react";
@@ -113,7 +114,8 @@ function DmChannelView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-foreground/10 px-4 py-2">
+      <header className="flex items-center gap-2 border-b border-foreground/10 px-3 py-2 md:px-4">
+        <SidebarTrigger className="md:hidden" />
         {other && (
           <PresenceAvatar
             seed={other.username ?? other.userId}

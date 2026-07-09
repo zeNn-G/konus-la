@@ -1,19 +1,6 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 
-import { ChannelSidebar } from "@/components/channel-sidebar";
-
+// The channel sidebar lives in the app shell (AppSidebar); this layout is a pass-through.
 export const Route = createFileRoute("/(app)/guilds/$guildId")({
-  component: GuildLayout,
+  component: () => <Outlet />,
 });
-
-function GuildLayout() {
-  const { guildId } = Route.useParams();
-  return (
-    <div className="flex h-full min-h-0">
-      <ChannelSidebar guildId={guildId} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Outlet />
-      </div>
-    </div>
-  );
-}
