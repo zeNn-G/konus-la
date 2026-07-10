@@ -30,4 +30,10 @@ Flip variants with the floating bar or ←/→. All data is fake; join by clicki
 
 ## Verdict
 
-_(pending — fill in the winning variant / stolen pieces, then delete the prototype)_
+**A+B hybrid** (C dropped). Join → A's full-room takeover; browsing a text channel while
+connected → B's corner mini-stage, whose expand returns to A's room (B's overlay grid
+dropped); B's footer control deck visible in both states (A's connection bar dropped);
+A's nested occupant list under sidebar voice rows (no occupant panel in the deck);
+per-peer volume via right-click context menu (inline sliders + hover kebab dropped);
+speaking = square green ring. Full detail on the ticket:
+https://github.com/zeNn-G/konus-la/issues/10
