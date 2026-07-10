@@ -84,6 +84,33 @@ export type RealtimeEvent =
       channel: { id: string; name: string | null; kind: string; createdAt: Date };
     }
   | { type: "channel.deleted"; guildId: string; channelId: string }
+  | {
+      /**
+       * Guild roster changes (join via invite / kick / ban / leave). Receiving `removed`
+       * with your OWN userId is the "this guild is gone for you" signal — the guild layout
+       * evicts you; everyone else just refreshes the roster. `added` with your own userId
+       * clears a stale eviction tombstone (rejoin after a kick) and refreshes other tabs.
+       */
+      type: "guild.member.added" | "guild.member.removed";
+      guildId: string;
+      userId: string;
+    }
+  | {
+      /**
+       * Guild-level structural change every member should re-read (today: ownership
+       * transfer — `viewer.isOwner` and the crown flip live). Clients refetch `guild.get`.
+       */
+      type: "guild.updated";
+      guildId: string;
+    }
+  | {
+      /**
+       * The guild no longer exists for ANY recipient — unlike `guild.member.removed`,
+       * there is no per-user check: everyone drops the rail row and evicts if inside.
+       */
+      type: "guild.deleted";
+      guildId: string;
+    }
   | { type: "dm.participant.added"; channelId: string; userId: string }
   | {
       /**

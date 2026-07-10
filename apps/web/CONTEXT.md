@@ -31,8 +31,17 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
   - **`(app)/admin/`** — nested layout that adds the Instance-Owner gate (`requireAdmin`) for `/admin/*`.
   - **`(app)/guilds/$guildId/`** — a guild. `route.tsx` is a pass-through; the **channel sidebar**
     (`components/channel-sidebar.tsx` — unread bold + red mention badge, owner-only create/rename/delete via
-    `components/channel-name-dialog.tsx`) renders from the shell. `index.tsx` is the roster view (with presence
-    dots), `settings.tsx` the owner-only management page, and `channels/$channelId.tsx` the chat view.
+    `components/channel-name-dialog.tsx`) renders from the shell. Its guild-name header is a dropdown:
+    "Guild settings" (owner) opens the settings modal, "Leave guild" (non-owner) confirms, then navigates
+    home BEFORE invalidating `guild.list` (a refetch from inside the guild would 403). `index.tsx`
+    redirects to the first channel (`beforeLoad` + `ensureQueryData(channel.list)`); with zero channels it
+    renders a "No channels yet" pane that auto-enters the first channel when realtime delivers one.
+    `channels/$channelId.tsx` is the chat view; it also hosts the **members panel**
+    (`components/members-panel.tsx` — presence-grouped roster, crown on the owner, per-member popover with
+    a Message action): a desktop aside toggled from the header (one global localStorage key, default open)
+    and an on-demand right sheet on mobile. **Guild settings** is an owner-only modal
+    (`components/guild-settings/` — Members, Bans, Invites, Danger zone; sections mount lazily so
+    owner-only queries never fire unselected), not a route.
     Owner-gating is data-driven (`guild.get` → `viewer.isOwner`), not a route guard — the API is the source
     of truth.
 
@@ -57,6 +66,15 @@ TanStack Query invalidation of `guild.list`.
   raises the `dmEvictedKey` tombstone; the mounted conversation view watches it, navigates home, and
   removes the history/typing/`dm.get` caches only AFTER leaving — invalidating them while still
   mounted would refetch as a non-participant and toast FORBIDDEN.
+- **Guild membership events in the dispatcher**: `guild.member.removed` for the OWN user drops the
+  rail row and raises the `guildEvictedKey` tombstone; the guild layout (`guilds/$guildId/route.tsx`)
+  watches it, navigates home, and removes `guild.get` / `channel.list` caches only AFTER leaving
+  (same FORBIDDEN-refetch discipline as DM eviction). For other users it invalidates that guild's
+  `guild.get` (roster refresh — members panel / settings modal update live). `guild.member.added`
+  for the own user clears a stale tombstone (rejoin after kick) and refreshes the rail in other tabs.
+  `guild.updated` (ownership transfer) re-reads `guild.get` — the settings entry, the crown, and the
+  modal's owner-flip guard all react live. `guild.deleted` evicts every recipient the same
+  tombstone way, no per-user check.
 - **Key discipline**: the channel view and the dispatcher MUST build history keys through
   `historyInfiniteOptions` / `historyInfiniteKey` — a hand-built key silently misses the cache.
 - **Typing / presence** live in plain client-only query keys (`["realtime", ...]`) read via

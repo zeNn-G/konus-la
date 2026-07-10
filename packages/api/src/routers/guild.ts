@@ -11,6 +11,7 @@ import {
   kickMember,
   leaveGuild,
   listBans,
+  listGuildMemberUserIds,
   listGuildMembers,
   listInvites,
   listUserGuilds,
@@ -23,6 +24,20 @@ import { z } from "zod";
 
 import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
+import { publishTo } from "../realtime/publishers";
+
+/** Roster-change fan-out: every remaining member plus the affected user themselves. */
+async function publishMemberEvent(
+  type: "guild.member.added" | "guild.member.removed",
+  guildId: string,
+  userId: string,
+): Promise<void> {
+  await publishTo(new Set([...(await listGuildMemberUserIds(guildId)), userId]), {
+    type,
+    guildId,
+    userId,
+  });
+}
 
 /**
  * Guild lifecycle + read access. Per-guild authorization is enforced by the
@@ -80,6 +95,12 @@ export const guildRouter = {
           message: "The new owner must already be a member of the guild.",
         });
       }
+      // Every member re-reads guild.get: the new owner gains the settings entry, the old
+      // owner's open settings modal closes, and the roster crown moves.
+      await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
+        type: "guild.updated",
+        guildId: input.guildId,
+      });
       return { ok: true } as const;
     }),
 
@@ -88,7 +109,10 @@ export const guildRouter = {
     .input(z.object({ guildId: z.string() }))
     .use(requireGuildOwner)
     .handler(async ({ input }) => {
+      // Snapshot the roster BEFORE deleting — the FK cascade erases the membership rows.
+      const memberIds = await listGuildMemberUserIds(input.guildId);
       await deleteGuild(input.guildId);
+      await publishTo(new Set(memberIds), { type: "guild.deleted", guildId: input.guildId });
       return { ok: true } as const;
     }),
 
@@ -133,6 +157,7 @@ export const guildRouter = {
           case "already_member":
             return { guildId: result.guildId, joined: false };
           case "ok":
+            await publishMemberEvent("guild.member.added", result.guildId, context.user.id);
             return { guildId: result.guildId, joined: true };
         }
       }),
@@ -169,6 +194,7 @@ export const guildRouter = {
         }
         const removed = await kickMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
+        await publishMemberEvent("guild.member.removed", input.guildId, input.userId);
         return { ok: true } as const;
       }),
 
@@ -192,6 +218,7 @@ export const guildRouter = {
           reason: input.reason ?? null,
           bannedByUserId: context.user.id,
         });
+        await publishMemberEvent("guild.member.removed", input.guildId, input.userId);
         return { ok: true } as const;
       }),
 
@@ -224,6 +251,7 @@ export const guildRouter = {
           });
         }
         await leaveGuild(input.guildId, context.user.id);
+        await publishMemberEvent("guild.member.removed", input.guildId, context.user.id);
         return { ok: true } as const;
       }),
   },
