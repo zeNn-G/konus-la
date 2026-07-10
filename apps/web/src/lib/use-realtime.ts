@@ -33,6 +33,11 @@ export const typingQueryKey = (channelId: string) => ["realtime", "typing", chan
  * and every one comes back as a FORBIDDEN toast.
  */
 export const dmEvictedKey = (channelId: string) => ["realtime", "dm-evicted", channelId] as const;
+/**
+ * Same contract for guilds: set when THIS user is kicked / banned / leaves. The guild
+ * layout route watches it, navigates home, and only then cleans the guild's caches.
+ */
+export const guildEvictedKey = (guildId: string) => ["realtime", "guild-evicted", guildId] as const;
 
 const historyInput = (channelId: string) => (pageParam: string | undefined) =>
   pageParam ? { channelId, before: pageParam } : { channelId };
@@ -238,6 +243,52 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
     }
     case "channel.deleted": {
       void client.invalidateQueries({ queryKey: orpc.channel.list.key() });
+      break;
+    }
+    case "guild.member.added": {
+      if (event.userId === selfUserId) {
+        // Rejoined (possibly after an earlier eviction): clear the tombstone so the guild
+        // layout doesn't bounce us back out, and refresh the rail in other tabs.
+        client.removeQueries({ queryKey: guildEvictedKey(event.guildId) });
+        void client.invalidateQueries({ queryKey: orpc.guild.list.key() });
+      }
+      void client.invalidateQueries({
+        queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
+      });
+      break;
+    }
+    case "guild.member.removed": {
+      if (event.userId === selfUserId) {
+        // Kicked, banned, or left — drop the rail row and raise the tombstone. The guild
+        // layout (if mounted) navigates home and cleans the caches AFTER unmounting;
+        // touching guild.get/channel.list here would refetch them as a non-member and
+        // toast FORBIDDEN.
+        client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>
+          old?.filter((g) => g.id !== event.guildId),
+        );
+        client.setQueryData(guildEvictedKey(event.guildId), true);
+      } else {
+        void client.invalidateQueries({
+          queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
+        });
+      }
+      break;
+    }
+    case "guild.updated": {
+      // Structural (today: ownership transfer) — re-read the header/roster/viewer flags:
+      // the new owner gains the settings entry, the old owner's open modal closes.
+      void client.invalidateQueries({
+        queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
+      });
+      break;
+    }
+    case "guild.deleted": {
+      // Gone for everyone — same eviction as guild.member.removed's own-user branch:
+      // drop the rail row and let the guild layout navigate out before any cache cleanup.
+      client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>
+        old?.filter((g) => g.id !== event.guildId),
+      );
+      client.setQueryData(guildEvictedKey(event.guildId), true);
       break;
     }
     case "dm.participant.added": {

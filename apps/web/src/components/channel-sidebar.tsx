@@ -24,12 +24,13 @@ import {
 import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { HashIcon, MoreVerticalIcon, PlusIcon } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronDownIcon, HashIcon, MoreVerticalIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ChannelNameDialog } from "@/components/channel-name-dialog";
+import { GuildSettingsDialog } from "@/components/guild-settings/guild-settings-dialog";
 import { UserCard } from "@/components/user-card";
 import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
@@ -44,9 +45,25 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
   const isOwner = guild.data?.viewer.isOwner ?? false;
 
+  const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ChannelListItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChannelListItem | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+
+  const leaveGuild = useMutation(
+    orpc.guild.member.leave.mutationOptions({
+      onSuccess: async () => {
+        // Leave the guild's routes before invalidating — a refetch from inside would 403.
+        setLeaveOpen(false);
+        await navigate({ to: "/" });
+        await queryClient.invalidateQueries({ queryKey: orpc.guild.list.queryOptions().queryKey });
+        toast.success("Left guild.");
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
   const deleteChannel = useMutation(
     orpc.channel.delete.mutationOptions({
@@ -61,19 +78,34 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   return (
     <Sidebar collapsible="none" className="min-w-0 flex-1">
       <SidebarHeader className="gap-0 border-b border-sidebar-border p-0">
-        <Link
-          to="/guilds/$guildId"
-          params={{ guildId }}
-          activeOptions={{ exact: true }}
-          className="px-4 py-3 text-sm font-medium hover:bg-sidebar-accent"
-          activeProps={{ className: "bg-sidebar-accent" }}
-        >
-          {guild.data ? (
-            guild.data.guild.name
-          ) : (
-            <Skeleton className="my-0.5 h-4 w-24" />
-          )}
-        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-sidebar-accent data-popup-open:bg-sidebar-accent"
+              />
+            }
+          >
+            {guild.data ? (
+              <span className="truncate">{guild.data.guild.name}</span>
+            ) : (
+              <Skeleton className="my-0.5 h-4 w-24" />
+            )}
+            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52">
+            {isOwner ? (
+              <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+                Guild settings
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem variant="destructive" onClick={() => setLeaveOpen(true)}>
+                Leave guild
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarHeader>
 
       <SidebarContent>
@@ -158,6 +190,31 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
       <SidebarFooter className="border-t border-sidebar-border">
         <UserCard />
       </SidebarFooter>
+
+      {/* Kept inside the sidebar (not the mobile sheet's siblings): Base UI stacks nested
+          dialogs over the sheet via context, and closing the sheet would unmount them. */}
+      <GuildSettingsDialog guildId={guildId} open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave {guild.data?.guild.name ?? "this guild"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You’ll need a new invite to rejoin.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={leaveGuild.isPending}
+              onClick={() => leaveGuild.mutate({ guildId })}
+            >
+              Leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ChannelNameDialog guildId={guildId} open={createOpen} onOpenChange={setCreateOpen} />
       {renameTarget && (

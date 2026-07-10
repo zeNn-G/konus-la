@@ -1,14 +1,19 @@
+import { Button } from "@konus-la/ui/components/button";
 import { MessageScrollerProvider } from "@konus-la/ui/components/message-scroller";
+import { Sheet, SheetContent, SheetTitle } from "@konus-la/ui/components/sheet";
 import { SidebarTrigger } from "@konus-la/ui/components/sidebar";
+import { useIsMobile } from "@konus-la/ui/hooks/use-mobile";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { HashIcon } from "lucide-react";
+import { HashIcon, UsersIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
+import { MembersPanel } from "@/components/members-panel";
 import { TypingLine } from "@/components/chat/typing-line";
 import type { ChannelListItem, ChatMessage, HistoryCache } from "@/lib/use-realtime";
+import { useMembersPanelPref } from "@/lib/use-members-panel";
 import { historyInfiniteKey } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -26,6 +31,10 @@ function ChannelView() {
   const channel = channels.data?.find((c) => c.id === channelId);
 
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+
+  const isMobile = useIsMobile();
+  const [membersPanelOpen, setMembersPanelOpen] = useMembersPanelPref();
+  const [membersSheetOpen, setMembersSheetOpen] = useState(false);
 
   // Channel got deleted (or never existed) — bounce to the guild home.
   useEffect(() => {
@@ -70,7 +79,10 @@ function ChannelView() {
   }, [newestMessageId, channelId, selfUserId]);
 
   // Reset transient state when switching channels.
-  useEffect(() => setReplyTo(null), [channelId]);
+  useEffect(() => {
+    setReplyTo(null);
+    setMembersSheetOpen(false);
+  }, [channelId]);
 
   const members = guild.data?.members;
   const memberUsernames = useMemo(
@@ -101,29 +113,59 @@ function ChannelView() {
         <SidebarTrigger className="mr-0.5 md:hidden" />
         <HashIcon className="size-4 text-muted-foreground" />
         <h1 className="text-sm font-medium">{channel.name}</h1>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="ml-auto"
+          aria-label="Toggle members"
+          title="Members"
+          onClick={() =>
+            isMobile ? setMembersSheetOpen(true) : setMembersPanelOpen(!membersPanelOpen)
+          }
+        >
+          <UsersIcon className="size-4" />
+        </Button>
       </header>
 
-      {/* One scroller context per channel (keyed so scroll state resets on switch),
-          shared with the composer so sending returns the reader to the live edge. */}
-      <MessageScrollerProvider key={channelId} autoScroll defaultScrollPosition="end">
-        <MessageList
-          channelId={channelId}
-          channelName={channel.name ?? ""}
-          selfUserId={session.user.id}
-          isGuildOwner={guild.data?.viewer.isOwner ?? false}
-          memberUsernames={memberUsernames}
-          onReply={setReplyTo}
-        />
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* One scroller context per channel (keyed so scroll state resets on switch),
+              shared with the composer so sending returns the reader to the live edge. */}
+          <MessageScrollerProvider key={channelId} autoScroll defaultScrollPosition="end">
+            <MessageList
+              channelId={channelId}
+              channelName={channel.name ?? ""}
+              selfUserId={session.user.id}
+              isGuildOwner={guild.data?.viewer.isOwner ?? false}
+              memberUsernames={memberUsernames}
+              onReply={setReplyTo}
+            />
 
-        <TypingLine channelId={channelId} />
-        <Composer
-          channelId={channelId}
-          channelName={channel.name ?? ""}
-          members={mentionMembers}
-          replyTo={replyTo}
-          onCancelReply={() => setReplyTo(null)}
-        />
-      </MessageScrollerProvider>
+            <TypingLine channelId={channelId} />
+            <Composer
+              channelId={channelId}
+              channelName={channel.name ?? ""}
+              members={mentionMembers}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+            />
+          </MessageScrollerProvider>
+        </div>
+
+        {membersPanelOpen && (
+          <MembersPanel
+            guildId={guildId}
+            className="hidden w-60 shrink-0 border-l border-foreground/10 md:flex"
+          />
+        )}
+      </div>
+
+      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
+        <SheetContent side="right" className="w-72">
+          <SheetTitle className="sr-only">Members</SheetTitle>
+          <MembersPanel guildId={guildId} className="flex min-h-0 flex-1" />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
