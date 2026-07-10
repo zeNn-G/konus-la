@@ -9,6 +9,15 @@ import { HashIcon, UsersIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
+// VOICE PROTOTYPE (#10) — throwaway; active only with ?voice=a|b|c in dev.
+import {
+  VoiceProtoMiniStage,
+  VoiceProtoRoom,
+  VoiceProtoStrip,
+  VoiceProtoSwitcher,
+  useVoiceProtoTakeover,
+  useVoiceProtoVariant,
+} from "@/components/voice-prototype";
 import { MessageList } from "@/components/chat/message-list";
 import { MembersPanel } from "@/components/members-panel";
 import { TypingLine } from "@/components/chat/typing-line";
@@ -105,7 +114,19 @@ function ChannelView() {
     [members, selfUserId],
   );
 
+  // VOICE PROTOTYPE (#10)
+  const voiceProtoVariant = useVoiceProtoVariant();
+  const voiceProtoTakeover = useVoiceProtoTakeover(channelId);
+
   if (!channel) return null;
+
+  if (voiceProtoTakeover) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <VoiceProtoRoom />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -127,8 +148,10 @@ function ChannelView() {
         </Button>
       </header>
 
+      <VoiceProtoStrip />
+
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {/* One scroller context per channel (keyed so scroll state resets on switch),
               shared with the composer so sending returns the reader to the live edge. */}
           <MessageScrollerProvider key={channelId} autoScroll defaultScrollPosition="end">
@@ -150,6 +173,8 @@ function ChannelView() {
               onCancelReply={() => setReplyTo(null)}
             />
           </MessageScrollerProvider>
+
+          <VoiceProtoMiniStage />
         </div>
 
         {membersPanelOpen && (
@@ -159,6 +184,8 @@ function ChannelView() {
           />
         )}
       </div>
+
+      {voiceProtoVariant && <VoiceProtoSwitcher />}
 
       <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
         <SheetContent side="right" className="w-72">

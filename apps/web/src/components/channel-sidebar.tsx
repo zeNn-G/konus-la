@@ -32,6 +32,11 @@ import { toast } from "sonner";
 import { ChannelNameDialog } from "@/components/channel-name-dialog";
 import { GuildSettingsDialog } from "@/components/guild-settings/guild-settings-dialog";
 import { UserCard } from "@/components/user-card";
+// VOICE PROTOTYPE (#10) — throwaway; renders null without ?voice=a|b|c in dev.
+import {
+  VoiceProtoSidebarFooter,
+  VoiceProtoSidebarSection,
+} from "@/components/voice-prototype";
 import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -185,9 +190,12 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           </div>
         ))}
         </nav>
+
+        <VoiceProtoSidebarSection />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
+        <VoiceProtoSidebarFooter />
         <UserCard />
       </SidebarFooter>
 
