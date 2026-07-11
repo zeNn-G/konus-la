@@ -85,7 +85,7 @@ serves the full `appRouter`).
 ## Procedures
 
 | Procedure | In → Out | Rate rule (#16) | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `voice.join` | `{ channelId }` → `{ seatSessionId }` | `voiceJoin` 10/60 s | Universal entry — see lifecycle |
 | `voice.leave` | `{}` → `void` | `voiceJoin` (shared) | Immediate `peerLeft`, no grace |
 | `voice.setSelfMute` | `{ muted }` → `void` | `voiceFlags` 10/10 s | Broadcasts `peerMutedSelf` |
@@ -123,7 +123,7 @@ surface as 500s.
 **Bootstrap** — among the first events of every `/ws` subscription (mirrors
 `presence.snapshot`), covering every occupied voice channel visible to the subscriber:
 
-```
+```text
 voice.snapshot: { rooms: Array<{ guildId, channelId,
                                  seats: Array<{ userId, selfMute, selfDeaf }>,
                                  speakingUserIds: string[] }> }
@@ -135,7 +135,7 @@ re-syncs by resubscription. There is no fetch path for occupancy.
 **Guild-wide** (all guild members — everything the sidebar renders):
 
 | Event | Payload |
-|---|---|
+| --- | --- |
 | `voice.peerJoined` | `{ guildId, channelId, userId, selfMute, selfDeaf }` |
 | `voice.peerLeft` | `{ guildId, channelId, userId }` |
 | `voice.peerMutedSelf` | `{ guildId, channelId, userId, selfMute }` |
@@ -145,14 +145,14 @@ re-syncs by resubscription. There is no fetch path for occupancy.
 **Room-only** (current seats of that room — consume triggers):
 
 | Event | Payload |
-|---|---|
+| --- | --- |
 | `voice.producerAdded` | `{ channelId, userId, producerId, kind, source }` |
 | `voice.producerClosed` | `{ channelId, userId, producerId }` |
 
 **Self-only** (own `user:{id}` topic):
 
 | Event | Payload | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `voice.sessionReplaced` | `{ channelId, replacedSeatSessionId }` | Tear down to idle — but only if the id matches your own seat-session id (#12) |
 | `voice.mediaReset` | `{ channelId }` | **Keep your seat, redo your plumbing** — worker respawned; re-run `voice.join` (#15) |
 
@@ -237,7 +237,7 @@ down.**
 - **Caps** (spec defaults, env-overridable):
 
   | Source | Constraints | `maxBitrate` |
-  |---|---|---|
+  | --- | --- | --- |
   | Webcam | 720p@30 ideal | ~1 Mbps |
   | Screenshare 720p | 1280×720 ideal, 30 fps | ~1.5 Mbps |
   | Screenshare 1080p (default) | 1920×1080 ideal, 30 fps | ~3 Mbps |
@@ -295,7 +295,7 @@ device-settings popover, above the UserCard) is visible in BOTH states.
 **Component inventory:**
 
 | Component | Role |
-|---|---|
+| --- | --- |
 | `VoiceRoom` | Channel-pane takeover: tile grid + capsule |
 | `RoomTile` | Avatar/cam/screenshare faces, LIVE badge, square green speaking ring (`green-500`, matches presence) |
 | `ControlCapsule` | In-room controls, bottom-center |
@@ -333,7 +333,7 @@ device-settings popover, above the UserCard) is visible in BOTH states.
 ## Env & config
 
 | Var | Default | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `MEDIASOUP_ANNOUNCED_IP` | `127.0.0.1` (dev) | **Required in prod** (#13) |
 | `MEDIASOUP_RTC_MIN_PORT` / `MEDIASOUP_RTC_MAX_PORT` | `40000` / `40100` | UDP+TCP, mapped host→container directly in Phase 8 |
 | Media caps (webcam/screenshare bitrates, incoming-bitrate backstop) | §Media policy | Env-overridable |
