@@ -4,7 +4,13 @@ import { z } from "zod";
 import { requireChannelMember } from "../index";
 import { perUserRatelimit, voiceFlagsLimiter, voiceJoinLimiter } from "../ratelimit";
 import { voiceProcedure } from "../voice/availability";
-import { joinVoice, leaveVoice, setSelfDeaf, setSelfMute } from "../voice/rooms";
+import {
+  joinVoice,
+  leaveVoice,
+  setSelfDeaf,
+  setSelfMute,
+  VoiceRoomFullError,
+} from "../voice/rooms";
 
 /**
  * Voice occupancy signaling (phase-5 spec §Procedures; slice 2 of 5): the seat lifecycle
@@ -26,12 +32,19 @@ export const voiceRouter = {
       if (channel.kind !== "voice" || !channel.guildId) {
         throw new ORPCError("NOT_FOUND", { message: "Not a voice channel." });
       }
-      return joinVoice({
-        userId: context.user.id,
-        connectionId: context.connectionId,
-        guildId: channel.guildId,
-        channelId: channel.id,
-      });
+      try {
+        return await joinVoice({
+          userId: context.user.id,
+          connectionId: context.connectionId,
+          guildId: channel.guildId,
+          channelId: channel.id,
+        });
+      } catch (error) {
+        if (error instanceof VoiceRoomFullError) {
+          throw new ORPCError("CONFLICT", { message: "Voice channel is full." });
+        }
+        throw error;
+      }
     }),
 
   /** Explicit leave: immediate peerLeft, no grace. Shares the join budget (#16). */

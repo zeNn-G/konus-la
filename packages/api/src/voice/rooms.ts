@@ -15,6 +15,15 @@ import { publishTo } from "../realtime/publishers";
  */
 
 const GRACE_MS = 30_000;
+/** Phase-5 scope: ≤20 concurrent per room. Seats count — a grace seat still holds its slot. */
+const MAX_SEATS_PER_ROOM = 20;
+
+/** Thrown by `joinVoice` when the target room is at capacity; the router maps it to CONFLICT. */
+export class VoiceRoomFullError extends Error {
+  constructor() {
+    super("Voice channel is full");
+  }
+}
 
 interface Peer {
   connectionId: string;
@@ -62,9 +71,20 @@ async function publishGuildWide(guildId: string, event: RealtimeEvent): Promise<
   await publishTo(await listGuildMemberUserIds(guildId), event);
 }
 
+/** Every way a seat empties — leave, switch, grace expiry — fans out the same peerLeft. */
+async function publishPeerLeft(room: Room, userId: string): Promise<void> {
+  await publishGuildWide(room.guildId, {
+    type: "voice.peerLeft",
+    guildId: room.guildId,
+    channelId: room.channelId,
+    userId,
+  });
+}
+
 /**
  * Media half gone (socket drop or worker death): keep the seat and its flags, start the
  * grace countdown. Expiry is the involuntary leave — peerLeft fans out then, not now.
+ * `graceMs` exists as a parameter for the tests; production callers take the default.
  */
 function startGrace(room: Room, seat: Seat, graceMs: number): void {
   seat.peer = null;
@@ -72,11 +92,11 @@ function startGrace(room: Room, seat: Seat, graceMs: number): void {
   seat.graceTimer = setTimeout(() => {
     seat.graceTimer = null;
     removeSeat(room, seat);
-    void publishGuildWide(room.guildId, {
-      type: "voice.peerLeft",
-      guildId: room.guildId,
-      channelId: room.channelId,
-      userId: seat.userId,
+    // Fire-and-forget off a timer: nothing upstream can await it. A dropped publish only
+    // desyncs sidebars until their next resubscription, but must not become an unhandled
+    // rejection.
+    publishPeerLeft(room, seat.userId).catch((error) => {
+      console.error("voice: grace-expiry peerLeft publish failed", error);
     });
   }, graceMs);
 }
@@ -94,6 +114,14 @@ export async function joinVoice(input: {
 }): Promise<{ seatSessionId: string }> {
   const { userId, connectionId, guildId, channelId } = input;
   const current = seatOf(userId);
+
+  // Capacity gates only NEW seats — a rebind/steal re-occupies the caller's own — and is
+  // checked before any mutation so a switch into a full room never unseats the caller.
+  const takesNewSeat = !current || current.room.channelId !== channelId;
+  const targetRoom = rooms.get(channelId);
+  if (takesNewSeat && targetRoom && targetRoom.seats.size >= MAX_SEATS_PER_ROOM) {
+    throw new VoiceRoomFullError();
+  }
 
   // Same channel again: grace rebind, multi-tab steal, or a same-socket re-join (the
   // mediaReset path) — every one of them rebinds and mints, none publishes guild-wide
@@ -129,12 +157,7 @@ export async function joinVoice(input: {
     const oldPeer = oldSeat.peer;
     const replacedSeatSessionId = oldSeat.seatSessionId;
     removeSeat(oldRoom, oldSeat);
-    await publishGuildWide(oldRoom.guildId, {
-      type: "voice.peerLeft",
-      guildId: oldRoom.guildId,
-      channelId: oldRoom.channelId,
-      userId,
-    });
+    await publishPeerLeft(oldRoom, userId);
     // Cross-channel steal: another tab was live in the old room — tell it to tear down.
     if (oldPeer && oldPeer.connectionId !== connectionId) {
       await publishTo([userId], {
@@ -176,12 +199,7 @@ export async function leaveVoice(userId: string): Promise<void> {
   const current = seatOf(userId);
   if (!current) return;
   removeSeat(current.room, current.seat);
-  await publishGuildWide(current.room.guildId, {
-    type: "voice.peerLeft",
-    guildId: current.room.guildId,
-    channelId: current.room.channelId,
-    userId,
-  });
+  await publishPeerLeft(current.room, userId);
 }
 
 /** Flip the self-mute flag and broadcast it. Returns false when the user has no seat. */
@@ -263,7 +281,7 @@ export async function voiceWorkerRespawned(): Promise<void> {
 
 /**
  * The `voice.snapshot` payload for one subscriber: every occupied voice channel in their
- * guilds. Read synchronously off the maps at subscribe time (presence precedent).
+ * guilds, read off the in-memory maps at subscribe time (presence precedent).
  * `speakingUserIds` stays empty until the media slice wires the AudioLevelObserver.
  */
 export async function voiceSnapshotFor(

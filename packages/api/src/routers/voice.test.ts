@@ -344,6 +344,7 @@ describe("voice multi-tab steal", () => {
     await settle();
     expect(ofType(alice, "voice.peerJoined")).toHaveLength(0);
     expect(ofType(alice, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(alice, "voice.sessionReplaced")).toHaveLength(0); // self-only, not guild-wide
   });
 
   test("cross-channel steal: guild sees the move, loser tab gets sessionReplaced", async () => {
@@ -434,6 +435,70 @@ describe("voice worker death & respawn", () => {
         seats: [expect.objectContaining({ userId: IVY })],
       }),
     ]);
+  });
+});
+
+describe("voice room capacity", () => {
+  test("a full room rejects the 21st fresh seat but never its own members' rebinds", async () => {
+    // Dedicated guild so the fill doesn't pollute the main fixtures' budgets or rooms.
+    const owner = "v-cap-0";
+    await seedTestUser({ id: owner, username: "v-cap-0" });
+    const capGuildId = (await createGuildWithOwner({ name: "Packed", ownerUserId: owner })).id;
+    const vcPacked = await seedTestVoiceChannel(capGuildId, "voice-packed");
+
+    const members = [owner];
+    for (let i = 1; i < 20; i++) {
+      const id = `v-cap-${i}`;
+      members.push(id);
+      await seedTestUser({ id, username: id });
+      await seedTestMembership(capGuildId, id);
+    }
+    for (const member of members) {
+      await call(appRouter.voice.join, { channelId: vcPacked }, asWsUser(member, `conn-${member}`));
+    }
+
+    const straggler = "v-cap-20";
+    await seedTestUser({ id: straggler, username: straggler });
+    await seedTestMembership(capGuildId, straggler);
+    await expectCode(
+      call(appRouter.voice.join, { channelId: vcPacked }, asWsUser(straggler, "conn-cap-20")),
+      "CONFLICT",
+    );
+
+    // A seated user re-joining (steal/rebind) occupies no new seat — always allowed.
+    const rebound = await call(
+      appRouter.voice.join,
+      { channelId: vcPacked },
+      asWsUser(owner, "conn-cap-0b"),
+    );
+    expect(rebound.seatSessionId).toEqual(expect.any(String));
+  });
+});
+
+describe("voice server restart", () => {
+  test("rooms are memory: after a restart the snapshot is empty and rejoin lands as a fresh join", async () => {
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(HANK, "conn-h2"));
+    resetVoiceStateForTests(); // a restart IS this: every room gone, nothing persisted
+
+    const iterator = await call(appRouter.realtime.events, undefined, asUser(HANK));
+    try {
+      await iterator.next(); // presence.snapshot
+      const second = await iterator.next();
+      expect(second.value).toMatchObject({ type: "voice.snapshot", rooms: [] });
+    } finally {
+      await iterator.return?.(undefined);
+    }
+
+    // The recovery move is the same voice.join, landing as a fresh join.
+    const alice = collect(ALICE);
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(HANK, "conn-h3"));
+    await waitFor(() => ofType(alice, "voice.peerJoined").length === 1, "fresh peerJoined");
+    expect(ofType(alice, "voice.peerJoined")[0]).toMatchObject({
+      channelId: vcMain,
+      userId: HANK,
+      selfMute: false, // nothing stale survives — flags reset with the room
+      selfDeaf: false,
+    });
   });
 });
 
