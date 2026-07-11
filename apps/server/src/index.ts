@@ -9,6 +9,12 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { CORSPlugin } from "@orpc/server/plugins";
 
 import { logger } from "./logger";
+import { startSfu } from "./sfu";
+
+// SFU worker boots with the server and lives for the process (phase-5 spec §Worker
+// lifecycle). Fire-and-forget: a failed boot goes through the manager's breaker instead
+// of blocking HTTP/WS startup.
+startSfu();
 
 const corsPlugin = new CORSPlugin({
   origin: (origin) => (origin === env.CORS_ORIGIN ? origin : null),

@@ -9,7 +9,13 @@ export const env = createEnv({
     BETTER_AUTH_URL: z.url(),
     CORS_ORIGIN: z.url(),
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-    PUBLIC_IP: z.string().default("127.0.0.1"),
+    // mediasoup's announced address (ADR 0007 replaces the ROADMAP's PUBLIC_IP): what ICE
+    // candidates advertise to browsers. Loopback only works on the dev box itself, so
+    // production must set the host's real public IP explicitly.
+    MEDIASOUP_ANNOUNCED_IP:
+      process.env.NODE_ENV === "production"
+        ? z.string().min(1)
+        : z.string().min(1).default("127.0.0.1"),
     MAX_GUILDS_PER_USER: z.coerce.number().int().positive().default(5),
     MAX_DM_GROUP_SIZE: z.coerce.number().int().min(3).default(10),
     MEDIASOUP_RTC_MIN_PORT: z.coerce.number().int().default(40000),
