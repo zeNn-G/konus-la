@@ -31,15 +31,25 @@ function makeHarness() {
   });
 
   const onAvailabilityChange = vi.fn();
+  const onWorkerLost = vi.fn();
+  const onWorkerBooted = vi.fn();
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-  const manager = createWorkerManager({ spawn, onAvailabilityChange, logger });
+  const manager = createWorkerManager({
+    spawn,
+    onAvailabilityChange,
+    onWorkerLost,
+    onWorkerBooted,
+    logger,
+  });
 
   return {
     manager,
     spawn,
     workers,
     onAvailabilityChange,
+    onWorkerLost,
+    onWorkerBooted,
     logger,
     failNextSpawns(count: number) {
       pendingFailures = count;
@@ -217,5 +227,42 @@ describe("crash-loop breaker", () => {
     expect(h.spawn).toHaveBeenCalledTimes(4);
     expect(h.manager.isDown()).toBe(false);
     expect(h.manager.getWorker()).toBe(h.workers[0]);
+  });
+});
+
+describe("voice seat hooks", () => {
+  test("onWorkerLost fires on a death (seats → grace), not on a failed boot", async () => {
+    const h = makeHarness();
+    h.failNextSpawns(1);
+    await h.manager.start(); // boot fails — no worker existed, no seats to grace
+    await flush();
+    expect(h.onWorkerLost).not.toHaveBeenCalled();
+
+    h.manager.getWorker()!.die();
+    await flush();
+    expect(h.onWorkerLost).toHaveBeenCalledTimes(1);
+  });
+
+  test("onWorkerBooted fires after every successful boot, including breaker recovery", async () => {
+    const h = makeHarness();
+    await h.manager.start();
+    expect(h.onWorkerBooted).toHaveBeenCalledTimes(1);
+
+    h.manager.getWorker()!.die();
+    await flush();
+    expect(h.onWorkerBooted).toHaveBeenCalledTimes(2); // eager respawn completed
+
+    // Open the breaker: two more quick deaths.
+    for (let i = 0; i < 2; i++) {
+      h.manager.getWorker()!.die();
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(h.manager.isDown()).toBe(true);
+    expect(h.onWorkerBooted).toHaveBeenCalledTimes(3); // failed period adds nothing yet
+
+    await vi.advanceTimersByTimeAsync(30_000); // slow retry succeeds
+    expect(h.manager.isDown()).toBe(false);
+    expect(h.onWorkerBooted).toHaveBeenCalledTimes(4);
   });
 });

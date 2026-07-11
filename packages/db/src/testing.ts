@@ -60,6 +60,16 @@ export async function seedTestMembership(guildId: string, userId: string): Promi
 }
 
 /**
+ * Insert a guild voice channel. Test-only until voice-channel creation gets a product
+ * surface — `channel.create` still hardcodes `kind: "text"`.
+ */
+export async function seedTestVoiceChannel(guildId: string, name: string): Promise<string> {
+  const channelId = crypto.randomUUID();
+  await db.insert(channel).values({ id: channelId, guildId, kind: "voice", name });
+  return channelId;
+}
+
+/**
  * Insert a DM channel with its participant rows, bypassing the dm router. 1:1 channels
  * (`isGroup: false`) require exactly two participants and get their `dmPairKey` computed.
  * `joinedAtOffsetsMs` (parallel to `participantIds`) makes owner-transfer ordering

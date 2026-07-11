@@ -9,6 +9,7 @@ import { profileRouter } from "./profile";
 import { realtimeRouter } from "./realtime";
 import { signupCodeRouter } from "./signup-code";
 import { userRouter } from "./user";
+import { voiceRouter } from "./voice";
 
 export const appRouter = {
   healthCheck: publicProcedure.handler(() => {
@@ -23,6 +24,7 @@ export const appRouter = {
   typing: typingRouter,
   dm: dmRouter,
   realtime: realtimeRouter,
+  voice: voiceRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

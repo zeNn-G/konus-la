@@ -18,6 +18,16 @@ export function asNobody(): { context: Context } {
   return { context: { headers: new Headers() } };
 }
 
+/**
+ * Like `asUser`, but with the connection-scoped context the `/ws` message handler injects —
+ * what `voice.*` procedures require. Distinct `connectionId`s simulate distinct tabs.
+ */
+export function asWsUser(userId: string, connectionId: string): { context: Context } {
+  return {
+    context: { headers: new Headers({ "x-test-user": userId }), connectionId },
+  };
+}
+
 /** Assert a procedure call rejects with the given ORPC error code. */
 export async function expectCode(promise: Promise<unknown>, code: string): Promise<void> {
   const error = await promise.then(

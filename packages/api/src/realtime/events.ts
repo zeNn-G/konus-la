@@ -111,6 +111,69 @@ export type RealtimeEvent =
       type: "guild.deleted";
       guildId: string;
     }
+  | {
+      /**
+       * Voice occupancy bootstrap — yielded right after `presence.snapshot` on every
+       * subscription: every occupied voice channel in the subscriber's guilds, flags
+       * included. Socket-connected ⇔ occupancy-correct; there is no fetch path (ADR 0007).
+       * `speakingUserIds` stays empty until the media slice wires the AudioLevelObserver.
+       */
+      type: "voice.snapshot";
+      rooms: Array<{
+        guildId: string;
+        channelId: string;
+        seats: Array<{ userId: string; selfMute: boolean; selfDeaf: boolean }>;
+        speakingUserIds: string[];
+      }>;
+    }
+  | {
+      /** Guild-wide: someone took a seat (fresh join or channel switch — never a rebind). */
+      type: "voice.peerJoined";
+      guildId: string;
+      channelId: string;
+      userId: string;
+      selfMute: boolean;
+      selfDeaf: boolean;
+    }
+  | {
+      /** Guild-wide: a seat emptied — explicit leave, channel switch, or grace expiry. */
+      type: "voice.peerLeft";
+      guildId: string;
+      channelId: string;
+      userId: string;
+    }
+  | {
+      type: "voice.peerMutedSelf";
+      guildId: string;
+      channelId: string;
+      userId: string;
+      selfMute: boolean;
+    }
+  | {
+      type: "voice.peerDeafenedSelf";
+      guildId: string;
+      channelId: string;
+      userId: string;
+      selfDeaf: boolean;
+    }
+  | {
+      /**
+       * Self-only: another connection took over your seat (multi-tab steal). Tear down to
+       * idle ONLY if `replacedSeatSessionId` matches your own — the winning tab's session
+       * id never appears here, so it ignores the event (race-proof for a third tab).
+       */
+      type: "voice.sessionReplaced";
+      channelId: string;
+      replacedSeatSessionId: string;
+    }
+  | {
+      /**
+       * Self-only, published after an SFU worker respawn: keep your seat, redo your
+       * plumbing — re-run `voice.join` (it lands as a grace rebind).
+       */
+      type: "voice.mediaReset";
+      channelId: string;
+    }
   | { type: "dm.participant.added"; channelId: string; userId: string }
   | {
       /**

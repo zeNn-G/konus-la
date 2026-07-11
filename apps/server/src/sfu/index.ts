@@ -1,4 +1,5 @@
 import { setVoiceDown } from "@konus-la/api/voice/availability";
+import { voiceWorkerDied, voiceWorkerRespawned } from "@konus-la/api/voice/rooms";
 import { env } from "@konus-la/env/server";
 import type { types } from "mediasoup";
 
@@ -43,6 +44,14 @@ export function startSfu(): WorkerManager<types.Worker> {
         rtcMaxPort: env.MEDIASOUP_RTC_MAX_PORT,
       }),
     onAvailabilityChange: setVoiceDown,
+    // Death → every seat's media half enters grace, guild-wide silence; the respawn that
+    // follows publishes self-only `voice.mediaReset` so seated clients rejoin (spec #15).
+    onWorkerLost: () => voiceWorkerDied(),
+    onWorkerBooted: () => {
+      void voiceWorkerRespawned().catch((error) => {
+        logger.error({ err: error }, "voice mediaReset publish failed");
+      });
+    },
     logger,
   });
   sfuGlobal[GLOBAL_KEY] = manager;

@@ -24,6 +24,13 @@ export interface WorkerManagerOptions<W extends WorkerLike> {
   spawn: () => Promise<W>;
   /** Transition hook: `true` when voice is declared down, `false` when a boot recovers it. */
   onAvailabilityChange: (down: boolean) => void;
+  /**
+   * A live worker died — every voice seat's media half is gone (seats enter grace).
+   * Not fired for failed boots: no worker existed, so no seat state changed.
+   */
+  onWorkerLost?: () => void;
+  /** A boot completed — seated users get their self-only `voice.mediaReset` from here. */
+  onWorkerBooted?: () => void;
   logger: {
     info: (obj: object, msg: string) => void;
     warn: (obj: object, msg: string) => void;
@@ -46,7 +53,7 @@ export interface WorkerManager<W extends WorkerLike> {
 export function createWorkerManager<W extends WorkerLike>(
   options: WorkerManagerOptions<W>,
 ): WorkerManager<W> {
-  const { spawn, onAvailabilityChange, logger } = options;
+  const { spawn, onAvailabilityChange, onWorkerLost, onWorkerBooted, logger } = options;
 
   let worker: W | null = null;
   let down = false;
@@ -103,6 +110,7 @@ export function createWorkerManager<W extends WorkerLike>(
     spawned.on("died", (error) => {
       if (worker !== spawned) return; // stale handle after a newer boot
       worker = null;
+      onWorkerLost?.();
       recordLoss("died", error);
     });
 
@@ -111,6 +119,7 @@ export function createWorkerManager<W extends WorkerLike>(
       down = false;
       onAvailabilityChange(false);
     }
+    onWorkerBooted?.();
   }
 
   return {

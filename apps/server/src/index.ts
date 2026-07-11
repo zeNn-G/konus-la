@@ -1,4 +1,8 @@
-import { presenceConnectionClosed, presenceConnectionOpened } from "@konus-la/api";
+import {
+  presenceConnectionClosed,
+  presenceConnectionOpened,
+  voiceConnectionClosed,
+} from "@konus-la/api";
 import { createContext } from "@konus-la/api/context";
 import { appRouter } from "@konus-la/api/routers/index";
 import { auth } from "@konus-la/auth";
@@ -56,6 +60,8 @@ const wsHandler = new BunWSRPCHandler(appRouter, {
 type WSData = {
   userId: string;
   headers: Headers;
+  /** Socket identity for voice: `voice.*` procedures require it, seats/peers key on it. */
+  connectionId: string;
 };
 
 const server = Bun.serve<WSData, string>({
@@ -76,7 +82,11 @@ const server = Bun.serve<WSData, string>({
         return new Response("Unauthorized", { status: 401 });
       }
 
-      const data: WSData = { userId: session.user.id, headers: req.headers };
+      const data: WSData = {
+        userId: session.user.id,
+        headers: req.headers,
+        connectionId: crypto.randomUUID(),
+      };
       if (server.upgrade(req, { data })) return;
 
       return new Response("Upgrade failed", { status: 426 });
@@ -121,11 +131,15 @@ const server = Bun.serve<WSData, string>({
       });
     },
     message(ws, message) {
-      wsHandler.message(ws, message, { context: { headers: ws.data.headers } });
+      wsHandler.message(ws, message, {
+        context: { headers: ws.data.headers, connectionId: ws.data.connectionId },
+      });
     },
     close(ws) {
       wsHandler.close(ws);
       presenceConnectionClosed(ws.data.userId);
+      // If this socket owned a voice peer, its seat enters the 30 s grace window.
+      voiceConnectionClosed(ws.data.connectionId);
     },
   },
 });

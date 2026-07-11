@@ -10,6 +10,12 @@ export type CreateContextOptions = {
  */
 export interface Context extends LoggerContext {
   headers: Headers;
+  /**
+   * Socket identity, present ONLY for calls arriving over the `/ws` connection (minted at
+   * upgrade, passed in by the `websocket.message` handler). Fetch `/rpc` contexts never
+   * carry one — `voice.*` procedures gate on this to enforce WS-only signaling (ADR 0007).
+   */
+  connectionId?: string;
 }
 
 export async function createContext({ headers }: CreateContextOptions): Promise<Context> {

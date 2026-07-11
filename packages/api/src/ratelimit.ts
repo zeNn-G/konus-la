@@ -21,6 +21,10 @@ export const dmCreateGroupLimiter = new MemoryRatelimiter({ maxRequests: 10, win
 /** Shared instance for add/remove/leave/rename — distinct rules keep distinct windows. */
 export const dmMutateLimiter = new MemoryRatelimiter({ maxRequests: 30, window: 60_000 });
 export const userSearchLimiter = new MemoryRatelimiter({ maxRequests: 20, window: 10_000 });
+/** Shared by `voice.join` AND `voice.leave` — one budget for the join/leave pair (#16). */
+export const voiceJoinLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 60_000 });
+/** Shared by `voice.setSelfMute` / `voice.setSelfDeaf`. */
+export const voiceFlagsLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 10_000 });
 
 /** Rate-limit an authenticated procedure by caller id. Chain after `protectedProcedure`. */
 export function perUserRatelimit(
