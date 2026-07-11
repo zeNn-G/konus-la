@@ -6,7 +6,9 @@ import {
   seedTestVoiceChannel,
 } from "@konus-la/db/testing";
 import { call } from "@orpc/server";
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import * as mediasoup from "mediasoup";
+import type { types } from "mediasoup";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import type { RealtimeEvent } from "../realtime/events";
 import { publisher } from "../realtime/publisher";
@@ -18,6 +20,7 @@ import {
   voiceWorkerDied,
   voiceWorkerRespawned,
 } from "../voice/rooms";
+import { setSfuWorker } from "../voice/sfu";
 import { appRouter } from "./index";
 
 /**
@@ -44,7 +47,14 @@ let vcElsewhere: string; // in Mallory's guild
 let textChannelId: string;
 let dmChannelId: string;
 
+// `voice.join` now builds each room's router lazily, so occupancy tests need a real
+// worker too (vitest runs under Node — no Bun spawn patch required).
+let worker: types.Worker;
+
 beforeAll(async () => {
+  worker = await mediasoup.createWorker({ logLevel: "error" });
+  setSfuWorker(() => worker);
+
   await seedTestUser({ id: ALICE, username: "v-alice" });
   await seedTestUser({ id: BOB, username: "v-bob" });
   await seedTestUser({ id: CARA, username: "v-cara" });
@@ -119,6 +129,10 @@ afterEach(() => {
   for (const collector of collectors) collector.stop();
   collectors.length = 0;
   resetVoiceStateForTests();
+});
+
+afterAll(() => {
+  worker.close();
 });
 
 // --- tests -------------------------------------------------------------------------------

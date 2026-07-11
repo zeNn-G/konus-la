@@ -23,6 +23,7 @@
     "@orpc/experimental-ratelimit": "^1.14.6",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
+    "mediasoup": "3.21.0",
     "zod": "catalog:"
   },
   "devDependencies": {

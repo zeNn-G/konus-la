@@ -158,6 +158,36 @@ export type RealtimeEvent =
     }
   | {
       /**
+       * Guild-wide, edge-triggered FULL set: published only when the room's speaking set
+       * changes (the AudioLevelObserver's ~500 ms interval is the debounce — ADR 0007).
+       * Silent rooms cost zero messages; each event replaces the previous set wholesale.
+       */
+      type: "voice.activeSpeakers";
+      guildId: string;
+      channelId: string;
+      speakingUserIds: string[];
+    }
+  | {
+      /**
+       * Room-only (current seats of that room): a peer published a track — the consume
+       * trigger. `source` disambiguates the two video producers (cam vs screen tile).
+       */
+      type: "voice.producerAdded";
+      channelId: string;
+      userId: string;
+      producerId: string;
+      kind: "audio" | "video";
+      source: "mic" | "cam" | "screen";
+    }
+  | {
+      /** Room-only: a producer is gone — explicit close, or its peer's media half died. */
+      type: "voice.producerClosed";
+      channelId: string;
+      userId: string;
+      producerId: string;
+    }
+  | {
+      /**
        * Self-only: another connection took over your seat (multi-tab steal). Tear down to
        * idle ONLY if `replacedSeatSessionId` matches your own — the winning tab's session
        * id never appears here, so it ignores the event (race-proof for a third tab).

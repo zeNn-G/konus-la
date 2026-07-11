@@ -1,5 +1,6 @@
 import { setVoiceDown } from "@konus-la/api/voice/availability";
 import { voiceWorkerDied, voiceWorkerRespawned } from "@konus-la/api/voice/rooms";
+import { setSfuWorker } from "@konus-la/api/voice/sfu";
 import { env } from "@konus-la/env/server";
 import type { types } from "mediasoup";
 
@@ -33,6 +34,7 @@ export function startSfu(): WorkerManager<types.Worker> {
     // forgive recorded deaths: rapid dev saves must not open the crash-loop breaker.
     existing.resetDeathWindow();
     setVoiceDown(existing.isDown());
+    setSfuWorker(() => existing.getWorker());
     return existing;
   }
 
@@ -55,6 +57,8 @@ export function startSfu(): WorkerManager<types.Worker> {
     logger,
   });
   sfuGlobal[GLOBAL_KEY] = manager;
+  // Rooms build their routers off whatever worker is current — respawns swap it in place.
+  setSfuWorker(() => manager.getWorker());
   void manager.start();
   return manager;
 }

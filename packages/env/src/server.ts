@@ -20,6 +20,9 @@ export const env = createEnv({
     MAX_DM_GROUP_SIZE: z.coerce.number().int().min(3).default(10),
     MEDIASOUP_RTC_MIN_PORT: z.coerce.number().int().default(40000),
     MEDIASOUP_RTC_MAX_PORT: z.coerce.number().int().default(40100),
+    // Server-side ceiling on what one send transport may push at the SFU (spec §Media
+    // policy backstop): client encodings are advisory, this makes the cap authoritative.
+    MEDIASOUP_MAX_INCOMING_BITRATE: z.coerce.number().int().positive().default(6_500_000),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

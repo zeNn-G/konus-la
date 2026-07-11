@@ -25,6 +25,10 @@ export const userSearchLimiter = new MemoryRatelimiter({ maxRequests: 20, window
 export const voiceJoinLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 60_000 });
 /** Shared by `voice.setSelfMute` / `voice.setSelfDeaf`. */
 export const voiceFlagsLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 10_000 });
+/** One budget for the whole media ceremony: transports, connect, produce, closeProducer. */
+export const voiceSignalLimiter = new MemoryRatelimiter({ maxRequests: 15, window: 10_000 });
+/** Shared by `voice.consume` / `voice.setConsumersPaused` — visibility churn is chatty. */
+export const voiceConsumeLimiter = new MemoryRatelimiter({ maxRequests: 60, window: 10_000 });
 
 /** Rate-limit an authenticated procedure by caller id. Chain after `protectedProcedure`. */
 export function perUserRatelimit(
