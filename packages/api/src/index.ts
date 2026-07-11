@@ -7,6 +7,7 @@ import type { Context } from "./context";
 export type { ChatMessage, EventMap, RealtimeEvent } from "./realtime/events";
 export { publisher } from "./realtime/publisher";
 export { presenceConnectionClosed, presenceConnectionOpened } from "./realtime/presence";
+export { voiceConnectionClosed } from "./voice/rooms";
 
 export const o = os.$context<Context>();
 

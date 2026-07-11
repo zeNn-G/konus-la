@@ -2,7 +2,7 @@ import { seedTestUser } from "@konus-la/db/testing";
 import { call, ORPCError } from "@orpc/server";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
-import { asNobody, asUser, expectCode } from "../testing";
+import { asNobody, asWsUser, expectCode } from "../testing";
 import { setVoiceDown, voiceProcedure } from "./availability";
 
 // A voice procedure the way later slices will build them: chained off `voiceProcedure`
@@ -21,12 +21,12 @@ afterEach(() => {
 
 describe("voice availability gate", () => {
   test("passes through while voice is up", async () => {
-    expect(await call(probe, undefined, asUser(USER))).toBe("ok");
+    expect(await call(probe, undefined, asWsUser(USER, "conn-avail"))).toBe("ok");
   });
 
   test("throws defined VOICE_UNAVAILABLE while voice is declared down", async () => {
     setVoiceDown(true);
-    const error = await call(probe, undefined, asUser(USER)).then(
+    const error = await call(probe, undefined, asWsUser(USER, "conn-avail")).then(
       () => null,
       (thrown: unknown) => thrown,
     );
@@ -42,7 +42,7 @@ describe("voice availability gate", () => {
   test("recovers: gate reopens once voice comes back up", async () => {
     setVoiceDown(true);
     setVoiceDown(false);
-    expect(await call(probe, undefined, asUser(USER))).toBe("ok");
+    expect(await call(probe, undefined, asWsUser(USER, "conn-avail"))).toBe("ok");
   });
 
   test("auth still gates first — unauthenticated callers get UNAUTHORIZED, not voice state", async () => {
