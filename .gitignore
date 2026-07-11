@@ -53,4 +53,7 @@ temp
 # Playwright MCP session artifacts (snapshots, console logs, run_code scripts)
 .playwright-mcp/
 
+# Throwaway spike code — durable records live in the wayfinder ticket resolutions
+spikes/
+
 local.db
