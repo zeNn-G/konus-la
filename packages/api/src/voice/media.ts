@@ -124,25 +124,32 @@ export async function produce(
   },
 ): Promise<{ producerId: string }> {
   const { room, peer } = requireLivePeer(userId, connectionId);
+  if (peer.state !== "connected" && peer.state !== "producing") {
+    throw new VoiceInvalidStateError("produce before the ceremony reached connected.");
+  }
   if (!peer.sendTransport || peer.sendTransport.id !== input.transportId) {
     throw new VoiceInvalidStateError("produce requires the send transport.");
   }
   if (!peer.connectedTransportIds.has(input.transportId)) {
     throw new VoiceInvalidStateError("produce requires a connected send transport.");
   }
-  // 1 audio + ≤1 cam + ≤1 screen per peer (ROADMAP; server-enforced).
-  for (const entry of peer.producers.values()) {
-    if (entry.source === input.source) {
-      throw new VoiceInvalidStateError(`A ${input.source} producer already exists.`);
-    }
+  // 1 audio + ≤1 cam + ≤1 screen per peer (ROADMAP; server-enforced). The slot is
+  // reserved before the await so interleaved produces cannot both claim it.
+  if (peer.sources.has(input.source)) {
+    throw new VoiceInvalidStateError(`A ${input.source} producer already exists.`);
   }
-  const producer = await peer.sendTransport
-    .produce({
+  peer.sources.add(input.source);
+  let producer: types.Producer;
+  try {
+    producer = await peer.sendTransport.produce({
       kind: input.kind,
       rtpParameters: input.rtpParameters,
       appData: { userId, source: input.source },
-    })
-    .catch(asBadMedia);
+    });
+  } catch (error) {
+    peer.sources.delete(input.source);
+    asBadMedia(error);
+  }
   peer.producers.set(producer.id, { producer, source: input.source });
   peer.state = "producing";
   if (producer.kind === "audio" && room.audioLevelObserver && !room.audioLevelObserver.closed) {
@@ -169,6 +176,7 @@ export async function closeProducer(
   if (!entry) throw new VoiceNotFoundError("No such producer of yours.");
   entry.producer.close(); // consumers of it close via their 'producerclose' listeners
   peer.producers.delete(producerId);
+  peer.sources.delete(entry.source);
   await publishRoomOnly(room, {
     type: "voice.producerClosed",
     channelId: room.channelId,
@@ -226,12 +234,11 @@ function producerInRoom(
 }
 
 /**
- * Batched pause/resume (#18) — deafen's sibling and the visibility policy's verb.
- * Ownership by construction: only the caller's own consumer map is ever consulted, so a
- * foreign id cannot be touched. Unknown ids are SKIPPED rather than rejected: a consumer
- * closing under an in-flight batch (its producer stopped) is a normal race, and erroring
- * would shove the client into its rejoin path. Resuming audio while self-deafened is
- * refused — undeafen is the batched resume. No broadcast.
+ * Batched pause/resume (#18) — deafen's sibling and the visibility policy's verb. Acts
+ * only on the caller's own consumers; ids that don't name one are SKIPPED rather than
+ * rejected — a consumer closing under an in-flight batch (its producer stopped) is a
+ * normal race, and erroring would shove the client into its rejoin path. Resuming audio
+ * while self-deafened is refused — undeafen is the batched resume. No broadcast.
  */
 export async function setConsumersPaused(
   userId: string,

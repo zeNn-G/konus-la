@@ -5,9 +5,7 @@ import type { types } from "mediasoup";
 import { call } from "@orpc/server";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
-import type { RealtimeEvent } from "../realtime/events";
-import { publisher } from "../realtime/publisher";
-import { asUser, asWsUser, expectCode } from "../testing";
+import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
   resetVoiceStateForTests,
   updateSpeakingUserIds,
@@ -119,51 +117,8 @@ async function ceremony(userId: string, connectionId: string, channelId: string)
   return { ws, caps, send, recv, sendId: send.id, recvId: recv.id };
 }
 
-// --- event observation (voice.test.ts pattern) ---------------------------------------------
-
-type Collector = { events: RealtimeEvent[]; stop: () => void };
-
-const collectors: Collector[] = [];
-
-function collect(userId: string): Collector {
-  const events: RealtimeEvent[] = [];
-  const controller = new AbortController();
-  const iterator = publisher.subscribe(`user:${userId}`, { signal: controller.signal });
-  void (async () => {
-    try {
-      for await (const event of iterator) events.push(event);
-    } catch {
-      // subscription aborted by stop()
-    }
-  })();
-  const collector = { events, stop: () => controller.abort() };
-  collectors.push(collector);
-  return collector;
-}
-
-function ofType<T extends RealtimeEvent["type"]>(
-  collector: Collector,
-  type: T,
-): Extract<RealtimeEvent, { type: T }>[] {
-  return collector.events.filter((event) => event.type === type) as Extract<
-    RealtimeEvent,
-    { type: T }
-  >[];
-}
-
-const settle = () => new Promise((resolve) => setTimeout(resolve, 25));
-
-async function waitFor(predicate: () => boolean, what: string, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
 afterEach(() => {
-  for (const collector of collectors) collector.stop();
-  collectors.length = 0;
+  stopCollectors();
   resetVoiceStateForTests();
 });
 
@@ -399,6 +354,23 @@ describe("producer limits (1 mic + ≤1 cam + ≤1 screen)", () => {
     // kind/source pairing is a schema-level contract.
     await expectCode(produce("video", "mic"), "BAD_REQUEST");
     await expectCode(produce("audio", "cam"), "BAD_REQUEST");
+  });
+
+  test("interleaved produces for one source: exactly one wins the slot", async () => {
+    const PETE = "vm-pete";
+    await seedMember(PETE);
+    const pete = await ceremony(PETE, "rc-p", vcA);
+
+    const mic = () =>
+      call(
+        appRouter.voice.produce,
+        { transportId: pete.sendId, kind: "audio", rtpParameters: audioRtpParameters(ssrc()), source: "mic" },
+        pete.ws,
+      );
+    const results = await Promise.allSettled([mic(), mic()]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const loser = results.find((r) => r.status === "rejected");
+    expect((loser as PromiseRejectedResult).reason.code).toBe("VOICE_INVALID_STATE");
   });
 });
 

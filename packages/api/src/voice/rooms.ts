@@ -67,6 +67,11 @@ export interface Peer {
   recvTransport: types.WebRtcTransport | null;
   /** DTLS-connected transport ids: `produce` requires its transport connected (#9). */
   connectedTransportIds: Set<string>;
+  /**
+   * Occupied producer slots, reserved SYNCHRONOUSLY before the async produce call — the
+   * 1 mic + ≤1 cam + ≤1 screen cap must hold even against two interleaved produces.
+   */
+  sources: Set<ProducerSource>;
   producers: Map<string, { producer: types.Producer; source: ProducerSource }>;
   /** Created server-side paused; resume is the single activation verb (#18). */
   consumers: Map<string, types.Consumer>;
@@ -130,6 +135,7 @@ function newPeer(connectionId: string): Peer {
     sendTransport: null,
     recvTransport: null,
     connectedTransportIds: new Set(),
+    sources: new Set(),
     producers: new Map(),
     consumers: new Map(),
   };
@@ -163,6 +169,7 @@ function closePeerMedia(room: Room, userId: string, peer: Peer, announce: boolea
   peer.sendTransport = null;
   peer.recvTransport = null;
   peer.connectedTransportIds.clear();
+  peer.sources.clear();
   peer.producers.clear();
   peer.consumers.clear();
   if (!announce) return;
@@ -460,7 +467,9 @@ export async function setSelfDeaf(userId: string, deafened: boolean): Promise<bo
   if (peer) {
     for (const consumer of peer.consumers.values()) {
       if (consumer.kind !== "audio" || consumer.closed) continue;
-      await (deafened ? consumer.pause() : consumer.resume());
+      // Best-effort per consumer: one closing under the loop (its producer stopped) must
+      // not abort the flag flip or its broadcast.
+      await (deafened ? consumer.pause() : consumer.resume()).catch(() => {});
     }
   }
   await publishGuildWide(current.room.guildId, {

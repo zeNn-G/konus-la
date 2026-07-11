@@ -42,8 +42,8 @@ import {
 
 /** The defined-error constructors every `voiceProcedure` handler receives. */
 type VoiceErrors = {
-  VOICE_UNAVAILABLE: (...rest: never[]) => ORPCError<"VOICE_UNAVAILABLE", unknown>;
-  VOICE_INVALID_STATE: (...rest: never[]) => ORPCError<"VOICE_INVALID_STATE", unknown>;
+  VOICE_UNAVAILABLE: () => ORPCError<"VOICE_UNAVAILABLE", unknown>;
+  VOICE_INVALID_STATE: () => ORPCError<"VOICE_INVALID_STATE", unknown>;
 };
 
 /** Map the voice domain errors onto the wire vocabulary; anything else stays a 500. */
@@ -68,15 +68,10 @@ async function mapVoiceErrors<T>(errors: VoiceErrors, run: () => T | Promise<T>)
  * (rejections surface as BAD_REQUEST via VoiceBadMediaError), so zod only pins the outer
  * shape and the TypeScript contract the client sees.
  */
-const dtlsParametersSchema = z.custom<types.DtlsParameters>(
-  (value) => typeof value === "object" && value !== null,
-);
-const rtpParametersSchema = z.custom<types.RtpParameters>(
-  (value) => typeof value === "object" && value !== null,
-);
-const rtpCapabilitiesSchema = z.custom<types.RtpCapabilities>(
-  (value) => typeof value === "object" && value !== null,
-);
+const mediasoupStruct = <T>() => z.custom<T>((value) => typeof value === "object" && value !== null);
+const dtlsParametersSchema = mediasoupStruct<types.DtlsParameters>();
+const rtpParametersSchema = mediasoupStruct<types.RtpParameters>();
+const rtpCapabilitiesSchema = mediasoupStruct<types.RtpCapabilities>();
 
 export const voiceRouter = {
   /**
@@ -90,7 +85,8 @@ export const voiceRouter = {
     .use(perUserRatelimit("voiceJoin", voiceJoinLimiter))
     .handler(async ({ context, errors }) => {
       const { channel } = context;
-      if (channel.kind !== "voice" || !channel.guildId) {
+      const guildId = channel.guildId;
+      if (channel.kind !== "voice" || !guildId) {
         throw new ORPCError("NOT_FOUND", { message: "Not a voice channel." });
       }
       try {
@@ -98,7 +94,7 @@ export const voiceRouter = {
           joinVoice({
             userId: context.user.id,
             connectionId: context.connectionId,
-            guildId: channel.guildId as string,
+            guildId,
             channelId: channel.id,
           }),
         );
