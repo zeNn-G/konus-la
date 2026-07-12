@@ -734,6 +734,35 @@ describe("cam & screenshare producers", () => {
     expect(state.localTracks.screenAudio).toBeUndefined();
   });
 
+  test("stopping mid audio-produce reaps the orphaned screenAudio producer", async () => {
+    harness.shareAudio = true;
+    await joined();
+    const transport = harness.device!.sendTransport!;
+    const original = transport.produce.bind(transport);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    transport.produce = async (options) => {
+      if (options.appData?.source === "screenAudio") await gate;
+      return original(options);
+    };
+
+    const sharing = harness.session.startScreenshare();
+    await flush();
+    // The user stops while the audio produce is still in flight — its close no-ops here.
+    await harness.session.stopScreenshare();
+    release();
+    await sharing;
+
+    const state = useVoiceStore.getState();
+    expect(state.localTracks.screen).toBeUndefined();
+    expect(state.localTracks.screenAudio).toBeUndefined();
+    // screen close + the reaped orphan's close — nothing left live on the wire.
+    expect(harness.callsOf("closeProducer")).toHaveLength(2);
+    expect(harness.screenAudioTracks[0]?.stop).toHaveBeenCalled();
+  });
+
   test("a remote screenAudio producer is consumed and auto-resumed like mic audio", async () => {
     await joined();
     harness.producerKinds.set("remote-sa-1", "audio");

@@ -482,6 +482,9 @@ export class VoiceSession {
     } catch (error) {
       console.warn("voice: share audio produce failed, continuing video-only", error);
     }
+    // The share can be stopped while the audio produce is in flight — stopScreenshare's
+    // screenAudio close no-ops before the producer exists, so reap the orphan here.
+    if (!this.producers.has("screen")) await this.closeLocalProducer("screenAudio");
   }
 
   async stopScreenshare(): Promise<void> {

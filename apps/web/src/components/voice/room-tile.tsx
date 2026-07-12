@@ -2,6 +2,7 @@ import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
 import { HeadphoneOffIcon, MaximizeIcon, MicOffIcon, Minimize2Icon, MinimizeIcon } from "lucide-react";
+import { useCallback, useState } from "react";
 
 import type { RoomTileModel, TileFace } from "@/lib/voice/ui-model";
 
@@ -42,14 +43,27 @@ export function RoomTile({
 }) {
   const focusable = variant !== "stage" && tile.live && onFocusShare !== undefined;
 
+  // While the stage tile IS the fullscreen element, only its descendants render — the
+  // volume menu must portal into the tile itself or it opens under the stage, unreachable.
+  const [tileNode, setTileNode] = useState<HTMLDivElement | null>(null);
+  const stageRef = stage?.ref;
+  const attachRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setTileNode(node);
+      stageRef?.(node);
+    },
+    [stageRef],
+  );
+
   return (
     <PeerVolumeMenu
       userId={tile.userId}
       name={tile.name}
       enabled={!tile.isSelf}
+      portalContainer={stage?.fullscreen ? tileNode : undefined}
       render={
         <div
-          ref={stage?.ref}
+          ref={attachRef}
           onClick={focusable ? () => onFocusShare(tile.userId) : undefined}
           onDoubleClick={stage ? stage.onToggleFullscreen : undefined}
           title={

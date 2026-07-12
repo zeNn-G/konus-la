@@ -69,7 +69,7 @@ export interface Peer {
   connectedTransportIds: Set<string>;
   /**
    * Occupied producer slots, reserved SYNCHRONOUSLY before the async produce call — the
-   * 1 mic + ≤1 cam + ≤1 screen + ≤1 screenAudio cap must hold even against two
+   * 1 mic + ≤1 screenAudio + ≤1 cam + ≤1 screen cap must hold even against two
    * interleaved produces.
    */
   sources: Set<ProducerSource>;

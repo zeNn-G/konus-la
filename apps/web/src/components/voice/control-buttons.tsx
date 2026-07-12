@@ -167,7 +167,7 @@ export function ShareButton({
               <span className="text-xs text-muted-foreground">{hint}</span>
             </DropdownMenuItem>
           ))}
-          {/* The audio opt-in lives inside the browser's picker, where nobody looks. */}
+          {/* The browser picker is the only surface for the audio opt-in. */}
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
             For sound, tick “also share tab audio” in the picker.
           </div>
