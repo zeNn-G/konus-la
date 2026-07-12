@@ -1,6 +1,22 @@
 import { Button } from "@konus-la/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@konus-la/ui/components/dropdown-menu";
 import { cn } from "@konus-la/ui/lib/utils";
-import { MicIcon, MicOffIcon, type LucideIcon } from "lucide-react";
+import {
+  MicIcon,
+  MicOffIcon,
+  ScreenShareIcon,
+  ScreenShareOffIcon,
+  type LucideIcon,
+} from "lucide-react";
+
+import type { ScreensharePreset } from "@/lib/voice/store";
 
 import type { VoiceControls } from "./use-voice-room";
 
@@ -90,5 +106,69 @@ export function MicButton({
       sizing={sizing}
       className={className}
     />
+  );
+}
+
+const SHARE_QUALITY: Array<{ preset: ScreensharePreset; label: string; hint: string }> = [
+  { preset: "720p", label: "720p", hint: "Easy on bandwidth" },
+  { preset: "1080p", label: "1080p", hint: "Default" },
+  { preset: "1080p60", label: "1080p · 60 fps", hint: "Smooth motion" },
+];
+
+/**
+ * Quality preset is chosen BEFORE `getDisplayMedia` (spec §Media policy) — the idle
+ * button opens the preset popover; while sharing it turns into a plain stop button
+ * (changing quality mid-share = stop + re-share, no live renegotiation in v1).
+ */
+export function ShareButton({
+  controls,
+  sizing,
+  className,
+}: {
+  controls: VoiceControls;
+  sizing: ControlSize;
+  className?: string;
+}) {
+  if (controls.sharing) {
+    return (
+      <ControlToggleButton
+        label="Stop sharing"
+        active
+        onClick={controls.stopShare}
+        ActiveIcon={ScreenShareOffIcon}
+        InactiveIcon={ScreenShareIcon}
+        danger={false}
+        sizing={sizing}
+        className={className}
+      />
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size={sizing.size}
+            variant="ghost"
+            aria-label="Share screen"
+            title="Share screen"
+            className={className}
+          />
+        }
+      >
+        <ScreenShareIcon className={sizing.iconClass} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="center" className="w-48">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Share quality</DropdownMenuLabel>
+          {SHARE_QUALITY.map(({ preset, label, hint }) => (
+            <DropdownMenuItem key={preset} onClick={() => controls.startShare(preset)}>
+              <span className="flex-1">{label}</span>
+              <span className="text-xs text-muted-foreground">{hint}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
