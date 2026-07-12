@@ -32,6 +32,8 @@ import { toast } from "sonner";
 import { ChannelNameDialog } from "@/components/channel-name-dialog";
 import { GuildSettingsDialog } from "@/components/guild-settings/guild-settings-dialog";
 import { UserCard } from "@/components/user-card";
+import { ControlDeck } from "@/components/voice/control-deck";
+import { VoiceChannelRows } from "@/components/voice/voice-channel-rows";
 import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -132,7 +134,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                 <Skeleton className="h-4 flex-1" />
               </div>
             ))}
-        {channels.data?.map((channel) => (
+        {channels.data?.filter((channel) => channel.kind !== "voice").map((channel) => (
           <div key={channel.id} className="group relative">
             <Link
               to="/guilds/$guildId/channels/$channelId"
@@ -185,9 +187,15 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           </div>
         ))}
         </nav>
+
+        <VoiceChannelRows
+          guildId={guildId}
+          channels={channels.data?.filter((channel) => channel.kind === "voice") ?? []}
+        />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
+        <ControlDeck />
         <UserCard />
       </SidebarFooter>
 

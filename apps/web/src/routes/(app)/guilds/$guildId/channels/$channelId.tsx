@@ -12,6 +12,8 @@ import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { MembersPanel } from "@/components/members-panel";
 import { TypingLine } from "@/components/chat/typing-line";
+import { VoiceMiniStage } from "@/components/voice/voice-mini-stage";
+import { VoiceRoom } from "@/components/voice/voice-room";
 import type { ChannelListItem, ChatMessage, HistoryCache } from "@/lib/use-realtime";
 import { useMembersPanelPref } from "@/lib/use-members-panel";
 import { historyInfiniteKey } from "@/lib/use-realtime";
@@ -107,6 +109,11 @@ function ChannelView() {
 
   if (!channel) return null;
 
+  // A voice channel is a place (decision #10): the room takes over the whole pane.
+  if (channel.kind === "voice") {
+    return <VoiceRoom guildId={guildId} channelId={channelId} channelName={channel.name ?? ""} />;
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-1.5 border-b border-foreground/10 px-3 py-2 md:px-4 md:py-2.5">
@@ -128,7 +135,8 @@ function ChannelView() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* `relative` anchors the voice mini-stage to the chat column's corner. */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {/* One scroller context per channel (keyed so scroll state resets on switch),
               shared with the composer so sending returns the reader to the live edge. */}
           <MessageScrollerProvider key={channelId} autoScroll defaultScrollPosition="end">
@@ -150,6 +158,8 @@ function ChannelView() {
               onCancelReply={() => setReplyTo(null)}
             />
           </MessageScrollerProvider>
+
+          <VoiceMiniStage />
         </div>
 
         {membersPanelOpen && (
