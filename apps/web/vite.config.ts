@@ -6,6 +6,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   server: {
     port: 3001,
+    // `bun run dev:lan` (scripts/dev-lan.ts) exposes the app to other devices on the LAN.
+    host: process.env.DEV_LAN === "1" ? true : undefined,
   },
   resolve: {
     tsconfigPaths: true,

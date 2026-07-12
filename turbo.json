@@ -25,7 +25,16 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      // dev:lan (scripts/dev-lan.ts) injects the LAN origin via process env; turbo's
+      // strict env mode would otherwise strip these before they reach vite/bun.
+      "passThroughEnv": [
+        "DEV_LAN",
+        "VITE_SERVER_URL",
+        "BETTER_AUTH_URL",
+        "CORS_ORIGIN",
+        "MEDIASOUP_ANNOUNCED_IP"
+      ]
     },
     "db:push": {
       "cache": false

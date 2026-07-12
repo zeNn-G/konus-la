@@ -105,7 +105,10 @@ export function createAuth() {
         // Same-origin deploy (and same-site dev) — Lax keeps CSRF protection and
         // still rides the WS upgrade request. See ROADMAP "Auth + user profile".
         sameSite: "lax",
-        secure: true,
+        // Secure follows the deployment protocol: always on for https (prod), off for
+        // plain-http dev — a Secure cookie from http://<LAN IP> is silently dropped by
+        // browsers (localhost is exempt), which broke second-device LAN testing (#13).
+        secure: env.BETTER_AUTH_URL.startsWith("https"),
         httpOnly: true,
       },
     },

@@ -98,6 +98,17 @@ TanStack Query invalidation of `guild.list`.
   all remote `<audio>` with per-peer volume (localStorage-persisted); video consumers stay
   server-paused until a component `bindVideo`s their consumerId AND the tab is visible (~3 s hidden
   debounce, instant resume).
+- **Voice UI (`components/voice/`, decision #10 A+B hybrid)** — a voice channel is a *place*:
+  the channel route renders `voice-room.tsx` (tile grid + bottom `ControlCapsule`) for
+  `kind: "voice"`; sidebar voice rows (`voice-channel-rows.tsx`, occupants nested with speaking
+  rings + mute/deafen badges) join-on-click; `control-deck.tsx` sits in the sidebar footer whenever
+  a session exists; `voice-mini-stage.tsx` is the corner card on text channels while connected
+  (expand navigates back to the room — routing IS the room-open state, there is no open/closed
+  flag). All render-ready shapes derive in the pure, tested `lib/voice/ui-model.ts`
+  (`deriveRoomTiles`/`deriveMiniStage`; face priority screen > cam > avatar; deafen forces mute).
+  Per-peer volume is a right-click `PeerVolumeMenu` (slider + local mute; volume 0 IS the local
+  mute). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
+  interest contract.
 - **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —
