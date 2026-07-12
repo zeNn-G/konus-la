@@ -1,6 +1,5 @@
 import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
-import { useQuery } from "@tanstack/react-query";
 import {
   HeadphoneOffIcon,
   HeadphonesIcon,
@@ -12,10 +11,9 @@ import {
 } from "lucide-react";
 
 import { useVoiceStore } from "@/lib/voice/store";
-import { orpc } from "@/utils/orpc";
 
 import { ControlToggleButton, DECK_SIZE, MicButton } from "./control-buttons";
-import { useVoiceControls } from "./use-voice-room";
+import { useVoiceChannelName, useVoiceControls } from "./use-voice-room";
 
 /**
  * Sidebar-footer control deck (decision #10 variant B), above the UserCard. Visible the
@@ -27,15 +25,10 @@ export function ControlDeck() {
   const guildId = useVoiceStore((s) => s.guildId);
   const channelId = useVoiceStore((s) => s.channelId);
   const controls = useVoiceControls();
-
-  const channels = useQuery({
-    ...orpc.channel.list.queryOptions({ input: { guildId: guildId ?? "" } }),
-    enabled: guildId !== null,
-  });
+  const channelName = useVoiceChannelName(guildId, channelId);
 
   if (status === "idle") return null;
 
-  const channelName = channels.data?.find((c) => c.id === channelId)?.name ?? "";
   const statusLine =
     status === "connected" ? "Voice" : status === "joining" ? "Joining…" : "Reconnecting…";
 

@@ -191,6 +191,9 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
         <VoiceChannelRows
           guildId={guildId}
           channels={channels.data?.filter((channel) => channel.kind === "voice") ?? []}
+          actions={
+            isOwner ? { onRename: setRenameTarget, onDelete: setDeleteTarget } : undefined
+          }
         />
       </SidebarContent>
 

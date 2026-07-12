@@ -1,16 +1,13 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Maximize2Icon } from "lucide-react";
 
 import { useVoiceStore } from "@/lib/voice/store";
 import { deriveMiniStage } from "@/lib/voice/ui-model";
-import { orpc } from "@/utils/orpc";
 
-import { useRoomTiles } from "./use-voice-room";
-
+import { useRoomTiles, useVoiceChannelName } from "./use-voice-room";
 import { VideoSurface } from "./video-surface";
 
 /**
@@ -26,17 +23,13 @@ export function VoiceMiniStage() {
   const channelId = useVoiceStore((s) => s.channelId);
 
   const { tiles } = useRoomTiles(guildId, channelId);
-  const channels = useQuery({
-    ...orpc.channel.list.queryOptions({ input: { guildId: guildId ?? "" } }),
-    enabled: guildId !== null,
-  });
+  const channelName = useVoiceChannelName(guildId, channelId);
 
   if (status === "idle" || guildId === null || channelId === null) return null;
 
   const stage = deriveMiniStage(tiles);
   if (!stage) return null;
 
-  const channelName = channels.data?.find((c) => c.id === channelId)?.name ?? "";
   const expand = () =>
     void navigate({
       to: "/guilds/$guildId/channels/$channelId",
@@ -58,13 +51,7 @@ export function VoiceMiniStage() {
             />
           </div>
         ) : (
-          <VideoSurface
-            face={stage.preview.face}
-            className={cn(
-              "absolute inset-0 h-full w-full",
-              stage.preview.face.kind === "screen" ? "bg-black object-contain" : "object-cover",
-            )}
-          />
+          <VideoSurface face={stage.preview.face} className="absolute inset-0 h-full w-full" />
         )}
         <span className="absolute bottom-1 left-1 bg-background/80 px-1.5 py-0.5 text-[10px] backdrop-blur-sm">
           {stage.label}
@@ -90,6 +77,9 @@ export function VoiceMiniStage() {
             className={cn("size-5 ring-1 ring-transparent", tile.speaking && "ring-green-500")}
           />
         ))}
+        {stage.facepileOverflow > 0 && (
+          <span className="text-[10px] text-muted-foreground">+{stage.facepileOverflow}</span>
+        )}
         <span className="ml-auto truncate pl-1 text-[10px] text-green-500">{channelName}</span>
       </div>
     </div>

@@ -35,13 +35,7 @@ export function RoomTile({ tile }: { tile: RoomTileModel }) {
           className={cn("size-16 ring-2 ring-foreground/10", tile.speaking && "ring-green-500")}
         />
       ) : (
-        <VideoSurface
-          face={tile.face}
-          className={cn(
-            "absolute inset-0 h-full w-full",
-            tile.face.kind === "screen" ? "bg-black object-contain" : "object-cover",
-          )}
-        />
+        <VideoSurface face={tile.face} className="absolute inset-0 h-full w-full" />
       )}
 
       <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 bg-background/80 px-1.5 py-0.5 text-xs backdrop-blur-sm">

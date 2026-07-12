@@ -1,3 +1,4 @@
+import { cn } from "@konus-la/ui/lib/utils";
 import { useEffect, useRef } from "react";
 
 import { useVoiceStore } from "@/lib/voice/store";
@@ -9,6 +10,7 @@ type VideoFace = Extract<TileFace, { kind: "screen" | "cam" }>;
  * One rendered video track. Remote faces carry a consumerId and register video interest
  * for their lifetime — VoiceSession turns that into server-side consumer resume/pause
  * (issue #18) — while local faces (consumerId null) just play the track.
+ * Screens letterbox (nothing may be cropped out of a shared screen); cams fill.
  */
 export function VideoSurface({ face, className }: { face: VideoFace; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -26,5 +28,16 @@ export function VideoSurface({ face, className }: { face: VideoFace; className?:
     return () => unbindVideo(consumerId);
   }, [consumerId, bindVideo, unbindVideo]);
 
-  return <video ref={ref} autoPlay muted playsInline className={className} />;
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      muted
+      playsInline
+      className={cn(
+        face.kind === "screen" ? "bg-black object-contain" : "object-cover",
+        className,
+      )}
+    />
+  );
 }

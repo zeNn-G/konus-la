@@ -18,6 +18,15 @@ import { orpc } from "@/utils/orpc";
 
 const appRoute = getRouteApi("/(app)");
 
+/** Name of a channel in the connected guild — the deck header and mini-stage caption. */
+export function useVoiceChannelName(guildId: string | null, channelId: string | null): string {
+  const channels = useQuery({
+    ...orpc.channel.list.queryOptions({ input: { guildId: guildId ?? "" } }),
+    enabled: guildId !== null,
+  });
+  return channels.data?.find((c) => c.id === channelId)?.name ?? "";
+}
+
 /** Guild members as the identity directory the voice tiles/rows resolve userIds against. */
 export function useVoiceMembers(guildId: string | null): VoiceMemberDirectory {
   const guild = useQuery({

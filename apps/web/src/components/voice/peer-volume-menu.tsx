@@ -9,7 +9,7 @@ import {
 } from "@konus-la/ui/components/context-menu";
 import { Slider } from "@konus-la/ui/components/slider";
 import { Volume2Icon, VolumeOffIcon } from "lucide-react";
-import { cloneElement, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useEffect, type ReactElement, type ReactNode } from "react";
 
 import { useVoiceStore } from "@/lib/voice/store";
 
@@ -35,6 +35,12 @@ export function PeerVolumeMenu({ userId, name, enabled, render, children }: Peer
   const volume = useVoiceStore((s) => s.volumes[userId] ?? 1);
   const setVolume = useVoiceStore((s) => s.setVolume);
 
+  // Remember the last audible volume however it was reached — menu item OR slider
+  // dragged to zero — so "Unmute for you" always returns there.
+  useEffect(() => {
+    if (volume > 0) restoreVolumes.set(userId, volume);
+  }, [userId, volume]);
+
   if (!enabled) return cloneElement(render, undefined, children);
 
   const locallyMuted = volume === 0;
@@ -42,7 +48,6 @@ export function PeerVolumeMenu({ userId, name, enabled, render, children }: Peer
     if (locallyMuted) {
       setVolume(userId, restoreVolumes.get(userId) ?? 1);
     } else {
-      restoreVolumes.set(userId, volume);
       setVolume(userId, 0);
     }
   };

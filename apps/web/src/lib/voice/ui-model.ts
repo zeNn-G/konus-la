@@ -104,7 +104,12 @@ export type MiniStageModel = {
   preview: RoomTileModel;
   label: string;
   facepile: RoomTileModel[];
+  /** Occupants beyond the facepile cap, rendered as a "+N" chip. */
+  facepileOverflow: number;
 };
+
+/** The card is w-56; more avatars than this become the "+N" chip. */
+const FACEPILE_CAP = 6;
 
 /** The corner card shown on text channels while connected. Null when the room is empty. */
 export function deriveMiniStage(tiles: RoomTileModel[]): MiniStageModel | null {
@@ -115,7 +120,8 @@ export function deriveMiniStage(tiles: RoomTileModel[]): MiniStageModel | null {
   return {
     preview,
     label: preview.live ? screenLabel : name,
-    facepile: tiles,
+    facepile: tiles.slice(0, FACEPILE_CAP),
+    facepileOverflow: Math.max(0, tiles.length - FACEPILE_CAP),
   };
 }
 

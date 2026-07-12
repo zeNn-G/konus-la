@@ -193,6 +193,13 @@ describe("deriveMiniStage", () => {
     const stage = deriveMiniStage([tile("anna"), tile("ben")]);
     expect(stage?.preview.userId).toBe("anna");
     expect(stage?.facepile.map((t) => t.userId)).toEqual(["anna", "ben"]);
+    expect(stage?.facepileOverflow).toBe(0);
+  });
+
+  test("a crowded room caps the facepile and reports the overflow", () => {
+    const stage = deriveMiniStage(Array.from({ length: 9 }, (_, i) => tile(`user-${i}`)));
+    expect(stage?.facepile).toHaveLength(6);
+    expect(stage?.facepileOverflow).toBe(3);
   });
 
   test("self preview is labelled You", () => {
