@@ -22,10 +22,19 @@ function onlyTrack(stream: MediaStream, kind: "audio" | "video"): MediaStreamTra
   return track;
 }
 
-/** Throws NotAllowedError etc. on denial — the caller degrades to listen-only. */
-export async function getMicTrack(): Promise<MediaStreamTrack> {
+/**
+ * Throws NotAllowedError etc. on denial — the caller degrades to listen-only.
+ * `deviceId` rides as `ideal`: a stale persisted id falls back to the system default
+ * instead of throwing OverconstrainedError (#25).
+ */
+export async function getMicTrack(deviceId?: string): Promise<MediaStreamTrack> {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: {
+      ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
   });
   return onlyTrack(stream, "audio");
 }

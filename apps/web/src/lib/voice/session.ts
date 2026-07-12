@@ -4,6 +4,11 @@ import { Device } from "mediasoup-client";
 import { getWs } from "@/lib/ws";
 
 import {
+  createRealDeviceDeps,
+  DeviceManager,
+  effectiveMicDeviceId,
+} from "./devices";
+import {
   CAM_MAX_BITRATE,
   SCREEN_PRESETS,
   getCamTrack,
@@ -38,6 +43,7 @@ export interface ProducerLike {
   pause(): void;
   resume(): void;
   close(): void;
+  replaceTrack(options: { track: MediaStreamTrack }): Promise<void>;
 }
 
 export interface ConsumerLike {
@@ -351,10 +357,58 @@ export class VoiceSession {
     }
   }
 
-  /** The mic button's retry after a listen-only join: re-run capture and produce. */
-  async retryMic(): Promise<void> {
-    if (this.store().status !== "connected" || this.producers.has("mic")) return;
-    await this.produceMic(this.epoch);
+  /**
+   * The mic button's retry after a listen-only join: re-run capture and produce.
+   * "denied" is a genuine repeat denial — the button's UX turns exactly that into the
+   * check-browser-permissions toast; "inactive" (not connected / retry superseded) must
+   * NOT toast, permissions were never re-checked (#25).
+   */
+  async retryMic(): Promise<"live" | "denied" | "inactive"> {
+    if (this.store().status !== "connected") return "inactive";
+    if (this.producers.has("mic")) return "live";
+    try {
+      await this.produceMic(this.epoch);
+    } catch (error) {
+      if (error instanceof StaleSessionError) return "inactive";
+      throw error;
+    }
+    return this.producers.has("mic") ? "live" : "denied";
+  }
+
+  /**
+   * Device switch (picker selection or `devicechange` fallback/replug, #25): re-capture
+   * on the current effective device and swap the track into the live producer — no
+   * re-produce, no signaling. Pause state (mute) survives the swap. Without a live mic
+   * producer there is nothing to switch: the preference simply applies on the next
+   * capture (retryMic / rejoin).
+   */
+  async switchMicTrack(): Promise<void> {
+    const producer = this.producers.get("mic");
+    if (!producer || this.store().status !== "connected") return;
+    const epoch = this.epoch;
+    let track: MediaStreamTrack;
+    try {
+      track = await this.deps.getMicTrack();
+    } catch {
+      return; // capture failed (device raced away / denied) — keep the current track
+    }
+    if (this.epoch !== epoch || this.producers.get("mic") !== producer) {
+      track.stop();
+      return;
+    }
+    const oldTrack = this.store().localTracks.mic;
+    try {
+      await producer.replaceTrack({ track });
+    } catch {
+      track.stop();
+      return;
+    }
+    if (this.epoch !== epoch) {
+      track.stop();
+      return;
+    }
+    oldTrack?.stop();
+    this.patch({ localTracks: { ...this.store().localTracks, mic: track } });
   }
 
   async enableCam(): Promise<void> {
@@ -897,7 +951,7 @@ function createRealDeps(): VoiceSessionDeps {
       return () => socket.removeEventListener("close", listener);
     },
     createDevice: () => new Device() as unknown as DeviceLike,
-    getMicTrack,
+    getMicTrack: () => getMicTrack(effectiveMicDeviceId()),
     getCamTrack,
     getScreenTrack,
     isDocumentVisible: () => document.visibilityState === "visible",
@@ -909,6 +963,16 @@ function createRealDeps(): VoiceSessionDeps {
 }
 
 export const voiceSession = new VoiceSession(createRealDeps());
+
+/**
+ * The device manager's two session-coupled deps are wired here, keeping the dependency
+ * one-way (session → devices) — devices.ts never imports this module.
+ */
+export const deviceManager = new DeviceManager({
+  ...createRealDeviceDeps(),
+  sessionActive: () => useVoiceStore.getState().status !== "idle",
+  applyMicDevice: () => voiceSession.switchMicTrack(),
+});
 
 // Dev-only programmatic access — the phase-5 acceptance checks drive joins/leaves/
 // switches from the console or a Playwright harness without any UI slice present.

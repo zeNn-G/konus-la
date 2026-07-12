@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { useDeviceStore } from "@/lib/voice/devices";
 import { useVoiceStore } from "@/lib/voice/store";
 
 /**
@@ -13,19 +14,34 @@ import { useVoiceStore } from "@/lib/voice/store";
 export function VoiceAudioBridge() {
   const peers = useVoiceStore((state) => state.peers);
   const volumes = useVoiceStore((state) => state.volumes);
+  // Effective output device (#25): "" = system default; unsupported browsers stay "".
+  const sinkId = useDeviceStore((state) => state.sinkId);
 
   return (
     <>
       {Object.entries(peers).map(([userId, media]) =>
         media.mic ? (
-          <AudioSink key={userId} track={media.mic.track} volume={volumes[userId] ?? 1} />
+          <AudioSink
+            key={userId}
+            track={media.mic.track}
+            volume={volumes[userId] ?? 1}
+            sinkId={sinkId}
+          />
         ) : null,
       )}
     </>
   );
 }
 
-function AudioSink({ track, volume }: { track: MediaStreamTrack; volume: number }) {
+function AudioSink({
+  track,
+  volume,
+  sinkId,
+}: {
+  track: MediaStreamTrack;
+  volume: number;
+  sinkId: string;
+}) {
   const ref = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -39,6 +55,13 @@ function AudioSink({ track, volume }: { track: MediaStreamTrack; volume: number 
   useEffect(() => {
     if (ref.current) ref.current.volume = volume;
   }, [volume]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || !("setSinkId" in element)) return;
+    // A gone device rejects — the device manager already fell back to "" by then.
+    void element.setSinkId(sinkId).catch(() => {});
+  }, [sinkId]);
 
   return <audio ref={ref} autoPlay />;
 }

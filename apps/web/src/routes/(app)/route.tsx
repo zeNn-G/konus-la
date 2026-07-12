@@ -1,13 +1,14 @@
 import { SidebarInset, SidebarProvider } from "@konus-la/ui/components/sidebar";
 import { TooltipProvider } from "@konus-la/ui/components/tooltip";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { VoiceAudioBridge } from "@/components/voice-audio-bridge";
 import { requireSession } from "@/lib/auth-guard";
 import { useSidebarZone } from "@/lib/sidebar-zone";
 import { useRealtime } from "@/lib/use-realtime";
+import { deviceManager } from "@/lib/voice/session";
 
 export const Route = createFileRoute("/(app)")({
   beforeLoad: async ({ context }) => ({
@@ -23,6 +24,12 @@ function AppLayout() {
   const { session } = Route.useRouteContext();
   useRealtime(session.user.id);
   const zone = useSidebarZone();
+
+  // Device watcher (#25): `devicechange` fallback/replug handling lives for the whole
+  // authenticated shell, like the audio bridge. Idempotent across remounts.
+  useEffect(() => {
+    void deviceManager.start();
+  }, []);
 
   return (
     <TooltipProvider>

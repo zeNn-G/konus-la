@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { useVoiceOccupancy } from "@/lib/voice/occupancy";
 import { voiceSession } from "@/lib/voice/session";
-import { useVoiceStore } from "@/lib/voice/store";
+import { useVoiceStore, type ScreensharePreset } from "@/lib/voice/store";
 import {
   deriveRoomTiles,
   toggleDeafenIntent,
@@ -93,7 +94,9 @@ export type VoiceControls = {
   camOn: boolean;
   toggleMute: () => void;
   toggleDeafen: () => void;
-  toggleShare: () => void;
+  /** Preset chosen in the quality popover BEFORE `getDisplayMedia` (spec §Media policy). */
+  startShare: (preset: ScreensharePreset) => void;
+  stopShare: () => void;
   toggleCam: () => void;
   disconnect: () => void;
 };
@@ -105,6 +108,10 @@ export function useVoiceControls(): VoiceControls {
   const micError = useVoiceStore((s) => s.micError);
   const sharing = useVoiceStore((s) => s.localTracks.screen !== undefined);
   const camOn = useVoiceStore((s) => s.localTracks.cam !== undefined);
+  // Optimistic "starting" (#25): the button lights on the click and reverts if capture
+  // is denied/cancelled. Local to this hook instance — the clicked surface shows it.
+  const [camPending, setCamPending] = useState(false);
+  const [sharePending, setSharePending] = useState(false);
 
   const apply = (next: MuteDeafState) => {
     if (next.selfMute !== selfMute) void voiceSession.setSelfMute(next.selfMute);
@@ -115,26 +122,44 @@ export function useVoiceControls(): VoiceControls {
     selfMute,
     selfDeaf,
     micError,
-    sharing,
-    camOn,
+    sharing: sharing || sharePending,
+    camOn: camOn || camPending,
     toggleMute: () => {
-      // Listen-only join: the mic button IS the retry (spec §UX). Toast copy lands with #25.
+      // Listen-only join: the mic button IS the retry; a failed retry is a repeat
+      // denial and gets the check-browser-permissions toast (spec §UX).
       if (micError) {
-        void voiceSession.retryMic();
+        void voiceSession.retryMic().then((result) => {
+          if (result === "denied") {
+            toast.error("Mic is blocked — allow microphone access in your browser");
+          }
+        });
         return;
       }
       apply(toggleMuteIntent({ selfMute, selfDeaf }));
     },
     toggleDeafen: () => apply(toggleDeafenIntent({ selfMute, selfDeaf })),
-    // Capture rejections (permission denied / picker cancel) leave the state untouched, so
-    // the button simply stays off; the denial toast UX is issue #25.
-    toggleShare: () => {
-      void (sharing ? voiceSession.stopScreenshare() : voiceSession.startScreenshare()).catch(
-        () => {},
-      );
+    startShare: (preset) => {
+      if (sharing || sharePending) return;
+      setSharePending(true);
+      voiceSession
+        .startScreenshare(preset)
+        // Silent revert (spec §UX): the OS picker self-explains, and Chrome reports a
+        // user-cancel as NotAllowedError — a toast would just nag.
+        .catch(() => {})
+        .finally(() => setSharePending(false));
     },
+    stopShare: () => void voiceSession.stopScreenshare(),
     toggleCam: () => {
-      void (camOn ? voiceSession.disableCam() : voiceSession.enableCam()).catch(() => {});
+      if (camOn) {
+        void voiceSession.disableCam();
+        return;
+      }
+      if (camPending) return;
+      setCamPending(true);
+      voiceSession
+        .enableCam()
+        .catch(() => toast.error("Couldn't start your camera — check browser permissions"))
+        .finally(() => setCamPending(false));
     },
     disconnect: () => void voiceSession.leave(),
   };

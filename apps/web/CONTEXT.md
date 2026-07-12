@@ -109,6 +109,18 @@ TanStack Query invalidation of `guild.list`.
   Per-peer volume is a right-click `PeerVolumeMenu` (slider + local mute; volume 0 IS the local
   mute). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
   interest contract.
+- **Device & permission UX (`lib/voice/devices.ts` + `components/voice/device-picker.tsx`, #25)** —
+  device *preferences* (localStorage) vs *presence* (enumerateDevices) never overwrite each other:
+  the `DeviceManager` singleton (wired in `session.ts`, started once in the `(app)` shell) watches
+  `devicechange`, falls back to the system default when the chosen device unplugs and switches back
+  on replug — both directions toasted mid-call, the fallback toast's **Change** action opens the
+  deck picker via the store-controlled `pickerOpen`. `DevicePicker` (capsule mic chevron + deck
+  settings popover) lists inputs, and outputs only where `setSinkId` exists (Safari gets no output
+  UX at all); the chosen sink flows through the device store into `voice-audio-bridge.tsx`. Mic
+  switches swap the live producer track in place (`voiceSession.switchMicTrack`, no re-produce);
+  the share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
+  `getDisplayMedia`; camera denial toasts, screenshare rejection reverts silently, and a failed
+  mic-button retry after a listen-only join toasts the permissions hint.
 - **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —

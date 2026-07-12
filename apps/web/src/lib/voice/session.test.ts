@@ -59,6 +59,9 @@ class FakeProducer implements ProducerLike {
   close(): void {
     this.closed = true;
   }
+  async replaceTrack({ track }: { track: MediaStreamTrack }): Promise<void> {
+    this.track = track;
+  }
 }
 
 class FakeConsumer implements ConsumerLike {
@@ -186,6 +189,7 @@ class Harness {
   micTracks: FakeTrack[] = [];
   camTracks: FakeTrack[] = [];
   screenTracks: FakeTrack[] = [];
+  screenPresets: string[] = [];
 
   visible = true;
   visibilityListeners = new Set<() => void>();
@@ -284,7 +288,8 @@ class Harness {
         this.camTracks.push(track);
         return track.asTrack();
       },
-      getScreenTrack: async () => {
+      getScreenTrack: async (preset) => {
+        this.screenPresets.push(preset);
         const track = new FakeTrack("video");
         this.screenTracks.push(track);
         return track.asTrack();
@@ -381,16 +386,29 @@ describe("join ceremony", () => {
     expect(harness.callsOf("produce")).toHaveLength(0);
   });
 
-  test("retryMic after a denied join produces and clears the flag", async () => {
+  test("retryMic after a denied join produces, clears the flag, and reports success", async () => {
     harness.micDenied = true;
     await joined();
     harness.micDenied = false;
 
-    await harness.session.retryMic();
+    await expect(harness.session.retryMic()).resolves.toBe("live");
     const state = useVoiceStore.getState();
     expect(state.micError).toBe(false);
     expect(state.localTracks.mic).toBeDefined();
     expect(harness.callsOf("produce")).toHaveLength(1);
+  });
+
+  test("retryMic reports a repeat denial so the UI can toast (#25)", async () => {
+    harness.micDenied = true;
+    await joined();
+
+    await expect(harness.session.retryMic()).resolves.toBe("denied");
+    expect(useVoiceStore.getState().micError).toBe(true);
+    expect(harness.callsOf("produce")).toHaveLength(0);
+  });
+
+  test("retryMic outside a connected session is inactive, not a denial", async () => {
+    await expect(harness.session.retryMic()).resolves.toBe("inactive");
   });
 
   test("producers replayed during the ceremony are consumed and audio batch-resumed", async () => {
@@ -424,6 +442,56 @@ describe("join ceremony", () => {
     announceRemoteAudio(harness, "dup-1");
     await flush();
     expect(harness.callsOf("consume")).toHaveLength(1);
+  });
+});
+
+describe("mic device switching (#25)", () => {
+  test("switchMicTrack swaps the producer track in place and stops the old capture", async () => {
+    await joined();
+    const oldTrack = harness.micTracks[0]!;
+
+    await harness.session.switchMicTrack();
+
+    expect(harness.micTracks).toHaveLength(2);
+    const newTrack = harness.micTracks[1]!;
+    expect(oldTrack.stop).toHaveBeenCalled();
+    expect(newTrack.stop).not.toHaveBeenCalled();
+    expect(useVoiceStore.getState().localTracks.mic).toBe(newTrack.asTrack());
+    expect(harness.device?.sendTransport?.producers[0]?.track).toBe(newTrack.asTrack());
+    // A swap is not a re-produce — no extra signaling.
+    expect(harness.callsOf("produce")).toHaveLength(1);
+  });
+
+  test("switchMicTrack keeps a muted mic paused", async () => {
+    await joined();
+    await harness.session.setSelfMute(true);
+
+    await harness.session.switchMicTrack();
+
+    expect(harness.device?.sendTransport?.producers[0]?.paused).toBe(true);
+    expect(useVoiceStore.getState().selfMute).toBe(true);
+  });
+
+  test("switchMicTrack is a no-op while listen-only", async () => {
+    harness.micDenied = true;
+    await joined();
+    harness.micDenied = false;
+
+    await harness.session.switchMicTrack();
+
+    expect(harness.micTracks).toHaveLength(0);
+    expect(useVoiceStore.getState().micError).toBe(true);
+  });
+
+  test("a failed re-capture keeps the current track playing", async () => {
+    await joined();
+    const oldTrack = harness.micTracks[0]!;
+    harness.micDenied = true;
+
+    await harness.session.switchMicTrack();
+
+    expect(oldTrack.stop).not.toHaveBeenCalled();
+    expect(useVoiceStore.getState().localTracks.mic).toBe(oldTrack.asTrack());
   });
 });
 
@@ -593,6 +661,7 @@ describe("cam & screenshare producers", () => {
   test("screenshare produces per preset and browser-stop closes it", async () => {
     await joined();
     await harness.session.startScreenshare("1080p60");
+    expect(harness.screenPresets).toEqual(["1080p60"]);
     expect(harness.callsOf("produce").at(-1)?.input).toMatchObject({
       kind: "video",
       source: "screen",
