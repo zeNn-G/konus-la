@@ -9,7 +9,7 @@ import { create } from "zustand";
  */
 
 export type VoiceStatus = "idle" | "joining" | "connected" | "reconnecting";
-export type ProducerSource = "mic" | "cam" | "screen";
+export type ProducerSource = "mic" | "cam" | "screen" | "screenAudio";
 export type ScreensharePreset = "720p" | "1080p" | "1080p60";
 
 export type RemoteMedia = {

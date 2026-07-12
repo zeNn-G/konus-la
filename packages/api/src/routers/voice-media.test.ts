@@ -9,6 +9,7 @@ import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, 
 import {
   resetVoiceStateForTests,
   updateSpeakingUserIds,
+  voiceAudioLevelObserverForTests,
   voiceConnectionClosed,
   voicePeerForTests,
   voiceSnapshotFor,
@@ -325,7 +326,7 @@ describe("full ceremony, produce & consume", () => {
   });
 });
 
-describe("producer limits (1 mic + ≤1 cam + ≤1 screen)", () => {
+describe("producer limits (1 mic + ≤1 screenAudio + ≤1 cam + ≤1 screen)", () => {
   const CARL = "vm-carl";
   beforeAll(() => seedMember(CARL));
 
@@ -354,6 +355,43 @@ describe("producer limits (1 mic + ≤1 cam + ≤1 screen)", () => {
     // kind/source pairing is a schema-level contract.
     await expectCode(produce("video", "mic"), "BAD_REQUEST");
     await expectCode(produce("audio", "cam"), "BAD_REQUEST");
+  });
+
+  test("screenAudio: audio-kind slot with mic-only speaking observer", async () => {
+    // Fresh actor: CARL's 15/10 s voiceSignal budget is spent by the contract test above.
+    const SAGE = "vm-sage";
+    await seedMember(SAGE);
+    const sage = await ceremony(SAGE, "sa-s", vcA);
+
+    const observer = voiceAudioLevelObserverForTests(vcA);
+    if (!observer) throw new Error("room has no audioLevelObserver");
+    const observed: string[] = [];
+    observer.observer.on("addproducer", (producer: types.Producer) => {
+      observed.push(producer.id);
+    });
+
+    const produce = (kind: "audio" | "video", source: "mic" | "screenAudio") =>
+      call(
+        appRouter.voice.produce,
+        {
+          transportId: sage.sendId,
+          kind,
+          rtpParameters: kind === "audio" ? audioRtpParameters(ssrc()) : videoRtpParameters(ssrc()),
+          source,
+        },
+        sage.ws,
+      );
+
+    const mic = await produce("audio", "mic");
+    const share = await produce("audio", "screenAudio");
+    expect(share.producerId).toEqual(expect.any(String));
+
+    await expectCode(produce("audio", "screenAudio"), "VOICE_INVALID_STATE");
+    await expectCode(produce("video", "screenAudio"), "BAD_REQUEST");
+
+    // Speaking detection is mic-only: share audio must never join the level observer.
+    expect(observed).toContain(mic.producerId);
+    expect(observed).not.toContain(share.producerId);
   });
 
   test("interleaved produces for one source: exactly one wins the slot", async () => {

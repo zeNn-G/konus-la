@@ -52,7 +52,7 @@ export class VoiceNotFoundError extends Error {}
 /** mediasoup rejected the caller-supplied media parameters. Maps to BAD_REQUEST. */
 export class VoiceBadMediaError extends Error {}
 
-export type ProducerSource = "mic" | "cam" | "screen";
+export type ProducerSource = "mic" | "cam" | "screen" | "screenAudio";
 
 /**
  * The connection-level media half of a seat. Dies with its socket (or is replaced by a
@@ -69,7 +69,8 @@ export interface Peer {
   connectedTransportIds: Set<string>;
   /**
    * Occupied producer slots, reserved SYNCHRONOUSLY before the async produce call — the
-   * 1 mic + ≤1 cam + ≤1 screen cap must hold even against two interleaved produces.
+   * 1 mic + ≤1 cam + ≤1 screen + ≤1 screenAudio cap must hold even against two
+   * interleaved produces.
    */
   sources: Set<ProducerSource>;
   producers: Map<string, { producer: types.Producer; source: ProducerSource }>;
@@ -585,6 +586,13 @@ export async function voiceSnapshotFor(
 /** Test-only: a user's live peer, for asserting server-side media state. */
 export function voicePeerForTests(userId: string): Peer | null {
   return seatOf(userId)?.seat.peer ?? null;
+}
+
+/** Test-only: a room's audio level observer, for asserting mic-only speaking wiring. */
+export function voiceAudioLevelObserverForTests(
+  channelId: string,
+): types.AudioLevelObserver | null {
+  return rooms.get(channelId)?.audioLevelObserver ?? null;
 }
 
 /** Test-only: drop every room, cancel pending grace timers, close surviving routers. */
