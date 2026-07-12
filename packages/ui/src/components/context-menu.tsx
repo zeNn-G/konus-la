@@ -33,14 +33,16 @@ function ContextMenuContent({
   alignOffset = 4,
   side = "right",
   sideOffset = 0,
+  container,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
   Pick<
     ContextMenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+  > &
+  Pick<ContextMenuPrimitive.Portal.Props, "container">) {
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.Portal container={container}>
       <ContextMenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

@@ -133,7 +133,7 @@ export async function produce(
   if (!peer.connectedTransportIds.has(input.transportId)) {
     throw new VoiceInvalidStateError("produce requires a connected send transport.");
   }
-  // 1 audio + ≤1 cam + ≤1 screen per peer (ROADMAP; server-enforced). The slot is
+  // 1 mic + ≤1 screenAudio + ≤1 cam + ≤1 screen per peer (server-enforced). The slot is
   // reserved before the await so interleaved produces cannot both claim it.
   if (peer.sources.has(input.source)) {
     throw new VoiceInvalidStateError(`A ${input.source} producer already exists.`);
@@ -152,7 +152,13 @@ export async function produce(
   }
   peer.producers.set(producer.id, { producer, source: input.source });
   peer.state = "producing";
-  if (producer.kind === "audio" && room.audioLevelObserver && !room.audioLevelObserver.closed) {
+  // Speaking detection is mic-only: screenAudio (movie/music) must never light a ring.
+  if (
+    producer.kind === "audio" &&
+    input.source === "mic" &&
+    room.audioLevelObserver &&
+    !room.audioLevelObserver.closed
+  ) {
     await room.audioLevelObserver.addProducer({ producerId: producer.id });
   }
   await publishRoomOnly(room, {

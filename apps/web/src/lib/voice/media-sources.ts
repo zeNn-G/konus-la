@@ -46,13 +46,23 @@ export async function getCamTrack(): Promise<MediaStreamTrack> {
   return onlyTrack(stream, "video");
 }
 
-export async function getScreenTrack(preset: ScreensharePreset): Promise<MediaStreamTrack> {
+export interface ScreenCapture {
+  video: MediaStreamTrack;
+  /** Present only when the user ticked "share tab/system audio" in the browser picker. */
+  audio: MediaStreamTrack | null;
+}
+
+/**
+ * One `getDisplayMedia` call for both halves of a share. Audio is a picker opt-in the
+ * browser may not even offer (Firefox/Safari, window capture) — `audio: null` is the
+ * normal video-only case, never an error. Voice processing is disabled on the audio
+ * request: this is content audio (movie/music), not speech.
+ */
+export async function getScreenCapture(preset: ScreensharePreset): Promise<ScreenCapture> {
   const { width, height, frameRate } = SCREEN_PRESETS[preset];
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: frameRate } },
-    // Screenshare audio is out for v1: `voice.produce` pairs kind "audio" strictly with
-    // source "mic", so a second audio producer has no wire shape to ride.
-    audio: false,
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
-  return onlyTrack(stream, "video");
+  return { video: onlyTrack(stream, "video"), audio: stream.getAudioTracks()[0] ?? null };
 }

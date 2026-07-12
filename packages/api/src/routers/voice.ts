@@ -164,7 +164,10 @@ export const voiceRouter = {
       ),
     ),
 
-  /** Enforces 1 audio + ≤1 cam + ≤1 screen per peer; announces room-only producerAdded. */
+  /**
+   * Enforces 1 mic + ≤1 screenAudio + ≤1 cam + ≤1 screen per peer; announces room-only
+   * producerAdded.
+   */
   produce: voiceProcedure
     .input(
       z
@@ -172,11 +175,17 @@ export const voiceRouter = {
           transportId: z.string(),
           kind: z.enum(["audio", "video"]),
           rtpParameters: rtpParametersSchema,
-          source: z.enum(["mic", "cam", "screen"]),
+          source: z.enum(["mic", "cam", "screen", "screenAudio"]),
         })
-        .refine((value) => (value.source === "mic") === (value.kind === "audio"), {
-          message: "kind does not match source: mic is audio, cam/screen are video.",
-        }),
+        .refine(
+          (value) =>
+            (value.kind === "audio") ===
+            (value.source === "mic" || value.source === "screenAudio"),
+          {
+            message:
+              "kind does not match source: mic/screenAudio are audio, cam/screen are video.",
+          },
+        ),
     )
     .use(perUserRatelimit("voiceSignal", voiceSignalLimiter))
     .handler(({ input, context, errors }) =>

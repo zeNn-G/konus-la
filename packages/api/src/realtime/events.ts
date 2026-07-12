@@ -170,14 +170,15 @@ export type RealtimeEvent =
   | {
       /**
        * Room-only (current seats of that room): a peer published a track — the consume
-       * trigger. `source` disambiguates the two video producers (cam vs screen tile).
+       * trigger. `source` disambiguates same-kind producers (cam vs screen tile, mic vs
+       * screenshare audio).
        */
       type: "voice.producerAdded";
       channelId: string;
       userId: string;
       producerId: string;
       kind: "audio" | "video";
-      source: "mic" | "cam" | "screen";
+      source: "mic" | "cam" | "screen" | "screenAudio";
     }
   | {
       /** Room-only: a producer is gone — explicit close, or its peer's media half died. */

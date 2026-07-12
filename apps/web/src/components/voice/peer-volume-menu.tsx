@@ -23,6 +23,12 @@ type PeerVolumeMenuProps = {
   enabled: boolean;
   /** The element the menu attaches to (it becomes the right-click target). */
   render: ReactElement<Record<string, unknown>>;
+  /**
+   * Where the menu portals. Only a fullscreen element's descendants render while it is
+   * active, so a fullscreened trigger must portal the menu into itself — the default
+   * body portal would open UNDER the stage, unreachable.
+   */
+  portalContainer?: HTMLElement | null;
   children?: ReactNode;
 };
 
@@ -31,7 +37,14 @@ type PeerVolumeMenuProps = {
  * affects this client. Volume 0 IS the local mute — the audio bridge reads the same
  * store field either way.
  */
-export function PeerVolumeMenu({ userId, name, enabled, render, children }: PeerVolumeMenuProps) {
+export function PeerVolumeMenu({
+  userId,
+  name,
+  enabled,
+  render,
+  portalContainer,
+  children,
+}: PeerVolumeMenuProps) {
   const volume = useVoiceStore((s) => s.volumes[userId] ?? 1);
   const setVolume = useVoiceStore((s) => s.setVolume);
 
@@ -55,7 +68,7 @@ export function PeerVolumeMenu({ userId, name, enabled, render, children }: Peer
   return (
     <ContextMenu>
       <ContextMenuTrigger render={render}>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
+      <ContextMenuContent className="w-56" container={portalContainer ?? undefined}>
         <ContextMenuGroup>
           <ContextMenuLabel className="flex items-center justify-between gap-2">
             <span className="truncate font-medium text-foreground">{name}</span>

@@ -6,9 +6,11 @@ import { useVoiceStore } from "@/lib/voice/store";
 /**
  * The ONLY place remote voice audio is rendered (phase-5 spec §Client architecture).
  * Mounted once in the authenticated shell, so playback survives every pane ↔ mini-stage
- * transition — video elements live in the visual components, audio never does. One
- * element per remote peer with a live mic consumer, volume from the persisted per-peer
- * setting. Audio consumers are resumed server-side the moment they're created
+ * transition — video elements live in the visual components, audio never does. Up to two
+ * elements per remote peer — mic and screenshare audio — both driven by the ONE persisted
+ * per-peer volume (volume 0 mutes the person wholesale). `peers` holds remote media only
+ * (own producer events are filtered in the dispatcher), so the sharer never hears their
+ * own share back. Audio consumers are resumed server-side the moment they're created
  * (VoiceSession), and are never visibility-paused.
  */
 export function VoiceAudioBridge() {
@@ -19,15 +21,18 @@ export function VoiceAudioBridge() {
 
   return (
     <>
-      {Object.entries(peers).map(([userId, media]) =>
-        media.mic ? (
-          <AudioSink
-            key={userId}
-            track={media.mic.track}
-            volume={volumes[userId] ?? 1}
-            sinkId={sinkId}
-          />
-        ) : null,
+      {Object.entries(peers).flatMap(([userId, media]) =>
+        (["mic", "screenAudio"] as const).map((source) => {
+          const remote = media[source];
+          return remote ? (
+            <AudioSink
+              key={`${userId}:${source}`}
+              track={remote.track}
+              volume={volumes[userId] ?? 1}
+              sinkId={sinkId}
+            />
+          ) : null;
+        }),
       )}
     </>
   );
