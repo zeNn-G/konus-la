@@ -5,8 +5,11 @@ import type { RemotePeerMedia } from "./store";
 import {
   deriveMiniStage,
   deriveRoomTiles,
+  deriveStageLayout,
+  nextFocus,
   toggleDeafenIntent,
   toggleMuteIntent,
+  type RoomTileModel,
   type VoiceMemberDirectory,
 } from "./ui-model";
 
@@ -165,6 +168,7 @@ describe("deriveMiniStage", () => {
     selfDeaf: false,
     live: false,
     face: { kind: "avatar" as const },
+    camFace: { kind: "avatar" as const },
     ...over,
   });
 
@@ -211,6 +215,168 @@ describe("deriveMiniStage", () => {
     const screen = { kind: "screen", track: fakeTrack(), consumerId: null };
     const stage = deriveMiniStage([tile("self", { isSelf: true, live: true, face: screen })]);
     expect(stage?.label).toBe("Your screen");
+  });
+});
+
+describe("camFace (deriveRoomTiles)", () => {
+  test("a sharer with a cam keeps the cam as camFace while the screen wins the face", () => {
+    const both = { ...remoteMedia("screen"), ...remoteMedia("cam") };
+    const tiles = deriveRoomTiles({
+      ...disconnected,
+      occupancy: occupancy(),
+      connectedHere: true,
+      peers: { anna: both },
+    });
+    const anna = tiles.find((t) => t.userId === "anna");
+    expect(anna?.face).toMatchObject({ kind: "screen" });
+    expect(anna?.camFace).toMatchObject({ kind: "cam", consumerId: "c-cam" });
+  });
+
+  test("a sharer without a cam falls back to an avatar camFace", () => {
+    const tiles = deriveRoomTiles({
+      ...disconnected,
+      occupancy: occupancy(),
+      connectedHere: true,
+      peers: { anna: remoteMedia("screen") },
+    });
+    expect(tiles.find((t) => t.userId === "anna")?.camFace).toEqual({ kind: "avatar" });
+  });
+
+  test("non-sharers get camFace equal to their face", () => {
+    const tiles = deriveRoomTiles({
+      ...disconnected,
+      occupancy: occupancy(),
+      connectedHere: true,
+      peers: { anna: remoteMedia("cam") },
+    });
+    const anna = tiles.find((t) => t.userId === "anna");
+    const ben = tiles.find((t) => t.userId === "ben");
+    expect(anna?.camFace).toEqual(anna?.face);
+    expect(ben?.camFace).toEqual({ kind: "avatar" });
+  });
+
+  test("own local screen + cam: camFace is the local cam with no consumerId", () => {
+    const cam = fakeTrack();
+    const tiles = deriveRoomTiles({
+      ...disconnected,
+      occupancy: occupancy({ seats: { self: { selfMute: false, selfDeaf: false } } }),
+      connectedHere: true,
+      localTracks: { screen: fakeTrack(), cam },
+    });
+    expect(tiles[0]?.face).toMatchObject({ kind: "screen" });
+    expect(tiles[0]?.camFace).toEqual({ kind: "cam", track: cam, consumerId: null });
+  });
+});
+
+const stageTile = (userId: string, over: Partial<RoomTileModel> = {}): RoomTileModel => ({
+  userId,
+  isSelf: false,
+  name: userId,
+  seed: userId,
+  image: null,
+  speaking: false,
+  selfMute: false,
+  selfDeaf: false,
+  live: false,
+  face: { kind: "avatar" },
+  camFace: { kind: "avatar" },
+  ...over,
+});
+
+const sharerTile = (userId: string, over: Partial<RoomTileModel> = {}): RoomTileModel =>
+  stageTile(userId, {
+    live: true,
+    face: { kind: "screen", track: fakeTrack(), consumerId: `c-${userId}` },
+    ...over,
+  });
+
+describe("nextFocus", () => {
+  const none = new Set<string>();
+
+  test("vacant stage: a peer share auto-focuses (mount counts — all shares are new)", () => {
+    expect(nextFocus(null, none, [stageTile("anna"), sharerTile("ben")])).toBe("ben");
+  });
+
+  test("two peer shares on a vacant stage: first in tile order wins", () => {
+    expect(nextFocus(null, none, [sharerTile("anna"), sharerTile("ben")])).toBe("anna");
+  });
+
+  test("no steal: a new share never replaces the focused one", () => {
+    expect(nextFocus("anna", new Set(["anna"]), [sharerTile("anna"), sharerTile("ben")])).toBe(
+      "anna",
+    );
+  });
+
+  test("own share never auto-focuses", () => {
+    expect(nextFocus(null, none, [sharerTile("self", { isSelf: true })])).toBeNull();
+  });
+
+  test("a manually focused own share stays focused", () => {
+    expect(nextFocus("self", new Set(["self"]), [sharerTile("self", { isSelf: true })])).toBe(
+      "self",
+    );
+  });
+
+  test("focused share ended → back to null (an already-known share does not take over)", () => {
+    expect(nextFocus("anna", new Set(["anna", "ben"]), [stageTile("anna"), sharerTile("ben")]))
+      .toBeNull();
+  });
+
+  test("after a minimize the same share does not re-focus", () => {
+    expect(nextFocus(null, new Set(["anna"]), [sharerTile("anna")])).toBeNull();
+  });
+
+  test("after a minimize a brand-new share auto-focuses onto the vacant stage", () => {
+    expect(nextFocus(null, new Set(["anna"]), [sharerTile("anna"), sharerTile("ben")])).toBe(
+      "ben",
+    );
+  });
+
+  test("a restarted share counts as new again", () => {
+    expect(nextFocus(null, new Set(["anna"]), [sharerTile("anna")])).toBeNull();
+    expect(nextFocus(null, none, [sharerTile("anna")])).toBe("anna");
+  });
+});
+
+describe("deriveStageLayout", () => {
+  test("null without a focused user or when the focused user is not sharing", () => {
+    expect(deriveStageLayout([sharerTile("anna")], null)).toBeNull();
+    expect(deriveStageLayout([stageTile("anna")], "anna")).toBeNull();
+    expect(deriveStageLayout([sharerTile("anna")], "ghost")).toBeNull();
+  });
+
+  test("focused tile keeps its screen face on the stage; input order is preserved", () => {
+    const anna = sharerTile("anna");
+    const layout = deriveStageLayout([stageTile("_zed"), anna, stageTile("ben")], "anna");
+    expect(layout?.focused).toBe(anna);
+    expect(layout?.views.map((v) => v.tile.userId)).toEqual(["_zed", "anna", "ben"]);
+    expect(layout?.views[1]).toMatchObject({ variant: "stage", face: { kind: "screen" } });
+    expect(layout?.views[0]).toMatchObject({ variant: "strip" });
+  });
+
+  test("strip faces are never screens: other sharers collapse to their camFace, LIVE kept", () => {
+    const cam = { kind: "cam" as const, track: fakeTrack(), consumerId: "c-ben-cam" };
+    const layout = deriveStageLayout(
+      [sharerTile("anna"), sharerTile("ben", { camFace: cam })],
+      "anna",
+    );
+    const ben = layout?.views[1];
+    expect(ben?.face).toBe(cam);
+    expect(ben?.tile.live).toBe(true);
+    expect(layout?.views.every((v) => v.variant === "stage" || v.face.kind !== "screen")).toBe(
+      true,
+    );
+  });
+
+  test("the focused sharer's cam appears as an extra strip entry", () => {
+    const cam = { kind: "cam" as const, track: fakeTrack(), consumerId: "c-anna-cam" };
+    const layout = deriveStageLayout([sharerTile("anna", { camFace: cam })], "anna");
+    expect(layout?.sharerCam).toMatchObject({ tile: { userId: "anna" }, face: cam });
+  });
+
+  test("no extra strip entry when the focused sharer has no cam", () => {
+    const layout = deriveStageLayout([sharerTile("anna")], "anna");
+    expect(layout?.sharerCam).toBeNull();
   });
 });
 

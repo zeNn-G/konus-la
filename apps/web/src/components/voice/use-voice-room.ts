@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useVoiceOccupancy } from "@/lib/voice/occupancy";
@@ -8,6 +8,7 @@ import { voiceSession } from "@/lib/voice/session";
 import { useVoiceStore, type ScreensharePreset } from "@/lib/voice/store";
 import {
   deriveRoomTiles,
+  nextFocus,
   toggleDeafenIntent,
   toggleMuteIntent,
   type MuteDeafState,
@@ -84,6 +85,94 @@ export function useRoomTiles(
   );
 
   return { tiles, connectedHere };
+}
+
+export type StageFocus = {
+  /** UserId whose share fills the stage; null renders the plain grid. */
+  focusedUserId: string | null;
+  focus: (userId: string) => void;
+  minimize: () => void;
+};
+
+/**
+ * Which share owns the room stage (#32). Plain component state — nothing persists across
+ * navigation — advanced by the `nextFocus` reducer: peer shares auto-focus onto a vacant
+ * stage only, own shares and already-seen (minimized) shares never do.
+ */
+export function useStageFocus(tiles: RoomTileModel[], connectedHere: boolean): StageFocus {
+  const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
+  const prevShareUserIds = useRef<ReadonlySet<string>>(new Set());
+
+  useEffect(() => {
+    if (!connectedHere) {
+      prevShareUserIds.current = new Set();
+      setFocusedUserId(null);
+      return;
+    }
+    // Snapshot before updating the ref: the state updater runs lazily on the NEXT render,
+    // by which time `.current` already contains this round's shares — reading the ref
+    // inside the updater would make every share look already-seen and kill auto-focus.
+    const prev = prevShareUserIds.current;
+    prevShareUserIds.current = new Set(
+      tiles.filter((t) => t.face.kind === "screen").map((t) => t.userId),
+    );
+    setFocusedUserId((current) => nextFocus(current, prev, tiles));
+  }, [tiles, connectedHere]);
+
+  return {
+    focusedUserId: connectedHere ? focusedUserId : null,
+    focus: setFocusedUserId,
+    minimize: () => setFocusedUserId(null),
+  };
+}
+
+export type StageFullscreen = {
+  /** Attach to the stage tile container — the fullscreen target. */
+  ref: (node: HTMLDivElement | null) => void;
+  fullscreen: boolean;
+  toggle: () => void;
+};
+
+/**
+ * Browser fullscreen for the stage container. State follows the `fullscreenchange` event
+ * only — Esc exits natively and the app must never disagree with the browser. When the
+ * stage moves to another element or unmounts while fullscreen (focus switch, share end),
+ * fullscreen is released explicitly: the old element usually STAYS in the DOM as a grid
+ * tile, so the browser won't auto-exit for us.
+ */
+export function useStageFullscreen(): StageFullscreen {
+  const elementRef = useRef<HTMLDivElement | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => {
+      setFullscreen(document.fullscreenElement !== null &&
+        document.fullscreenElement === elementRef.current);
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  // Identity-stable: an inline callback would re-run (null → node) every render and
+  // release fullscreen on unrelated re-renders (speaking rings, occupancy churn).
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    if (elementRef.current !== node && document.fullscreenElement === elementRef.current) {
+      void document.exitFullscreen().catch(() => {});
+    }
+    elementRef.current = node;
+  }, []);
+
+  return {
+    ref,
+    fullscreen,
+    toggle: () => {
+      if (document.fullscreenElement === elementRef.current && elementRef.current) {
+        void document.exitFullscreen().catch(() => {});
+      } else {
+        void elementRef.current?.requestFullscreen().catch(() => {});
+      }
+    },
+  };
 }
 
 export type VoiceControls = {
