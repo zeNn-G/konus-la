@@ -93,7 +93,7 @@ serves the full `appRouter`).
 | `voice.getRouterRtpCapabilities` | `{}` → `RtpCapabilities` | none (read) | Requires a seat |
 | `voice.createTransport` | `{ direction: 'send' \| 'recv' }` → `{ id, iceParameters, iceCandidates, dtlsParameters }` | `voiceSignal` 15/10 s | |
 | `voice.connectTransport` | `{ transportId, dtlsParameters }` → `void` | `voiceSignal` | |
-| `voice.produce` | `{ transportId, kind, rtpParameters, source: 'mic' \| 'cam' \| 'screen' }` → `{ producerId }` | `voiceSignal` | Enforces 1 audio + ≤1 cam + ≤1 screen (ROADMAP) |
+| `voice.produce` | `{ transportId, kind, rtpParameters, source: 'mic' \| 'cam' \| 'screen' \| 'screenAudio' }` → `{ producerId }` | `voiceSignal` | Enforces 1 mic + ≤1 screenAudio + ≤1 cam + ≤1 screen (#35) |
 | `voice.closeProducer` | `{ producerId }` → `void` | `voiceSignal` | |
 | `voice.consume` | `{ producerId, rtpCapabilities }` → `{ consumerId, producerId, kind, rtpParameters }` | `voiceConsume` 60/10 s | Created **server-side paused** (#18) |
 | `voice.setConsumersPaused` | `{ consumerIds: string[], paused }` → `void` | `voiceConsume` (shared) | Batched; validates every id belongs to the caller's peer; no broadcast (#18) |
@@ -224,10 +224,12 @@ down.**
 
 ## Media policy — #18 (+ ROADMAP defaults)
 
-- **Codecs**: Opus (audio, DTX + FEC enabled, no bitrate cap), VP8 (cam + screen). No
-  simulcast.
-- **Producer limits per peer**: 1 audio + ≤1 webcam + ≤1 screenshare (server-enforced in
-  `produce`).
+- **Codecs**: Opus (mic: DTX + FEC enabled, no bitrate cap; screenAudio: stereo, no DTX,
+  FEC, 128 kbps cap — content audio, not speech), VP8 (cam + screen). No simulcast.
+- **Producer limits per peer**: 1 mic + ≤1 screenAudio + ≤1 webcam + ≤1 screenshare
+  (server-enforced in `produce`).
+- **Speaking detection is mic-only** (#35): only mic producers join the room's
+  `audioLevelObserver` — screenshare audio never lights a speaking ring.
 - **Mute** (unchanged ROADMAP): client-side producer pause + `setSelfMute` flag broadcast.
   **Deafen**: server-side pause of the peer's audio consumers via `setConsumersPaused`;
   undeafen = batched resume; consumers created while deafened simply stay created-paused.
@@ -249,7 +251,12 @@ down.**
 
   Quality preset is chosen in a popover on the share button **before** `getDisplayMedia`;
   changing it mid-share = stop + re-share (no live renegotiation in v1). Screenshare audio
-  opt-in with graceful video-only fallback (ROADMAP).
+  (#35, amends the original v1 exclusion): ONE `getDisplayMedia` call requests audio with
+  voice processing off; the track exists only when the user ticks share-audio in the
+  browser picker (Chromium tab/Windows-screen capture — Firefox/Safari never offer it),
+  and its absence degrades silently to a video-only share. It rides the `screenAudio`
+  producer source; playback shares the per-peer volume (one knob per person, v1); the
+  browser stop-bar closes both producers, share-audio ending alone only its own.
 - **Server backstop**: `transport.setMaxIncomingBitrate(~6_500_000)` on each **send**
   transport — client encodings are advisory, this makes the ceiling authoritative. No
   recv-transport cap; skip `initialAvailableOutgoingBitrate` tuning.

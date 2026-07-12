@@ -95,9 +95,10 @@ TanStack Query invalidation of `guild.list`.
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
   full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout —
   never navigation. `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
-  all remote `<audio>` with per-peer volume (localStorage-persisted); video consumers stay
-  server-paused until a component `bindVideo`s their consumerId AND the tab is visible (~3 s hidden
-  debounce, instant resume).
+  all remote `<audio>` — up to two sinks per peer, mic and **screenAudio** (the audio half of a
+  screenshare), both on the ONE per-peer volume (localStorage-persisted; volume 0 mutes the person
+  wholesale); video consumers stay server-paused until a component `bindVideo`s their consumerId AND
+  the tab is visible (~3 s hidden debounce, instant resume).
 - **Voice UI (`components/voice/`, decision #10 A+B hybrid)** — a voice channel is a *place*:
   the channel route renders `voice-room.tsx` (tile grid + bottom `ControlCapsule`) for
   `kind: "voice"`; sidebar voice rows (`voice-channel-rows.tsx`, occupants nested with speaking
@@ -124,8 +125,11 @@ TanStack Query invalidation of `guild.list`.
   UX at all); the chosen sink flows through the device store into `voice-audio-bridge.tsx`. Mic
   switches swap the live producer track in place (`voiceSession.switchMicTrack`, no re-produce);
   the share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
-  `getDisplayMedia`; camera denial toasts, screenshare rejection reverts silently, and a failed
-  mic-button retry after a listen-only join toasts the permissions hint.
+  `getDisplayMedia` — one call for both halves of a share: video always, audio only when the user
+  ticks share-audio in the browser picker (the popover hints at it; absence degrades silently to a
+  video-only share, and the sharer never monitors their own share audio locally); camera denial
+  toasts, screenshare rejection reverts silently, and a failed mic-button retry after a listen-only
+  join toasts the permissions hint.
 - **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —
