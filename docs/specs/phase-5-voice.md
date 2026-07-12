@@ -189,6 +189,10 @@ Fresh join, channel switch, grace rebind, multi-tab steal, and post-restart reco
 **Full join ceremony (client, sequential awaits):** `voice.join` →
 `getRouterRtpCapabilities` → `device.load` → `createTransport` ×2 → `connectTransport` ×2 →
 `produce` (mic, if grantable) → `consume` each existing producer → batched resume.
+(`connectTransport` calls are in practice driven by mediasoup-client's `connect` events —
+the send transport connects on first produce, the recv transport on first consume — so the
+server allows `consume` on a created-but-not-yet-connected recv transport; `produce` still
+requires its transport connected.)
 
 ## Worker lifecycle — #8, #15
 

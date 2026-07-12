@@ -6,11 +6,11 @@ import {
   seedTestVoiceChannel,
 } from "@konus-la/db/testing";
 import { call } from "@orpc/server";
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import * as mediasoup from "mediasoup";
+import type { types } from "mediasoup";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
-import type { RealtimeEvent } from "../realtime/events";
-import { publisher } from "../realtime/publisher";
-import { asUser, asWsUser, expectCode } from "../testing";
+import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
   resetVoiceStateForTests,
   voiceConnectionClosed,
@@ -18,6 +18,7 @@ import {
   voiceWorkerDied,
   voiceWorkerRespawned,
 } from "../voice/rooms";
+import { setSfuWorker } from "../voice/sfu";
 import { appRouter } from "./index";
 
 /**
@@ -44,7 +45,14 @@ let vcElsewhere: string; // in Mallory's guild
 let textChannelId: string;
 let dmChannelId: string;
 
+// `voice.join` now builds each room's router lazily, so occupancy tests need a real
+// worker too (vitest runs under Node — no Bun spawn patch required).
+let worker: types.Worker;
+
 beforeAll(async () => {
+  worker = await mediasoup.createWorker({ logLevel: "error" });
+  setSfuWorker(() => worker);
+
   await seedTestUser({ id: ALICE, username: "v-alice" });
   await seedTestUser({ id: BOB, username: "v-bob" });
   await seedTestUser({ id: CARA, username: "v-cara" });
@@ -71,54 +79,13 @@ beforeAll(async () => {
   dmChannelId = await seedTestDmChannel({ isGroup: false, participantIds: [ALICE, BOB] });
 });
 
-// --- event observation helpers -----------------------------------------------------------
-
-type Collector = { events: RealtimeEvent[]; stop: () => void };
-
-const collectors: Collector[] = [];
-
-/** Subscribe to a user's realtime topic and accumulate everything it receives. */
-function collect(userId: string): Collector {
-  const events: RealtimeEvent[] = [];
-  const controller = new AbortController();
-  const iterator = publisher.subscribe(`user:${userId}`, { signal: controller.signal });
-  void (async () => {
-    try {
-      for await (const event of iterator) events.push(event);
-    } catch {
-      // subscription aborted by stop()
-    }
-  })();
-  const collector = { events, stop: () => controller.abort() };
-  collectors.push(collector);
-  return collector;
-}
-
-function ofType<T extends RealtimeEvent["type"]>(
-  collector: Collector,
-  type: T,
-): Extract<RealtimeEvent, { type: T }>[] {
-  return collector.events.filter((event) => event.type === type) as Extract<
-    RealtimeEvent,
-    { type: T }
-  >[];
-}
-
-/** Let queued publisher deliveries drain — for asserting an event did NOT arrive. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 25));
-
-async function waitFor(predicate: () => boolean, what: string, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
 afterEach(() => {
-  for (const collector of collectors) collector.stop();
-  collectors.length = 0;
+  stopCollectors();
   resetVoiceStateForTests();
+});
+
+afterAll(() => {
+  worker.close();
 });
 
 // --- tests -------------------------------------------------------------------------------
