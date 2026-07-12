@@ -96,6 +96,11 @@ function toInfo(devices: EnumeratedDevice[]): DeviceInfo[] {
   return devices.map(({ deviceId, label }) => ({ deviceId, label }));
 }
 
+/** Presence of a *preference* in an enumeration; null (system default) is never "present". */
+function hasDevice(devices: ReadonlyArray<{ deviceId: string }>, deviceId: string | null): boolean {
+  return deviceId !== null && devices.some((device) => device.deviceId === deviceId);
+}
+
 /** The label a fallback lands on — the browser's "default" entry, else the first device. */
 function defaultLabel(devices: EnumeratedDevice[]): string {
   const label =
@@ -122,20 +127,19 @@ export class DeviceManager {
     if (this.started) return;
     this.started = true;
     this.deps.onDeviceChange(() => void this.refresh());
-    await this.enqueue(() => this.doRefresh(false));
+    // Initial enumerate only seeds the presence memory — nothing to fall back FROM yet.
+    await this.enqueue(() => this.doRefresh({ reactToTransitions: false }));
   }
 
   /** Re-enumerate and act on presence transitions (also called on picker open). */
   refresh(): Promise<void> {
-    return this.enqueue(() => this.doRefresh(true));
+    return this.enqueue(() => this.doRefresh({ reactToTransitions: true }));
   }
 
   /** Pick a mic (null = system default): persist, then re-capture on it right away. */
   async setMicPreference(deviceId: string | null): Promise<void> {
     persistPreference(MIC_STORAGE_KEY, deviceId);
-    const inputs = useDeviceStore.getState().inputs;
-    this.micPresent =
-      deviceId !== null && inputs.some((device) => device.deviceId === deviceId);
+    this.micPresent = hasDevice(useDeviceStore.getState().inputs, deviceId);
     useDeviceStore.setState({ micId: deviceId });
     await this.deps.applyMicDevice();
   }
@@ -143,11 +147,9 @@ export class DeviceManager {
   /** Pick an output (null = system default): the sink follows while it is present. */
   setSpeakerPreference(deviceId: string | null): void {
     persistPreference(SPEAKER_STORAGE_KEY, deviceId);
-    const outputs = useDeviceStore.getState().outputs;
-    const present =
-      deviceId !== null && outputs.some((device) => device.deviceId === deviceId);
+    const present = hasDevice(useDeviceStore.getState().outputs, deviceId);
     this.speakerPresent = present;
-    useDeviceStore.setState({ speakerId: deviceId, sinkId: present ? deviceId : "" });
+    useDeviceStore.setState({ speakerId: deviceId, sinkId: present && deviceId ? deviceId : "" });
   }
 
   private enqueue(work: () => Promise<void>): Promise<void> {
@@ -156,7 +158,7 @@ export class DeviceManager {
     return next;
   }
 
-  private async doRefresh(act: boolean): Promise<void> {
+  private async doRefresh({ reactToTransitions }: { reactToTransitions: boolean }): Promise<void> {
     const devices = await this.deps.enumerate();
     // Pre-permission enumerations yield placeholder entries with empty ids — skip them.
     const inputs = devices.filter((d) => d.kind === "audioinput" && d.deviceId !== "");
@@ -164,9 +166,8 @@ export class DeviceManager {
     const outputSupported = this.deps.supportsOutput();
     const { micId, speakerId } = useDeviceStore.getState();
 
-    const micPresent = micId !== null && inputs.some((d) => d.deviceId === micId);
-    const speakerPresent =
-      outputSupported && speakerId !== null && outputs.some((d) => d.deviceId === speakerId);
+    const micPresent = hasDevice(inputs, micId);
+    const speakerPresent = outputSupported && hasDevice(outputs, speakerId);
     const micChanged = micPresent !== this.micPresent;
     const speakerChanged = speakerPresent !== this.speakerPresent;
     this.micPresent = micPresent;
@@ -178,7 +179,7 @@ export class DeviceManager {
       outputSupported,
       sinkId: speakerPresent && speakerId !== null ? speakerId : "",
     });
-    if (!act) return;
+    if (!reactToTransitions) return;
 
     const announce = this.deps.sessionActive();
     if (micId !== null && micChanged) {

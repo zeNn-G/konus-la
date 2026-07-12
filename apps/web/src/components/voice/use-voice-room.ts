@@ -128,8 +128,10 @@ export function useVoiceControls(): VoiceControls {
       // Listen-only join: the mic button IS the retry; a failed retry is a repeat
       // denial and gets the check-browser-permissions toast (spec §UX).
       if (micError) {
-        void voiceSession.retryMic().then((live) => {
-          if (!live) toast.error("Mic is blocked — allow microphone access in your browser");
+        void voiceSession.retryMic().then((result) => {
+          if (result === "denied") {
+            toast.error("Mic is blocked — allow microphone access in your browser");
+          }
         });
         return;
       }

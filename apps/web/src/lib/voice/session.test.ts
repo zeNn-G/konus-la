@@ -391,7 +391,7 @@ describe("join ceremony", () => {
     await joined();
     harness.micDenied = false;
 
-    await expect(harness.session.retryMic()).resolves.toBe(true);
+    await expect(harness.session.retryMic()).resolves.toBe("live");
     const state = useVoiceStore.getState();
     expect(state.micError).toBe(false);
     expect(state.localTracks.mic).toBeDefined();
@@ -402,9 +402,13 @@ describe("join ceremony", () => {
     harness.micDenied = true;
     await joined();
 
-    await expect(harness.session.retryMic()).resolves.toBe(false);
+    await expect(harness.session.retryMic()).resolves.toBe("denied");
     expect(useVoiceStore.getState().micError).toBe(true);
     expect(harness.callsOf("produce")).toHaveLength(0);
+  });
+
+  test("retryMic outside a connected session is inactive, not a denial", async () => {
+    await expect(harness.session.retryMic()).resolves.toBe("inactive");
   });
 
   test("producers replayed during the ceremony are consumed and audio batch-resumed", async () => {

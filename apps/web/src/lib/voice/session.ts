@@ -359,19 +359,20 @@ export class VoiceSession {
 
   /**
    * The mic button's retry after a listen-only join: re-run capture and produce.
-   * Resolves whether the mic is live afterwards — a `false` on a user click is a repeat
-   * denial, and the button's UX turns it into the check-browser-permissions toast (#25).
+   * "denied" is a genuine repeat denial — the button's UX turns exactly that into the
+   * check-browser-permissions toast; "inactive" (not connected / retry superseded) must
+   * NOT toast, permissions were never re-checked (#25).
    */
-  async retryMic(): Promise<boolean> {
-    if (this.store().status !== "connected") return false;
-    if (!this.producers.has("mic")) {
-      try {
-        await this.produceMic(this.epoch);
-      } catch (error) {
-        if (!(error instanceof StaleSessionError)) throw error;
-      }
+  async retryMic(): Promise<"live" | "denied" | "inactive"> {
+    if (this.store().status !== "connected") return "inactive";
+    if (this.producers.has("mic")) return "live";
+    try {
+      await this.produceMic(this.epoch);
+    } catch (error) {
+      if (error instanceof StaleSessionError) return "inactive";
+      throw error;
     }
-    return this.producers.has("mic");
+    return this.producers.has("mic") ? "live" : "denied";
   }
 
   /**
