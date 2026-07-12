@@ -16,6 +16,9 @@ export type TileFace =
   | { kind: "cam"; track: MediaStreamTrack; consumerId: string | null }
   | { kind: "avatar" };
 
+/** A face that is never a screen — what filmstrip tiles render (screens live on the stage). */
+export type PortraitFace = Exclude<TileFace, { kind: "screen" }>;
+
 export type RoomTileModel = {
   userId: string;
   isSelf: boolean;
@@ -28,6 +31,8 @@ export type RoomTileModel = {
   /** Sharing a screen — the tile grows and carries the LIVE badge. */
   live: boolean;
   face: TileFace;
+  /** Cam > avatar fallback: equals `face` unless a screen won it. */
+  camFace: PortraitFace;
 };
 
 export type DeriveRoomTilesInput = {
@@ -43,19 +48,27 @@ export type DeriveRoomTilesInput = {
   peers: Record<string, RemotePeerMedia>;
 };
 
-function faceOf(
+function camFaceOf(
   remote: RemotePeerMedia | undefined,
   local: Partial<Record<ProducerSource, MediaStreamTrack>> | undefined,
-): TileFace {
-  if (remote?.screen) {
-    return { kind: "screen", track: remote.screen.track, consumerId: remote.screen.consumerId };
-  }
-  if (local?.screen) return { kind: "screen", track: local.screen, consumerId: null };
+): PortraitFace {
   if (remote?.cam) {
     return { kind: "cam", track: remote.cam.track, consumerId: remote.cam.consumerId };
   }
   if (local?.cam) return { kind: "cam", track: local.cam, consumerId: null };
   return { kind: "avatar" };
+}
+
+function faceOf(
+  remote: RemotePeerMedia | undefined,
+  local: Partial<Record<ProducerSource, MediaStreamTrack>> | undefined,
+  camFace: PortraitFace,
+): TileFace {
+  if (remote?.screen) {
+    return { kind: "screen", track: remote.screen.track, consumerId: remote.screen.consumerId };
+  }
+  if (local?.screen) return { kind: "screen", track: local.screen, consumerId: null };
+  return camFace;
 }
 
 /**
@@ -77,8 +90,11 @@ export function deriveRoomTiles(input: DeriveRoomTilesInput): RoomTileModel[] {
   const tiles = Object.entries(seats).map(([userId, seat]): RoomTileModel => {
     const isSelf = userId === selfUserId;
     const member = members.get(userId);
+    const camFace = connectedHere
+      ? camFaceOf(input.peers[userId], isSelf ? input.localTracks : undefined)
+      : { kind: "avatar" as const };
     const face = connectedHere
-      ? faceOf(input.peers[userId], isSelf ? input.localTracks : undefined)
+      ? faceOf(input.peers[userId], isSelf ? input.localTracks : undefined, camFace)
       : { kind: "avatar" as const };
     return {
       userId,
@@ -93,6 +109,7 @@ export function deriveRoomTiles(input: DeriveRoomTilesInput): RoomTileModel[] {
       selfDeaf: isSelf && connectedHere ? input.selfDeaf : seat.selfDeaf,
       live: face.kind === "screen",
       face,
+      camFace,
     };
   });
 
@@ -122,6 +139,65 @@ export function deriveMiniStage(tiles: RoomTileModel[]): MiniStageModel | null {
     label: preview.live ? screenLabel : name,
     facepile: tiles.slice(0, FACEPILE_CAP),
     facepileOverflow: Math.max(0, tiles.length - FACEPILE_CAP),
+  };
+}
+
+/**
+ * Focus reducer for the room stage (#32). Auto-focus only fills a VACANT stage — a later
+ * share never steals (the viewer switches by clicking its LIVE tile), and your own share
+ * never auto-focuses (it stays click-focusable). A share is a candidate only while
+ * "new" — absent from `prevShareUserIds` — so a minimized share cannot re-take the stage,
+ * while mounting the room (empty set) treats every live share as new.
+ */
+export function nextFocus(
+  current: string | null,
+  prevShareUserIds: ReadonlySet<string>,
+  tiles: RoomTileModel[],
+): string | null {
+  const shares = tiles.filter((t) => t.face.kind === "screen");
+  if (current !== null && shares.some((t) => t.userId === current)) return current;
+  const fresh = shares.find((t) => !t.isSelf && !prevShareUserIds.has(t.userId));
+  return fresh?.userId ?? null;
+}
+
+export type StageTileView = {
+  tile: RoomTileModel;
+  variant: "stage" | "strip";
+  /** What this tile renders here: the screen on the stage, `camFace` in the strip. */
+  face: TileFace;
+};
+
+export type StageLayoutModel = {
+  focused: RoomTileModel;
+  /** One view per input tile, order preserved (tile identity must survive mode switches). */
+  views: StageTileView[];
+  /** The focused sharer's own cam as an extra strip entry, when they have one. */
+  sharerCam: { tile: RoomTileModel; face: TileFace } | null;
+};
+
+/**
+ * Focus-mode render model: the focused share fills the stage; every other tile joins the
+ * filmstrip showing its `camFace` — a screen face renders on the stage and nowhere else.
+ * Null (grid mode) when nothing is focused or the focused user stopped sharing.
+ */
+export function deriveStageLayout(
+  tiles: RoomTileModel[],
+  focusedUserId: string | null,
+): StageLayoutModel | null {
+  if (focusedUserId === null) return null;
+  const focused = tiles.find((t) => t.userId === focusedUserId);
+  if (!focused || focused.face.kind !== "screen") return null;
+
+  const views = tiles.map(
+    (tile): StageTileView =>
+      tile === focused
+        ? { tile, variant: "stage", face: tile.face }
+        : { tile, variant: "strip", face: tile.camFace },
+  );
+  return {
+    focused,
+    views,
+    sharerCam: focused.camFace.kind === "cam" ? { tile: focused, face: focused.camFace } : null,
   };
 }
 

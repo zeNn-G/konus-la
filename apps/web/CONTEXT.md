@@ -108,7 +108,12 @@ TanStack Query invalidation of `guild.list`.
   (`deriveRoomTiles`/`deriveMiniStage`; face priority screen > cam > avatar; deafen forces mute).
   Per-peer volume is a right-click `PeerVolumeMenu` (slider + local mute; volume 0 IS the local
   mute). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
-  interest contract.
+  interest contract. A focused screenshare re-lays the room into **stage** (the share full-pane,
+  browser-fullscreen on double-click/button) + **filmstrip** (everyone else, cam > avatar faces —
+  a screen face renders on the stage and nowhere else, so non-focused shares stay server-paused):
+  peer shares auto-focus onto a vacant stage only, never steal, and own shares never auto-focus
+  (#32). Focus advances through the pure `nextFocus`/`deriveStageLayout`; both modes render one
+  keyed tile list so surfaces never remount (interest refcounts hold still) on layout switches.
 - **Device & permission UX (`lib/voice/devices.ts` + `components/voice/device-picker.tsx`, #25)** —
   device *preferences* (localStorage) vs *presence* (enumerateDevices) never overwrite each other:
   the `DeviceManager` singleton (wired in `session.ts`, started once in the `(app)` shell) watches
