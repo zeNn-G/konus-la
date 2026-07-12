@@ -54,11 +54,15 @@ TanStack Query invalidation of `guild.list`.
 
 `lib/use-realtime.ts` owns the live layer (see [ADR 0005](../../docs/adr/0005-per-user-topic-realtime-hybrid-transport.md)):
 
-- **`useRealtime(selfUserId)`** — mounted ONCE in the `(app)` layout. Opens one reconnecting WebSocket
-  (`partysocket/ws` + `@orpc/client/websocket`) whose only job is the `realtime.events` iterator; every
+- **`useRealtime(selfUserId)`** — mounted ONCE in the `(app)` layout. Runs the `realtime.events`
+  iterator over the shared `/ws` socket from `lib/ws.ts` (a lazy, never-closed module singleton —
+  `partysocket/ws` + `@orpc/client/websocket` — shared with voice signaling, which is
+  connection-scoped server-side and must ride the SAME socket as the subscription); every
   event runs through a single dispatcher switch — `setQueryData` for messages/typing/presence/read-state,
   `invalidateQueries` for structural `channel.*` events. On every reconnect it invalidates ALL queries
-  (missed-events gaps beyond the server's 2-min resume retention are silent).
+  (missed-events gaps beyond the server's 2-min resume retention are silent) and notifies
+  `voiceSession` that the subscription is live again (a pending voice rejoin waits for that — the
+  join-time producer replay rides this subscription).
 - **DM events in the dispatcher**: `guildId === null` routes `message.created` / `channel.*` to the
   `dm.list` cache (`patchDmList`; a message for an unlisted DM channel invalidates instead — that's how a
   brand-new 1:1 reaches the recipient's sidebar). `readState.updated` patches both list caches (keyed
@@ -79,6 +83,21 @@ TanStack Query invalidation of `guild.list`.
   `historyInfiniteOptions` / `historyInfiniteKey` — a hand-built key silently misses the cache.
 - **Typing / presence** live in plain client-only query keys (`["realtime", ...]`) read via
   `useTypingEntries` / `usePresence`; no fetcher behind them.
+- **Voice (`lib/voice/`, phase 5)** — two tiers per the spec (§Client architecture): guild-wide
+  occupancy (seats + flags + speaking sets) in the client-only `["realtime","voice-occupancy"]` key,
+  fed by the dispatcher through the pure `reduceVoiceOccupancy` reducer (`occupancy.ts`, read via
+  `useVoiceOccupancy`); the live media session in a zustand store (`store.ts`) fronted by the
+  module-singleton **`voiceSession`** (`session.ts`) — the ONLY writer of the
+  `idle → joining → connected → reconnecting` machine. mediasoup-client objects never enter any
+  cache. The dispatcher forwards `producerAdded/producerClosed` (own-user events filtered — a peer
+  never consumes itself), `sessionReplaced`, and `mediaReset` to the session. One recovery path:
+  signaling failure / socket death / `mediaReset` / transport failure → `reconnecting` → rejoin
+  (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
+  full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout —
+  never navigation. `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
+  all remote `<audio>` with per-peer volume (localStorage-persisted); video consumers stay
+  server-paused until a component `bindVideo`s their consumerId AND the tab is visible (~3 s hidden
+  debounce, instant resume).
 - **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —

@@ -4,6 +4,7 @@ import { Outlet, createFileRoute } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { VoiceAudioBridge } from "@/components/voice-audio-bridge";
 import { requireSession } from "@/lib/auth-guard";
 import { useSidebarZone } from "@/lib/sidebar-zone";
 import { useRealtime } from "@/lib/use-realtime";
@@ -25,6 +26,7 @@ function AppLayout() {
 
   return (
     <TooltipProvider>
+      <VoiceAudioBridge />
       <SidebarProvider
         // Desktop panel is pinned open; the trigger/sheet only exist on mobile.
         open

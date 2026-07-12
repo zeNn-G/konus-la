@@ -316,6 +316,28 @@ function startGrace(room: Room, seat: Seat, graceMs: number, announce: boolean):
 }
 
 /**
+ * Every bind starts with zero consumers (a rebind's old peer died with its media), so the
+ * joiner is told about the room's live producers the same way it hears about new ones:
+ * `producerAdded`, replayed self-only. Existing seats already heard these — one client
+ * code path covers "existing at join" and "added mid-session".
+ */
+async function replayProducersTo(room: Room, userId: string): Promise<void> {
+  for (const seat of room.seats.values()) {
+    if (seat.userId === userId || !seat.peer) continue;
+    for (const [producerId, { producer, source }] of seat.peer.producers) {
+      await publishTo([userId], {
+        type: "voice.producerAdded",
+        channelId: room.channelId,
+        userId: seat.userId,
+        producerId,
+        kind: producer.kind,
+        source,
+      });
+    }
+  }
+}
+
+/**
  * The universal entry (phase-5 spec §Lifecycle): fresh join, channel switch, grace
  * rebind, multi-tab steal, and post-restart recovery are all this one call — the flavor
  * is sorted out here, the client never states it.
@@ -361,6 +383,7 @@ export async function joinVoice(input: {
         replacedSeatSessionId,
       });
     }
+    await replayProducersTo(room, userId);
     return { seatSessionId: seat.seatSessionId };
   }
 
@@ -426,6 +449,7 @@ export async function joinVoice(input: {
     selfMute: seat.selfMute,
     selfDeaf: seat.selfDeaf,
   });
+  await replayProducersTo(room, userId);
   return { seatSessionId: seat.seatSessionId };
 }
 
