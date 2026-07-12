@@ -29,6 +29,7 @@
   "type": "module",
   "scripts": {
     "dev": "turbo dev",
+    "dev:lan": "bun scripts/dev-lan.ts",
     "build": "turbo build",
     "check-types": "turbo check-types",
     "dev:web": "turbo -F web dev",
