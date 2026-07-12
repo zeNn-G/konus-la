@@ -41,3 +41,8 @@ export const link = new RPCLink({
 export const client: AppRouterClient = createORPCClient(link);
 
 export const orpc = createTanstackQueryUtils(client);
+
+// Dev-only: programmatic cache access for acceptance harnesses (voice occupancy keys).
+if (import.meta.env.DEV) {
+  (globalThis as Record<string, unknown>).__queryClient = queryClient;
+}

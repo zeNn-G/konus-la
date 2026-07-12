@@ -1,14 +1,17 @@
 import type { RealtimeEvent } from "@konus-la/api";
 import type { AppRouterClient } from "@konus-la/api/routers/index";
-import { env } from "@konus-la/env/web";
-import { createORPCClient } from "@orpc/client";
-import { RPCLink } from "@orpc/client/websocket";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
-import ReconnectingWebSocket from "partysocket/ws";
 import { useEffect } from "react";
 
 import { invalidateDmConversation } from "@/lib/dm";
+import {
+  reduceVoiceOccupancy,
+  VOICE_OCCUPANCY_KEY,
+  type VoiceOccupancyMap,
+} from "@/lib/voice/occupancy";
+import { voiceSession } from "@/lib/voice/session";
+import { getWs } from "@/lib/ws";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export type HistoryPage = Awaited<ReturnType<AppRouterClient["chat"]["history"]>>;
@@ -291,6 +294,30 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData(guildEvictedKey(event.guildId), true);
       break;
     }
+    case "voice.snapshot":
+    case "voice.peerJoined":
+    case "voice.peerLeft":
+    case "voice.peerMutedSelf":
+    case "voice.peerDeafenedSelf":
+    case "voice.activeSpeakers": {
+      // Tier 1: guild-wide occupancy — pure reducer over one client-only key.
+      client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
+        reduceVoiceOccupancy(old, event),
+      );
+      break;
+    }
+    case "voice.producerAdded":
+    case "voice.producerClosed": {
+      // Room-only producer churn includes our OWN producers (publishRoomOnly fans out to
+      // every seat) — consuming yourself would be an echo loop, so filter here.
+      if (event.userId !== selfUserId) voiceSession.handleRealtimeEvent(event);
+      break;
+    }
+    case "voice.sessionReplaced":
+    case "voice.mediaReset": {
+      voiceSession.handleRealtimeEvent(event);
+      break;
+    }
     case "dm.participant.added": {
       if (event.userId === selfUserId) {
         // Re-added after an earlier eviction: drop the tombstone or the view would
@@ -328,14 +355,7 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
  */
 export function useRealtime(selfUserId: string) {
   useEffect(() => {
-    const socket = new ReconnectingWebSocket(
-      `${env.VITE_SERVER_URL.replace(/^http/, "ws")}/ws`,
-      undefined,
-      { maxRetries: Number.POSITIVE_INFINITY },
-    );
-    // partysocket types readyState as plain `number`; structurally it's a WebSocket.
-    const link = new RPCLink({ websocket: socket as unknown as WebSocket });
-    const wsClient: AppRouterClient = createORPCClient(link);
+    const { client: wsClient } = getWs();
     const controller = new AbortController();
 
     void (async () => {
@@ -358,9 +378,10 @@ export function useRealtime(selfUserId: string) {
       }
     })();
 
+    // Abort only the subscription — the socket is the shared signaling channel (ws.ts)
+    // and outlives any one mount.
     return () => {
       controller.abort();
-      socket.close();
     };
   }, [selfUserId]);
 }

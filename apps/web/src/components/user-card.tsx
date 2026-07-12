@@ -4,6 +4,7 @@ import { Link, getRouteApi } from "@tanstack/react-router";
 import { KeyRoundIcon, LogOutIcon } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
+import { voiceSession } from "@/lib/voice/session";
 
 // Read the session the (app) layout already resolved into route context.
 const appRoute = getRouteApi("/(app)");
@@ -44,6 +45,8 @@ export function UserCard() {
         aria-label="Sign out"
         title="Sign out"
         onClick={async () => {
+          // Logout is a teardown trigger (unlike navigation): explicit leave, no grace.
+          await voiceSession.leave();
           await authClient.signOut({
             fetchOptions: {
               onSuccess: () => {

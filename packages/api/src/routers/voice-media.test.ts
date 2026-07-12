@@ -583,6 +583,76 @@ describe("active speakers (edge-triggered full set)", () => {
   });
 });
 
+describe("producer replay on join", () => {
+  const REMY = "vm-remy";
+  const SAM = "vm-sam";
+  beforeAll(async () => {
+    await seedMember(REMY);
+    await seedMember(SAM);
+  });
+
+  test("a late joiner receives the room's live producers as self-only producerAdded", async () => {
+    const remy = await ceremony(REMY, "rp-r", vcA);
+    const mic = await call(
+      appRouter.voice.produce,
+      { transportId: remy.sendId, kind: "audio", rtpParameters: audioRtpParameters(ssrc()), source: "mic" },
+      remy.ws,
+    );
+    const cam = await call(
+      appRouter.voice.produce,
+      { transportId: remy.sendId, kind: "video", rtpParameters: videoRtpParameters(ssrc()), source: "cam" },
+      remy.ws,
+    );
+
+    const sam = collect(SAM);
+    const remyEvents = collect(REMY);
+    const owner = collect(OWNER);
+    await call(appRouter.voice.join, { channelId: vcA }, asWsUser(SAM, "rp-s"));
+
+    await waitFor(() => ofType(sam, "voice.producerAdded").length === 2, "replay");
+    expect(ofType(sam, "voice.producerAdded")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channelId: vcA,
+          userId: REMY,
+          producerId: mic.producerId,
+          kind: "audio",
+          source: "mic",
+        }),
+        expect.objectContaining({
+          channelId: vcA,
+          userId: REMY,
+          producerId: cam.producerId,
+          kind: "video",
+          source: "cam",
+        }),
+      ]),
+    );
+    // Self-only: neither the producers' owner nor an out-of-room member re-hears them.
+    await settle();
+    expect(ofType(remyEvents, "voice.producerAdded")).toHaveLength(0);
+    expect(ofType(owner, "voice.producerAdded")).toHaveLength(0);
+  });
+
+  test("a rebind (steal) also gets the replay — its old consumers died with the old peer", async () => {
+    const remy = await ceremony(REMY, "rr-r", vcA);
+    const mic = await call(
+      appRouter.voice.produce,
+      { transportId: remy.sendId, kind: "audio", rtpParameters: audioRtpParameters(ssrc()), source: "mic" },
+      remy.ws,
+    );
+    await call(appRouter.voice.join, { channelId: vcA }, asWsUser(SAM, "rr-s1"));
+
+    const sam = collect(SAM);
+    await call(appRouter.voice.join, { channelId: vcA }, asWsUser(SAM, "rr-s2"));
+    await waitFor(() => ofType(sam, "voice.producerAdded").length === 1, "replay on rebind");
+    expect(ofType(sam, "voice.producerAdded")[0]).toMatchObject({
+      userId: REMY,
+      producerId: mic.producerId,
+    });
+  });
+});
+
 describe("media rate limits", () => {
   const LEO = "vm-leo";
   const MIA = "vm-mia";
