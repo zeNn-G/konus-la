@@ -367,6 +367,9 @@ export function useRealtime(selfUserId: string) {
           });
           if (reconnecting) void queryClient.invalidateQueries();
           reconnecting = true;
+          // A waiting voice rejoin may only proceed now: the join-time producer replay
+          // rides this subscription, so joining before it re-established loses media.
+          voiceSession.notifyRealtimeSubscribed();
           for await (const event of iterator) {
             dispatch(queryClient, selfUserId, event);
           }

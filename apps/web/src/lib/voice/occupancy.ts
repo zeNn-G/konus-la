@@ -122,7 +122,7 @@ export function reduceVoiceOccupancy(
   }
 }
 
-/** One channel's occupancy (undefined = empty). Subscribers re-render per-channel via select. */
+/** One channel's occupancy; undefined = nobody seated there. */
 export function useVoiceOccupancy(channelId: string): VoiceRoomOccupancy | undefined {
   const { data } = useQuery({
     queryKey: VOICE_OCCUPANCY_KEY,

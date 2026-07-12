@@ -189,7 +189,7 @@ class Harness {
 
   visible = true;
   visibilityListeners = new Set<() => void>();
-  socketListeners = { open: new Set<() => void>(), close: new Set<() => void>() };
+  socketCloseListeners = new Set<() => void>();
 
   session: VoiceSession;
 
@@ -219,8 +219,8 @@ class Harness {
     for (const listener of this.visibilityListeners) listener();
   }
 
-  fireSocket(type: "open" | "close"): void {
-    for (const listener of this.socketListeners[type]) listener();
+  fireSocket(_type: "close"): void {
+    for (const listener of this.socketCloseListeners) listener();
   }
 
   deps(): VoiceSessionDeps {
@@ -264,9 +264,9 @@ class Harness {
         setConsumersPaused: (input: { consumerIds: string[]; paused: boolean }) =>
           this.invoke("setConsumersPaused", input, () => undefined),
       }),
-      onSocket: (type, listener) => {
-        this.socketListeners[type].add(listener);
-        return () => this.socketListeners[type].delete(listener);
+      onSocketClose: (listener) => {
+        this.socketCloseListeners.add(listener);
+        return () => this.socketCloseListeners.delete(listener);
       },
       createDevice: () => {
         this.device = new FakeDevice(this);
@@ -724,14 +724,14 @@ describe("recovery", () => {
     expect(harness.callsOf("join")).toHaveLength(1);
   });
 
-  test("socket death while connected → reconnecting; socket open rejoins immediately", async () => {
+  test("socket death while connected → reconnecting; resubscription rejoins immediately", async () => {
     vi.useFakeTimers();
     await joined();
 
     harness.fireSocket("close");
     expect(useVoiceStore.getState().status).toBe("reconnecting");
 
-    harness.fireSocket("open");
+    harness.session.notifyRealtimeSubscribed();
     await vi.advanceTimersByTimeAsync(600);
     expect(useVoiceStore.getState().status).toBe("connected");
     expect(harness.callsOf("join")).toHaveLength(2);
@@ -764,6 +764,56 @@ describe("recovery", () => {
     expect(useVoiceStore.getState().status).toBe("reconnecting");
     await vi.advanceTimersByTimeAsync(600);
     expect(useVoiceStore.getState().status).toBe("connected");
+  });
+
+  test("producerAdded arriving mid-rejoin is queued and consumed once connected", async () => {
+    vi.useFakeTimers();
+    await joined();
+    harness.fireSocket("close");
+    expect(useVoiceStore.getState().status).toBe("reconnecting");
+
+    // A peer produces while we're still rebuilding — must not be dropped.
+    harness.producerKinds.set("mid-rejoin-audio", "audio");
+    harness.session.handleRealtimeEvent(producerAdded("mid-rejoin-audio", "audio", "mic"));
+
+    harness.session.notifyRealtimeSubscribed();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(useVoiceStore.getState().status).toBe("connected");
+    expect(harness.callsOf("consume")).toHaveLength(1);
+    expect(useVoiceStore.getState().peers["remote-user"]?.mic?.producerId).toBe("mid-rejoin-audio");
+  });
+
+  test("sessionReplaced during reconnecting stops the loop — a steal must not be stolen back", async () => {
+    vi.useFakeTimers();
+    await joined();
+    harness.fireSocket("close");
+    expect(useVoiceStore.getState().status).toBe("reconnecting");
+
+    // Another tab took the seat while we were down; only IT may keep it.
+    harness.session.handleRealtimeEvent({
+      type: "voice.sessionReplaced",
+      channelId: "vc-1",
+      replacedSeatSessionId: "seat-1",
+    });
+    expect(useVoiceStore.getState().status).toBe("idle");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(harness.callsOf("join")).toHaveLength(1);
+  });
+
+  test("rejoin after socket death waits for the realtime resubscription (replay must not be lost)", async () => {
+    vi.useFakeTimers();
+    await joined();
+    harness.fireSocket("close");
+
+    // Backoff elapses but the events iterator is not back yet — no join attempt.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(harness.callsOf("join")).toHaveLength(1);
+    expect(useVoiceStore.getState().status).toBe("reconnecting");
+
+    harness.session.notifyRealtimeSubscribed();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoiceStore.getState().status).toBe("connected");
+    expect(harness.callsOf("join")).toHaveLength(2);
   });
 
   test("leave during reconnecting stops the rejoin loop", async () => {

@@ -100,8 +100,8 @@ export interface VoiceClientLike {
 
 export interface VoiceSessionDeps {
   getClient: () => VoiceClientLike;
-  /** Subscribe to the shared signaling socket's lifecycle; returns an unsubscribe. */
-  onSocket: (type: "open" | "close", listener: () => void) => () => void;
+  /** Subscribe to the shared signaling socket dying; returns an unsubscribe. */
+  onSocketClose: (listener: () => void) => () => void;
   createDevice: () => DeviceLike;
   getMicTrack: () => Promise<MediaStreamTrack>;
   getCamTrack: () => Promise<MediaStreamTrack>;
@@ -152,6 +152,26 @@ function noticeOf(error: unknown): string {
   return typeof message === "string" && message.length > 0 ? message : "Couldn't join voice";
 }
 
+type SignalingFailureAction =
+  /** #16 rate limit, or a definitive rejection (room full, channel gone): surface, stop. */
+  | { kind: "idle"; notice: string }
+  /** Breaker open: keep the session alive, retry slowly. */
+  | { kind: "unavailable" }
+  /** Everything else — socket death, 500s, timeouts: the single recovery path. */
+  | { kind: "retry" };
+
+function classifySignalingFailure(error: unknown): SignalingFailureAction {
+  const code = codeOf(error);
+  if (code === "TOO_MANY_REQUESTS") {
+    return { kind: "idle", notice: "Voice is rate limited — try again in a moment" };
+  }
+  if (code !== undefined && DEFINITIVE_CODES.has(code)) {
+    return { kind: "idle", notice: noticeOf(error) };
+  }
+  if (code === "VOICE_UNAVAILABLE") return { kind: "unavailable" };
+  return { kind: "retry" };
+}
+
 interface ConsumerEntry {
   consumer: ConsumerLike;
   userId: string;
@@ -177,8 +197,14 @@ export class VoiceSession {
   private pendingProducers: ProducerAddedEvent[] = [];
 
   private hiddenTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Resolves the rejoin loop's current wait early (socket reopened / teardown). */
+  /** Resolves the rejoin loop's current wait early (resubscription / teardown). */
   private wake: (() => void) | null = null;
+  /**
+   * Whether the realtime subscription is (believed) live. A rejoin must wait for it: the
+   * server's producer replay rides the user topic at join time, so joining before the
+   * resubscription would publish it into the void and leave existing peers silent.
+   */
+  private realtimeSubscribed = true;
 
   constructor(private deps: VoiceSessionDeps) {}
 
@@ -220,11 +246,11 @@ export class VoiceSession {
   private start(): void {
     if (this.started) return;
     this.started = true;
-    this.deps.onSocket("close", () => {
+    this.deps.onSocketClose(() => {
+      this.realtimeSubscribed = false;
       const status = this.store().status;
       if (status === "connected" || status === "joining") this.beginRecovery();
     });
-    this.deps.onSocket("open", () => this.wake?.());
     this.deps.onVisibilityChange(() => this.onVisibilityChanged());
     let prevInterest = useVoiceStore.getState().videoInterest;
     useVoiceStore.subscribe((state) => {
@@ -232,6 +258,15 @@ export class VoiceSession {
       prevInterest = state.videoInterest;
       void this.syncVideoConsumers();
     });
+  }
+
+  /**
+   * Called by useRealtime each time the `realtime.events` iterator (re)establishes —
+   * the signal that a waiting rejoin may proceed (see `realtimeSubscribed`).
+   */
+  notifyRealtimeSubscribed(): void {
+    this.realtimeSubscribed = true;
+    this.wake?.();
   }
 
   // --- public API ----------------------------------------------------------------------------
@@ -347,13 +382,15 @@ export class VoiceSession {
       case "voice.producerAdded": {
         const state = this.store();
         if (event.channelId !== state.channelId) return;
-        if (state.status === "joining" || !this.recvTransport) {
+        // Not consumable yet (mid-ceremony or mid-recovery): queue — the ceremony's
+        // drain picks it up. Anything lost to a failed attempt's teardown is re-covered
+        // by the join-time replay of the eventual successful attempt.
+        if (state.status !== "connected" || !this.recvTransport) {
           if (!this.pendingProducers.some((p) => p.producerId === event.producerId)) {
             this.pendingProducers.push(event);
           }
           return;
         }
-        if (state.status !== "connected") return;
         void this.consumeAndActivate(event);
         return;
       }
@@ -384,17 +421,11 @@ export class VoiceSession {
       case "voice.sessionReplaced": {
         // Only the LOSING tab's id is ever named — the winner (and any third tab racing
         // in) ignores this. Local teardown only: the seat belongs to someone else now,
-        // `voice.leave` would unseat them.
+        // `voice.leave` would unseat them. Matching while `reconnecting` also stops the
+        // rejoin loop — otherwise the loop would steal the seat right back.
         const state = this.store();
         if (!state.seatSessionId || event.replacedSeatSessionId !== state.seatSessionId) return;
-        this.teardownMedia();
-        this.patch({
-          status: "idle",
-          channelId: null,
-          guildId: null,
-          seatSessionId: null,
-          notice: "Voice moved to another window",
-        });
+        this.toIdle("Voice moved to another window");
         return;
       }
       case "voice.mediaReset": {
@@ -730,19 +761,16 @@ export class VoiceSession {
 
   // --- recovery ------------------------------------------------------------------------------
 
-  /** Classify a join/ceremony failure per the single-recovery-path rules. */
+  /** Route a join/ceremony failure per the single-recovery-path rules (#16). */
   private handleSignalingFailure(error: unknown): void {
-    const code = codeOf(error);
-    if (code === "TOO_MANY_REQUESTS") {
-      // #16: surface, no auto-retry — the user's next manual action is the retry.
-      this.toIdle("Voice is rate limited — try again in a moment");
+    const action = classifySignalingFailure(error);
+    if (action.kind === "idle") {
+      // Rate limit / definitive rejection: surface, stop — the user's next manual
+      // action is the retry.
+      this.toIdle(action.notice);
       return;
     }
-    if (code !== undefined && DEFINITIVE_CODES.has(code)) {
-      this.toIdle(noticeOf(error));
-      return;
-    }
-    if (code === "VOICE_UNAVAILABLE") {
+    if (action.kind === "unavailable") {
       this.patch({ notice: "Voice is unavailable — retrying…" });
     }
     this.beginRecovery();
@@ -754,7 +782,9 @@ export class VoiceSession {
     const channelId = state.channelId;
     if (!channelId) return;
     this.teardownMedia();
-    this.patch({ status: "reconnecting", seatSessionId: null });
+    // seatSessionId is deliberately KEPT: while in grace it still names this session on
+    // the wire, and a `sessionReplaced` matching it must stop the loop (steal-back guard).
+    this.patch({ status: "reconnecting" });
     void this.rejoinLoop(this.gen, channelId);
   }
 
@@ -764,22 +794,24 @@ export class VoiceSession {
     while (this.gen === gen) {
       await this.delayOrWake(delay);
       if (this.gen !== gen) return;
+      if (!this.realtimeSubscribed) {
+        // Socket still down (or the events iterator not yet re-established): hold —
+        // notifyRealtimeSubscribed wakes this wait the moment the subscription is back.
+        delay = REJOIN_DELAYS_MS[0]!;
+        continue;
+      }
       try {
         await this.ceremony(channelId);
         if (this.gen === gen) this.patch({ notice: null });
         return;
       } catch (error) {
         if (error instanceof StaleSessionError || this.gen !== gen) return;
-        const code = codeOf(error);
-        if (code === "TOO_MANY_REQUESTS") {
-          this.toIdle("Voice is rate limited — join again in a moment");
+        const action = classifySignalingFailure(error);
+        if (action.kind === "idle") {
+          this.toIdle(action.notice);
           return;
         }
-        if (code !== undefined && DEFINITIVE_CODES.has(code)) {
-          this.toIdle(noticeOf(error));
-          return;
-        }
-        if (code === "VOICE_UNAVAILABLE") {
+        if (action.kind === "unavailable") {
           // Breaker open: retry slowly forever — the server revives on its own cadence.
           this.patch({ notice: "Voice is unavailable — retrying…" });
           delay = UNAVAILABLE_RETRY_MS;
@@ -859,10 +891,10 @@ export class VoiceSession {
 function createRealDeps(): VoiceSessionDeps {
   return {
     getClient: () => getWs().client.voice as unknown as VoiceClientLike,
-    onSocket: (type, listener) => {
+    onSocketClose: (listener) => {
       const { socket } = getWs();
-      socket.addEventListener(type, listener);
-      return () => socket.removeEventListener(type, listener);
+      socket.addEventListener("close", listener);
+      return () => socket.removeEventListener("close", listener);
     },
     createDevice: () => new Device() as unknown as DeviceLike,
     getMicTrack,
