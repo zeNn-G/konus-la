@@ -46,6 +46,7 @@ class FakeTrack {
 class FakeProducer implements ProducerLike {
   paused = false;
   closed = false;
+  codecOptions: Record<string, unknown> | undefined;
   constructor(
     public id: string,
     public track: MediaStreamTrack,
@@ -131,6 +132,7 @@ class FakeTransport implements TransportLike {
       ),
     );
     const producer = new FakeProducer(id, options.track);
+    producer.codecOptions = options.codecOptions;
     this.producers.push(producer);
     return producer;
   }
@@ -184,11 +186,14 @@ class Harness {
   onJoin: (() => void) | null = null;
 
   micDenied = false;
+  /** Mirrors the picker's "also share tab audio" tick — off by default, like the browser. */
+  shareAudio = false;
   device: FakeDevice | null = null;
   devices: FakeDevice[] = [];
   micTracks: FakeTrack[] = [];
   camTracks: FakeTrack[] = [];
   screenTracks: FakeTrack[] = [];
+  screenAudioTracks: FakeTrack[] = [];
   screenPresets: string[] = [];
 
   visible = true;
@@ -288,11 +293,14 @@ class Harness {
         this.camTracks.push(track);
         return track.asTrack();
       },
-      getScreenTrack: async (preset) => {
+      getScreenCapture: async (preset) => {
         this.screenPresets.push(preset);
-        const track = new FakeTrack("video");
-        this.screenTracks.push(track);
-        return track.asTrack();
+        const video = new FakeTrack("video");
+        this.screenTracks.push(video);
+        if (!this.shareAudio) return { video: video.asTrack(), audio: null };
+        const audio = new FakeTrack("audio");
+        this.screenAudioTracks.push(audio);
+        return { video: video.asTrack(), audio: audio.asTrack() };
       },
       isDocumentVisible: () => this.visible,
       onVisibilityChange: (listener) => {
@@ -306,7 +314,7 @@ class Harness {
 function producerAdded(
   producerId: string,
   kind: "audio" | "video",
-  source: "mic" | "cam" | "screen",
+  source: "mic" | "cam" | "screen" | "screenAudio",
   userId = "remote-user",
   channelId = "vc-1",
 ) {
@@ -673,6 +681,71 @@ describe("cam & screenshare producers", () => {
     await flush();
     expect(harness.callsOf("closeProducer")).toHaveLength(1);
     expect(useVoiceStore.getState().localTracks.screen).toBeUndefined();
+  });
+
+  test("share audio (picker tick) produces screenAudio with music-grade opus options", async () => {
+    harness.shareAudio = true;
+    await joined();
+    await harness.session.startScreenshare();
+
+    const produces = harness.callsOf("produce").slice(-2);
+    expect(produces[0]?.input).toMatchObject({ kind: "video", source: "screen" });
+    expect(produces[1]?.input).toMatchObject({ kind: "audio", source: "screenAudio" });
+    expect(useVoiceStore.getState().localTracks.screenAudio).toBeDefined();
+    // Content audio, not speech: stereo, no DTX, capped — the mic keeps its own tuning.
+    expect(harness.device?.sendTransport?.producers.at(-1)?.codecOptions).toEqual({
+      opusStereo: true,
+      opusDtx: false,
+      opusFec: true,
+      opusMaxAverageBitrate: 128_000,
+    });
+
+    await harness.session.stopScreenshare();
+    expect(harness.callsOf("closeProducer")).toHaveLength(2);
+    const state = useVoiceStore.getState();
+    expect(state.localTracks.screen).toBeUndefined();
+    expect(state.localTracks.screenAudio).toBeUndefined();
+    expect(harness.screenAudioTracks[0]?.stop).toHaveBeenCalled();
+  });
+
+  test("browser stop-bar (video track ends) closes both share producers", async () => {
+    harness.shareAudio = true;
+    await joined();
+    await harness.session.startScreenshare();
+
+    harness.screenTracks[0]?.end();
+    await flush();
+    expect(harness.callsOf("closeProducer")).toHaveLength(2);
+    const state = useVoiceStore.getState();
+    expect(state.localTracks.screen).toBeUndefined();
+    expect(state.localTracks.screenAudio).toBeUndefined();
+  });
+
+  test("share audio track ending alone keeps the video share live", async () => {
+    harness.shareAudio = true;
+    await joined();
+    await harness.session.startScreenshare();
+
+    harness.screenAudioTracks[0]?.end();
+    await flush();
+    expect(harness.callsOf("closeProducer")).toHaveLength(1);
+    const state = useVoiceStore.getState();
+    expect(state.localTracks.screen).toBeDefined();
+    expect(state.localTracks.screenAudio).toBeUndefined();
+  });
+
+  test("a remote screenAudio producer is consumed and auto-resumed like mic audio", async () => {
+    await joined();
+    harness.producerKinds.set("remote-sa-1", "audio");
+    harness.session.handleRealtimeEvent(producerAdded("remote-sa-1", "audio", "screenAudio"));
+    await flush();
+
+    const peer = useVoiceStore.getState().peers["remote-user"];
+    expect(peer?.screenAudio?.producerId).toBe("remote-sa-1");
+    expect(harness.callsOf("setConsumersPaused").at(-1)?.input).toMatchObject({
+      consumerIds: ["c-remote-sa-1"],
+      paused: false,
+    });
   });
 });
 

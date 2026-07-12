@@ -13,7 +13,8 @@ import {
   SCREEN_PRESETS,
   getCamTrack,
   getMicTrack,
-  getScreenTrack,
+  getScreenCapture,
+  type ScreenCapture,
 } from "./media-sources";
 import {
   type ProducerSource,
@@ -111,7 +112,7 @@ export interface VoiceSessionDeps {
   createDevice: () => DeviceLike;
   getMicTrack: () => Promise<MediaStreamTrack>;
   getCamTrack: () => Promise<MediaStreamTrack>;
-  getScreenTrack: (preset: ScreensharePreset) => Promise<MediaStreamTrack>;
+  getScreenCapture: (preset: ScreensharePreset) => Promise<ScreenCapture>;
   isDocumentVisible: () => boolean;
   onVisibilityChange: (listener: () => void) => () => void;
 }
@@ -412,22 +413,80 @@ export class VoiceSession {
   }
 
   async enableCam(): Promise<void> {
-    await this.produceVideo("cam", this.deps.getCamTrack, [{ maxBitrate: CAM_MAX_BITRATE }]);
+    if (this.store().status !== "connected" || this.producers.has("cam") || !this.sendTransport) {
+      return;
+    }
+    const epoch = this.epoch;
+    // Capture rejections (denial / picker cancel) propagate — the button UX reverts.
+    const track = await this.deps.getCamTrack();
+    if (this.epoch !== epoch) {
+      track.stop();
+      return;
+    }
+    await this.produceLocal("cam", track, { encodings: [{ maxBitrate: CAM_MAX_BITRATE }] });
   }
 
   async disableCam(): Promise<void> {
     await this.closeLocalProducer("cam");
   }
 
-  /** Preset picked BEFORE capture; changing it mid-share is stop + re-share (spec v1). */
+  /**
+   * Preset picked BEFORE capture; changing it mid-share is stop + re-share (spec v1).
+   * Audio only exists when the user ticked share-audio in the picker: the video share is
+   * the feature, its audio is best-effort — an audio produce failure degrades to a silent
+   * share, a video failure aborts the whole thing.
+   */
   async startScreenshare(preset: ScreensharePreset = "1080p"): Promise<void> {
-    await this.produceVideo("screen", () => this.deps.getScreenTrack(preset), [
-      { maxBitrate: SCREEN_PRESETS[preset].maxBitrate },
-    ]);
+    if (
+      this.store().status !== "connected" ||
+      this.producers.has("screen") ||
+      !this.sendTransport
+    ) {
+      return;
+    }
+    const epoch = this.epoch;
+    // Capture rejections (denial / picker cancel) propagate — the button UX reverts.
+    const { video, audio } = await this.deps.getScreenCapture(preset);
+    if (this.epoch !== epoch) {
+      video.stop();
+      audio?.stop();
+      return;
+    }
+    try {
+      await this.produceLocal("screen", video, {
+        encodings: [{ maxBitrate: SCREEN_PRESETS[preset].maxBitrate }],
+        // The browser stop-bar ends the VIDEO track; the share's audio goes with it.
+        onEnded: () => {
+          void this.closeLocalProducer("screen");
+          void this.closeLocalProducer("screenAudio");
+        },
+      });
+    } catch (error) {
+      audio?.stop();
+      throw error;
+    }
+    if (!audio) return;
+    if (this.epoch !== epoch || !this.producers.has("screen")) {
+      audio.stop();
+      return;
+    }
+    try {
+      await this.produceLocal("screenAudio", audio, {
+        codecOptions: {
+          opusStereo: true,
+          opusDtx: false,
+          opusFec: true,
+          opusMaxAverageBitrate: 128_000,
+        },
+      });
+    } catch (error) {
+      console.warn("voice: share audio produce failed, continuing video-only", error);
+    }
   }
 
   async stopScreenshare(): Promise<void> {
     await this.closeLocalProducer("screen");
+    await this.closeLocalProducer("screenAudio");
   }
 
   /** The realtime dispatcher's entry — the four session-scoped `voice.*` events. */
@@ -611,25 +670,31 @@ export class VoiceSession {
     }
   }
 
-  private async produceVideo(
-    source: "cam" | "screen",
-    capture: () => Promise<MediaStreamTrack>,
-    encodings: Array<{ maxBitrate?: number }>,
+  /**
+   * Post-capture produce for every non-mic source (mic has its own denial-degrade path).
+   * Owns the produced track: on stale epoch or produce failure it stops it. `appData.source`
+   * is load-bearing — the transport "produce" handler signals it, and omitting it would
+   * default the server-side source to mic.
+   */
+  private async produceLocal(
+    source: Exclude<ProducerSource, "mic">,
+    track: MediaStreamTrack,
+    options: {
+      encodings?: Array<{ maxBitrate?: number }>;
+      codecOptions?: Record<string, unknown>;
+      onEnded?: () => void;
+    } = {},
   ): Promise<void> {
-    if (this.store().status !== "connected" || this.producers.has(source) || !this.sendTransport) {
-      return;
-    }
-    const epoch = this.epoch;
-    // Capture rejections (denial / picker cancel) propagate — the button UX reverts.
-    const track = await capture();
-    if (this.epoch !== epoch) {
+    if (this.producers.has(source) || !this.sendTransport) {
       track.stop();
       return;
     }
+    const epoch = this.epoch;
     try {
       const producer = await this.sendTransport.produce({
         track,
-        encodings,
+        encodings: options.encodings,
+        codecOptions: options.codecOptions,
         appData: { source },
       });
       if (this.epoch !== epoch) {
@@ -640,14 +705,17 @@ export class VoiceSession {
       this.producers.set(source, producer);
       this.patch({ localTracks: { ...this.store().localTracks, [source]: track } });
       // Browser-level "stop sharing" (or device unplug) ends the track outside our UI.
-      track.addEventListener("ended", () => void this.closeLocalProducer(source));
+      track.addEventListener(
+        "ended",
+        options.onEnded ?? (() => void this.closeLocalProducer(source)),
+      );
     } catch (error) {
       track.stop();
       throw error;
     }
   }
 
-  private async closeLocalProducer(source: "cam" | "screen"): Promise<void> {
+  private async closeLocalProducer(source: Exclude<ProducerSource, "mic">): Promise<void> {
     const producer = this.producers.get(source);
     if (!producer) return;
     this.producers.delete(source);
@@ -953,7 +1021,7 @@ function createRealDeps(): VoiceSessionDeps {
     createDevice: () => new Device() as unknown as DeviceLike,
     getMicTrack: () => getMicTrack(effectiveMicDeviceId()),
     getCamTrack,
-    getScreenTrack,
+    getScreenCapture,
     isDocumentVisible: () => document.visibilityState === "visible",
     onVisibilityChange: (listener) => {
       document.addEventListener("visibilitychange", listener);

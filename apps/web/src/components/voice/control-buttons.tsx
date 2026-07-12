@@ -158,7 +158,7 @@ export function ShareButton({
       >
         <ScreenShareIcon className={sizing.iconClass} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="center" className="w-48">
+      <DropdownMenuContent side="top" align="center" className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Share quality</DropdownMenuLabel>
           {SHARE_QUALITY.map(({ preset, label, hint }) => (
@@ -167,6 +167,10 @@ export function ShareButton({
               <span className="text-xs text-muted-foreground">{hint}</span>
             </DropdownMenuItem>
           ))}
+          {/* The audio opt-in lives inside the browser's picker, where nobody looks. */}
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            For sound, tick “also share tab audio” in the picker.
+          </div>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
