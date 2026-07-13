@@ -31,16 +31,17 @@ const nameSchema = z.object({
   name: z.string().regex(CHANNEL_NAME_REGEX, "1–32 characters: lowercase letters, digits, dashes."),
 });
 
+/** A channel as it is spoken about: text wears a `#`, voice wears a speaker glyph instead. */
+export function channelLabel(channel: Pick<ChannelListItem, "name" | "kind">): string {
+  return channel.kind === "voice" ? `${channel.name}` : `#${channel.name}`;
+}
+
 /** Both kinds are named, so voice doesn't read as the exceptional one. */
 function createTitle(kind: ChannelKind): string {
   return kind === "voice" ? "Create a voice channel" : "Create a text channel";
 }
 
-function renameTitle(channel: Pick<ChannelListItem, "name" | "kind">): string {
-  return channel.kind === "voice" ? `Rename ${channel.name}` : `Rename #${channel.name}`;
-}
-
-type ChannelKind = "text" | "voice";
+export type ChannelKind = "text" | "voice";
 
 type Props = {
   guildId: string;
@@ -108,7 +109,9 @@ export function ChannelNameDialog({ guildId, channel, kind = "text", open, onOpe
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{channel ? renameTitle(channel) : createTitle(kind)}</DialogTitle>
+          <DialogTitle>
+            {channel ? `Rename ${channelLabel(channel)}` : createTitle(kind)}
+          </DialogTitle>
           <DialogDescription>Lowercase letters, digits, and dashes.</DialogDescription>
         </DialogHeader>
 

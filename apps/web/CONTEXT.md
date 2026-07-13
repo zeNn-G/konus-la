@@ -31,7 +31,10 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
   - **`(app)/admin/`** — nested layout that adds the Instance-Owner gate (`requireAdmin`) for `/admin/*`.
   - **`(app)/guilds/$guildId/`** — a guild. `route.tsx` is a pass-through; the **channel sidebar**
     (`components/channel-sidebar.tsx` — unread bold + red mention badge, owner-only create/rename/delete via
-    `components/channel-name-dialog.tsx`) renders from the shell. Its guild-name header is a dropdown:
+    `components/channel-name-dialog.tsx`) renders from the shell. It owns BOTH section headers — Channels and
+    Voice — each with its own owner-only **+**; the **+** encodes the kind it creates, so the dialog needs no
+    kind picker. The Voice header shows for an owner even with zero voice channels (its **+** is the only way
+    to mint the first one); everyone else sees it only once one exists. Its guild-name header is a dropdown:
     "Guild settings" (owner) opens the settings modal, "Leave guild" (non-owner) confirms, then navigates
     home BEFORE invalidating `guild.list` (a refetch from inside the guild would 403). `index.tsx`
     redirects to the first channel (`beforeLoad` + `ensureQueryData(channel.list)`); with zero channels it
@@ -101,7 +104,8 @@ TanStack Query invalidation of `guild.list`.
   the tab is visible (~3 s hidden debounce, instant resume).
 - **Voice UI (`components/voice/`, decision #10 A+B hybrid)** — a voice channel is a *place*:
   the channel route renders `voice-room.tsx` (tile grid + bottom `ControlCapsule`) for
-  `kind: "voice"`; sidebar voice rows (`voice-channel-rows.tsx`, occupants nested with speaking
+  `kind: "voice"`; sidebar voice rows (`voice-channel-rows.tsx` — just the rows, the section header
+  lives in `channel-sidebar.tsx` beside the Channels one; occupants nested with speaking
   rings + mute/deafen badges) join-on-click; `control-deck.tsx` sits in the sidebar footer whenever
   a session exists; `voice-mini-stage.tsx` is the corner card on text channels while connected
   (expand navigates back to the room — routing IS the room-open state, there is no open/closed

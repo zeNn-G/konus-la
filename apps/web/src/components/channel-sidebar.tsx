@@ -29,7 +29,11 @@ import { ChevronDownIcon, HashIcon, MoreVerticalIcon, PlusIcon } from "lucide-re
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { ChannelNameDialog } from "@/components/channel-name-dialog";
+import {
+  ChannelNameDialog,
+  channelLabel,
+  type ChannelKind,
+} from "@/components/channel-name-dialog";
 import { GuildSettingsDialog } from "@/components/guild-settings/guild-settings-dialog";
 import { UserCard } from "@/components/user-card";
 import { ControlDeck } from "@/components/voice/control-deck";
@@ -52,7 +56,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
 
   const navigate = useNavigate();
   /** The kind the create dialog is minting; null when closed. Each "+" sets its own. */
-  const [createKind, setCreateKind] = useState<"text" | "voice" | null>(null);
+  const [createKind, setCreateKind] = useState<ChannelKind | null>(null);
   const [renameTarget, setRenameTarget] = useState<ChannelListItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChannelListItem | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -274,9 +278,13 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete #{deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Delete {deleteTarget ? channelLabel(deleteTarget) : "channel"}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Every message in this channel is deleted with it. There is no undo.
+              {deleteTarget?.kind === "voice"
+                ? "The channel disappears for everyone in this guild. There is no undo."
+                : "Every message in this channel is deleted with it. There is no undo."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -60,8 +60,8 @@ export async function seedTestMembership(guildId: string, userId: string): Promi
 }
 
 /**
- * Insert a guild voice channel, skipping the channel router's owner gate and rate limits on
- * purpose — suites that need a voice channel as a fixture, not as the thing under test.
+ * Insert a guild voice channel, skipping the channel router's owner gate on purpose — for
+ * suites that need a voice channel as a fixture, not as the thing under test.
  */
 export async function seedTestVoiceChannel(guildId: string, name: string): Promise<string> {
   const channelId = crypto.randomUUID();
