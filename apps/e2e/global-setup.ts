@@ -111,7 +111,7 @@ export default async function globalSetup(project: TestProject) {
 
     const guild = await createGuildWithOwner({ name: "E2E Guild", ownerUserId: alice.id });
     await seedTestMembership(guild.id, bob.id);
-    const alerts = await createChannel({ guildId: guild.id, name: "alerts" });
+    const alerts = await createChannel({ guildId: guild.id, name: "alerts", kind: "text" });
     const channels = await listChannelsForViewer(guild.id, alice.id);
     const general = channels.find((channel) => channel.name === "general");
     if (!general) throw new Error("guild seeding did not produce #general");

@@ -24,10 +24,11 @@ export type VoiceChannelActions = {
 };
 
 /**
- * The sidebar's voice section (decision #10 variant A): one row per voice channel with
- * the occupant list nested beneath it, live off the tier-1 occupancy key. Clicking a
- * row joins and opens the room — join is idempotent, so re-clicking your own channel
- * just re-enters the pane.
+ * The rows of the sidebar's voice section (decision #10 variant A): one row per voice
+ * channel with the occupant list nested beneath it, live off the tier-1 occupancy key.
+ * Clicking a row joins and opens the room — join is idempotent, so re-clicking your own
+ * channel just re-enters the pane. The section header lives in ChannelSidebar, beside the
+ * Channels one; this renders nothing when there are no voice channels.
  */
 export function VoiceChannelRows({
   guildId,
@@ -43,7 +44,6 @@ export function VoiceChannelRows({
 
   return (
     <div className="flex flex-col px-2 pb-2">
-      <span className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">Voice</span>
       {channels.map((channel) => (
         <VoiceChannelRow key={channel.id} guildId={guildId} channel={channel} actions={actions} />
       ))}

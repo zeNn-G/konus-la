@@ -75,7 +75,7 @@ beforeAll(async () => {
 
   vcMain = await seedTestVoiceChannel(guildId, "voice-main");
   vcOther = await seedTestVoiceChannel(guildId, "voice-other");
-  textChannelId = (await createChannel({ guildId, name: "chat" })).id;
+  textChannelId = (await createChannel({ guildId, name: "chat", kind: "text" })).id;
   dmChannelId = await seedTestDmChannel({ isGroup: false, participantIds: [ALICE, BOB] });
 });
 

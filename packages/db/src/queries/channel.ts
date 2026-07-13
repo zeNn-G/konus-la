@@ -11,11 +11,18 @@ import { isGuildMember } from "./guild";
 // Channel lifecycle
 // ---------------------------------------------------------------------------
 
-/** Create a text channel. Throws on a (guildId, name) unique violation — router maps to CONFLICT. */
-export async function createChannel(input: { guildId: string; name: string }) {
+/**
+ * Create a guild channel. `kind` is required here — the API boundary is where the `text`
+ * default lives. Throws on a (guildId, kind, name) unique violation — router maps to CONFLICT.
+ */
+export async function createChannel(input: {
+  guildId: string;
+  name: string;
+  kind: "text" | "voice";
+}) {
   const [created] = await db
     .insert(channel)
-    .values({ id: crypto.randomUUID(), guildId: input.guildId, kind: "text", name: input.name })
+    .values({ id: crypto.randomUUID(), guildId: input.guildId, kind: input.kind, name: input.name })
     .returning();
   if (!created) throw new Error("Failed to create channel.");
   return created;
@@ -184,4 +191,3 @@ export async function markChannelRead(input: {
     });
   return applied;
 }
-

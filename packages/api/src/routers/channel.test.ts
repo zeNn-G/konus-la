@@ -65,19 +65,111 @@ describe("channel.create", () => {
   });
 });
 
+/**
+ * Own guild, because the suite above asserts whole-list contents and is order-coupled —
+ * a voice channel appearing in `guildId` would break it.
+ */
+describe("channel.create kinds", () => {
+  let kindsGuildId: string;
+
+  beforeAll(async () => {
+    const created = await createGuildWithOwner({ name: "Kinds", ownerUserId: OWNER });
+    kindsGuildId = created.id;
+    await seedTestMembership(kindsGuildId, MEMBER);
+  });
+
+  test("owner creates a voice channel", async () => {
+    const created = await call(
+      appRouter.channel.create,
+      { guildId: kindsGuildId, name: "lounge", kind: "voice" },
+      asUser(OWNER),
+    );
+    expect(created).toMatchObject({ name: "lounge", kind: "voice" });
+  });
+
+  test("kind defaults to text when omitted", async () => {
+    const created = await call(
+      appRouter.channel.create,
+      { guildId: kindsGuildId, name: "no-kind" },
+      asUser(OWNER),
+    );
+    expect(created).toMatchObject({ name: "no-kind", kind: "text" });
+  });
+
+  test("a voice channel may reuse a text channel's name", async () => {
+    // The guild was seeded with a text #general; a voice `general` is a different channel.
+    const created = await call(
+      appRouter.channel.create,
+      { guildId: kindsGuildId, name: "general", kind: "voice" },
+      asUser(OWNER),
+    );
+    expect(created).toMatchObject({ name: "general", kind: "voice" });
+
+    const channels = await call(appRouter.channel.list, { guildId: kindsGuildId }, asUser(MEMBER));
+    expect(
+      channels
+        .filter((c) => c.name === "general")
+        .map((c) => c.kind)
+        .sort(),
+    ).toEqual(["text", "voice"]);
+  });
+
+  test("duplicate name within the same kind → CONFLICT", async () => {
+    await expectCode(
+      call(
+        appRouter.channel.create,
+        { guildId: kindsGuildId, name: "lounge", kind: "voice" },
+        asUser(OWNER),
+      ),
+      "CONFLICT",
+    );
+  });
+
+  test("dm is not a creatable kind → BAD_REQUEST", async () => {
+    await expectCode(
+      call(
+        appRouter.channel.create,
+        // @ts-expect-error — `dm` is deliberately outside the input's kind union.
+        { guildId: kindsGuildId, name: "sneaky", kind: "dm" },
+        asUser(OWNER),
+      ),
+      "BAD_REQUEST",
+    );
+  });
+
+  test("non-owner member creating voice → FORBIDDEN", async () => {
+    await expectCode(
+      call(
+        appRouter.channel.create,
+        { guildId: kindsGuildId, name: "member-voice", kind: "voice" },
+        asUser(MEMBER),
+      ),
+      "FORBIDDEN",
+    );
+  });
+});
+
 describe("channel.update", () => {
   test("owner renames; rename onto an existing name → CONFLICT", async () => {
-    const bugs = await call(appRouter.channel.list, { guildId }, asUser(OWNER)).then(
-      (channels) => channels.find((c) => c.name === "bugs"),
+    const bugs = await call(appRouter.channel.list, { guildId }, asUser(OWNER)).then((channels) =>
+      channels.find((c) => c.name === "bugs"),
     );
     if (!bugs) throw new Error("missing #bugs from previous test");
 
     await expect(
-      call(appRouter.channel.update, { guildId, channelId: bugs.id, name: "issues" }, asUser(OWNER)),
+      call(
+        appRouter.channel.update,
+        { guildId, channelId: bugs.id, name: "issues" },
+        asUser(OWNER),
+      ),
     ).resolves.toEqual({ ok: true });
 
     await expectCode(
-      call(appRouter.channel.update, { guildId, channelId: bugs.id, name: "general" }, asUser(OWNER)),
+      call(
+        appRouter.channel.update,
+        { guildId, channelId: bugs.id, name: "general" },
+        asUser(OWNER),
+      ),
       "CONFLICT",
     );
   });
@@ -88,7 +180,11 @@ describe("channel.update", () => {
       "NOT_FOUND",
     );
     await expectCode(
-      call(appRouter.channel.update, { guildId, channelId: generalId, name: "hax" }, asUser(MEMBER)),
+      call(
+        appRouter.channel.update,
+        { guildId, channelId: generalId, name: "hax" },
+        asUser(MEMBER),
+      ),
       "FORBIDDEN",
     );
   });
@@ -96,8 +192,8 @@ describe("channel.update", () => {
 
 describe("channel.delete", () => {
   test("owner deletes; repeat delete → NOT_FOUND; non-owner → FORBIDDEN", async () => {
-    const issues = await call(appRouter.channel.list, { guildId }, asUser(OWNER)).then(
-      (channels) => channels.find((c) => c.name === "issues"),
+    const issues = await call(appRouter.channel.list, { guildId }, asUser(OWNER)).then((channels) =>
+      channels.find((c) => c.name === "issues"),
     );
     if (!issues) throw new Error("missing #issues from previous test");
 

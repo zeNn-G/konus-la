@@ -13,6 +13,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export const CHANNEL_NAME_REGEX = /^[a-z0-9-]{1,32}$/;
@@ -30,16 +31,33 @@ const nameSchema = z.object({
   name: z.string().regex(CHANNEL_NAME_REGEX, "1–32 characters: lowercase letters, digits, dashes."),
 });
 
+/** Both kinds are named, so voice doesn't read as the exceptional one. */
+function createTitle(kind: ChannelKind): string {
+  return kind === "voice" ? "Create a voice channel" : "Create a text channel";
+}
+
+function renameTitle(channel: Pick<ChannelListItem, "name" | "kind">): string {
+  return channel.kind === "voice" ? `Rename ${channel.name}` : `Rename #${channel.name}`;
+}
+
+type ChannelKind = "text" | "voice";
+
 type Props = {
   guildId: string;
-  /** Absent → create; present → rename this channel. */
-  channel?: { id: string; name: string | null };
+  /** Absent → create; present → rename this channel (whose own kind drives the copy). */
+  channel?: Pick<ChannelListItem, "id" | "name" | "kind">;
+  /** Which kind to create — the sidebar "+" that opened this already answered it. */
+  kind?: ChannelKind;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-/** Create or rename a text channel (owner only — the trigger is owner-gated by the caller). */
-export function ChannelNameDialog({ guildId, channel, open, onOpenChange }: Props) {
+/**
+ * Create or rename a guild channel (owner only — the trigger is owner-gated by the caller).
+ * Voice names are slugs under the same validator as text; only the `#` prefix is text-only,
+ * since voice rows render with a speaker glyph instead.
+ */
+export function ChannelNameDialog({ guildId, channel, kind = "text", open, onOpenChange }: Props) {
   const invalidateChannels = () =>
     queryClient.invalidateQueries({ queryKey: orpc.channel.list.key() });
 
@@ -47,7 +65,11 @@ export function ChannelNameDialog({ guildId, channel, open, onOpenChange }: Prop
     orpc.channel.create.mutationOptions({
       onSuccess: async (created) => {
         await invalidateChannels();
-        toast.success(`Created #${created.name}.`);
+        toast.success(
+          created.kind === "voice"
+            ? `Created voice channel ${created.name}.`
+            : `Created #${created.name}.`,
+        );
         onOpenChange(false);
       },
       onError: (error) => toast.error(error.message),
@@ -71,7 +93,7 @@ export function ChannelNameDialog({ guildId, channel, open, onOpenChange }: Prop
       if (channel) {
         await rename.mutateAsync({ guildId, channelId: channel.id, name: value.name });
       } else {
-        await create.mutateAsync({ guildId, name: value.name });
+        await create.mutateAsync({ guildId, name: value.name, kind });
       }
     },
   });
@@ -86,7 +108,7 @@ export function ChannelNameDialog({ guildId, channel, open, onOpenChange }: Prop
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{channel ? `Rename #${channel.name}` : "Create a channel"}</DialogTitle>
+          <DialogTitle>{channel ? renameTitle(channel) : createTitle(kind)}</DialogTitle>
           <DialogDescription>Lowercase letters, digits, and dashes.</DialogDescription>
         </DialogHeader>
 
