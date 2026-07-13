@@ -255,15 +255,18 @@ export function updateSpeakingUserIds(channelId: string, speakingUserIds: string
  * to the observer (dead router = no-op, so no crash special-case, #15). A leaving
  * speaker falls out of the published speaking set here rather than waiting an observer
  * interval. No occupancy events published here.
+ *
+ * `announce: false` is the eviction path: the whole room is going, so the seats still
+ * standing must hear no producer churn — `channel.deleted` is their one signal.
  */
-function removeSeat(room: Room, seat: Seat): void {
+function removeSeat(room: Room, seat: Seat, announce = true): void {
   if (seat.graceTimer) clearTimeout(seat.graceTimer);
   seat.graceTimer = null;
   const peer = seat.peer;
   seat.peer = null;
   room.seats.delete(seat.userId);
   seatChannelByUser.delete(seat.userId);
-  if (peer) closePeerMedia(room, seat.userId, peer, room.seats.size > 0);
+  if (peer) closePeerMedia(room, seat.userId, peer, announce && room.seats.size > 0);
   if (room.seats.size === 0) {
     safeClose(room.router);
     room.router = null;
@@ -452,6 +455,36 @@ export async function joinVoice(input: {
   });
   await replayProducersTo(room, userId);
   return { seatSessionId: seat.seatSessionId };
+}
+
+/**
+ * The channel is gone: empty its room. Every seat drops through the same last-seat-out path
+ * as a leave, so the final removal closes the SFU router (cascading to the audio-level
+ * observer), drops the room, and releases each user's one-seat index — an evicted user can
+ * join elsewhere immediately.
+ *
+ * Publishes NOTHING: `channel.deleted` is the single client signal, and a per-user
+ * `voice.peerLeft` would only race it. Idempotent; an unknown room is a no-op.
+ */
+export function evictVoiceRoom(channelId: string): void {
+  const room = rooms.get(channelId);
+  if (!room) return;
+  // Cleared without publishing, so dropping a speaker's seat below can't fan out a
+  // parting activeSpeakers to a guild that is about to be told the channel is gone.
+  room.speakingUserIds = new Set();
+  // removeSeat deletes each seat as we visit it — dropping the entry a Map iterator is
+  // standing on is well-defined; the seats after it are still reached.
+  for (const seat of room.seats.values()) removeSeat(room, seat, false);
+}
+
+/**
+ * The guild is gone: evict every room it owned. Read off the in-memory rooms rather than the
+ * database — the guild's channel rows have already cascaded away by the time we get here.
+ */
+export function evictGuildVoiceRooms(guildId: string): void {
+  for (const room of rooms.values()) {
+    if (room.guildId === guildId) evictVoiceRoom(room.channelId);
+  }
 }
 
 /** Explicit leave: immediate peerLeft, no grace. Idempotent — no seat is a no-op. */

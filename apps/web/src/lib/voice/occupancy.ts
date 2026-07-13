@@ -23,6 +23,10 @@ export type VoiceOccupancyMap = Record<string, VoiceRoomOccupancy>;
 
 export const VOICE_OCCUPANCY_KEY = ["realtime", "voice-occupancy"] as const;
 
+/**
+ * `channel.deleted` sits in here rather than in the dispatcher so the cleanup stays pure and
+ * unit-testable — and so a bystander watching a room they are not in stops seeing its ghosts.
+ */
 export type VoiceOccupancyEvent = Extract<
   RealtimeEvent,
   {
@@ -32,7 +36,8 @@ export type VoiceOccupancyEvent = Extract<
       | "voice.peerLeft"
       | "voice.peerMutedSelf"
       | "voice.peerDeafenedSelf"
-      | "voice.activeSpeakers";
+      | "voice.activeSpeakers"
+      | "channel.deleted";
   }
 >;
 
@@ -118,6 +123,12 @@ export function reduceVoiceOccupancy(
       const room = map[event.channelId];
       if (!room) return map;
       return { ...map, [event.channelId]: { ...room, speakingUserIds: event.speakingUserIds } };
+    }
+    case "channel.deleted": {
+      // The room died with the channel. A text channel simply isn't in the map.
+      if (!map[event.channelId]) return map;
+      const { [event.channelId]: _gone, ...rest } = map;
+      return rest;
     }
   }
 }

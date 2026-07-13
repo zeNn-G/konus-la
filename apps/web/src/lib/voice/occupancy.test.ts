@@ -109,6 +109,24 @@ describe("reduceVoiceOccupancy", () => {
     expect(next[VC]?.speakingUserIds).toEqual(["ben", "cara"]);
   });
 
+  test("channel.deleted drops the whole room", () => {
+    const next = reduceVoiceOccupancy(seeded, {
+      type: "channel.deleted",
+      guildId: G,
+      channelId: VC,
+    });
+    expect(next[VC]).toBeUndefined();
+  });
+
+  test("channel.deleted for a channel with no room (a text channel) is a no-op", () => {
+    const next = reduceVoiceOccupancy(seeded, {
+      type: "channel.deleted",
+      guildId: G,
+      channelId: "text-channel-1",
+    });
+    expect(next).toBe(seeded);
+  });
+
   test("events for unknown rooms or seats are no-ops (not crashes)", () => {
     expect(
       reduceVoiceOccupancy(undefined, {

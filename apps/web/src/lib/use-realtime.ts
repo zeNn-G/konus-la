@@ -3,6 +3,7 @@ import type { AppRouterClient } from "@konus-la/api/routers/index";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { toast } from "sonner";
 
 import { invalidateDmConversation } from "@/lib/dm";
 import {
@@ -245,6 +246,16 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       break;
     }
     case "channel.deleted": {
+      // Order is load-bearing. Drop the room from occupancy (bystanders watching the channel
+      // stop seeing ghosts), tear our own session down if we were seated there, say why — and
+      // only THEN invalidate, so the channel route's "channel vanished, bounce to guild home"
+      // effect fires against an already-idle session.
+      client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
+        reduceVoiceOccupancy(old, event),
+      );
+      if (voiceSession.channelDeleted(event.channelId)) {
+        toast.info("This voice channel was deleted — you've been disconnected.");
+      }
       void client.invalidateQueries({ queryKey: orpc.channel.list.key() });
       break;
     }
@@ -288,6 +299,11 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
     case "guild.deleted": {
       // Gone for everyone — same eviction as guild.member.removed's own-user branch:
       // drop the rail row and let the guild layout navigate out before any cache cleanup.
+      // The tombstone only navigates, so a seat in one of its voice channels is torn down
+      // here first — otherwise the mic stays hot after the guild is gone.
+      if (voiceSession.guildDeleted(event.guildId)) {
+        toast.info("This guild was deleted — you've been disconnected from voice.");
+      }
       client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>
         old?.filter((g) => g.id !== event.guildId),
       );

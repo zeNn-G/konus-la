@@ -13,6 +13,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
   resetVoiceStateForTests,
+  voiceAudioLevelObserverForTests,
   voiceConnectionClosed,
   voiceSnapshotFor,
   voiceWorkerDied,
@@ -466,6 +467,82 @@ describe("voice server restart", () => {
       selfMute: false, // nothing stale survives — flags reset with the room
       selfDeaf: false,
     });
+  });
+});
+
+describe("voice room eviction on deletion", () => {
+  /**
+   * Deleting a channel/guild lives in the channel + guild routers, but its assertions belong
+   * here: this is the only test file that boots a real SFU worker, and a `voice.join` without
+   * one fails at router creation. Throwaway channels and dedicated users throughout —
+   * join/leave shares a per-user budget with no reset between tests.
+   */
+  test("deleting a voice channel empties the room, GCs it, and evicts silently", async () => {
+    const doomed = await seedTestVoiceChannel(guildId, "voice-doomed");
+    const [kit, lena] = ["v-kit", "v-lena"];
+    for (const id of [kit, lena]) {
+      await seedTestUser({ id, username: id });
+      await seedTestMembership(guildId, id);
+    }
+    await call(appRouter.voice.join, { channelId: doomed }, asWsUser(kit, "conn-kit-1"));
+    await call(appRouter.voice.join, { channelId: doomed }, asWsUser(lena, "conn-lena-1"));
+    expect(voiceAudioLevelObserverForTests(doomed)).not.toBeNull();
+
+    const alice = collect(ALICE);
+    const kitEvents = collect(kit);
+
+    await call(appRouter.channel.delete, { guildId, channelId: doomed }, asUser(ALICE));
+
+    await waitFor(() => ofType(alice, "channel.deleted").length === 1, "channel.deleted");
+    await settle();
+    // `channel.deleted` is the single client signal — a per-user peerLeft would race it.
+    expect(ofType(alice, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(kitEvents, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(alice, "channel.deleted")).toEqual([
+      expect.objectContaining({ guildId, channelId: doomed }),
+    ]);
+
+    // Both seats gone, the room GC'd, its SFU router closed (cascading to the observer).
+    expect(await voiceSnapshotFor(ALICE)).toHaveLength(0);
+    expect(voiceAudioLevelObserverForTests(doomed)).toBeNull();
+
+    // The one-seat-per-user index is released: an evicted user can join elsewhere at once.
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(kit, "conn-kit-2"));
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: kit })],
+      }),
+    ]);
+  });
+
+  test("deleting a text channel leaves voice rooms alone", async () => {
+    const chatter = await createChannel({ guildId, name: "chatter", kind: "text" });
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(BOB, "conn-b-del"));
+
+    await call(appRouter.channel.delete, { guildId, channelId: chatter.id }, asUser(ALICE));
+
+    await settle();
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({ channelId: vcMain, seats: [expect.objectContaining({ userId: BOB })] }),
+    ]);
+  });
+
+  test("deleting a guild evicts the voice rooms of its channels", async () => {
+    const owner = "v-doomed-owner";
+    const member = "v-doomed-member";
+    for (const id of [owner, member]) await seedTestUser({ id, username: id });
+    const doomedGuildId = (await createGuildWithOwner({ name: "Doomed", ownerUserId: owner })).id;
+    await seedTestMembership(doomedGuildId, member);
+    const vcDoomed = await seedTestVoiceChannel(doomedGuildId, "voice-doomed-guild");
+
+    await call(appRouter.voice.join, { channelId: vcDoomed }, asWsUser(member, "conn-dm-1"));
+    expect(voiceAudioLevelObserverForTests(vcDoomed)).not.toBeNull();
+
+    await call(appRouter.guild.delete, { guildId: doomedGuildId }, asUser(owner));
+
+    expect(await voiceSnapshotFor(member)).toHaveLength(0);
+    expect(voiceAudioLevelObserverForTests(vcDoomed)).toBeNull();
   });
 });
 

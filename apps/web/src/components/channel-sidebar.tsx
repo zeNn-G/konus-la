@@ -286,7 +286,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget?.kind === "voice"
-                ? "The channel disappears for everyone in this guild. There is no undo."
+                ? "Anyone currently in the channel is disconnected. There is no undo."
                 : "Every message in this channel is deleted with it. There is no undo."}
             </AlertDialogDescription>
           </AlertDialogHeader>

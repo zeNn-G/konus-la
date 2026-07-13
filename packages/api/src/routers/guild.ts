@@ -25,6 +25,7 @@ import { z } from "zod";
 import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
+import { evictGuildVoiceRooms } from "../voice/rooms";
 
 /** Roster-change fan-out: every remaining member plus the affected user themselves. */
 async function publishMemberEvent(
@@ -104,7 +105,10 @@ export const guildRouter = {
       return { ok: true } as const;
     }),
 
-  /** Permanently delete a guild; FK cascades drop all roles, memberships, invites, and bans. */
+  /**
+   * Permanently delete a guild; FK cascades drop all roles, memberships, invites, and bans —
+   * and its channels, so its voice Rooms are evicted here rather than left running.
+   */
   delete: protectedProcedure
     .input(z.object({ guildId: z.string() }))
     .use(requireGuildOwner)
@@ -112,6 +116,8 @@ export const guildRouter = {
       // Snapshot the roster BEFORE deleting — the FK cascade erases the membership rows.
       const memberIds = await listGuildMemberUserIds(input.guildId);
       await deleteGuild(input.guildId);
+      // Rows first, then the rooms — same race-safe order as channel.delete.
+      evictGuildVoiceRooms(input.guildId);
       await publishTo(new Set(memberIds), { type: "guild.deleted", guildId: input.guildId });
       return { ok: true } as const;
     }),
