@@ -12,6 +12,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
+  evictGuildVoiceRooms,
+  evictVoiceRoom,
   resetVoiceStateForTests,
   voiceAudioLevelObserverForTests,
   voiceConnectionClosed,
@@ -517,21 +519,31 @@ describe("voice room eviction on deletion", () => {
   });
 
   test("deleting a text channel leaves voice rooms alone", async () => {
+    const nina = "v-nina";
+    await seedTestUser({ id: nina, username: nina });
+    await seedTestMembership(guildId, nina);
     const chatter = await createChannel({ guildId, name: "chatter", kind: "text" });
-    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(BOB, "conn-b-del"));
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(nina, "conn-nina-1"));
 
     await call(appRouter.channel.delete, { guildId, channelId: chatter.id }, asUser(ALICE));
 
     await settle();
     expect(await voiceSnapshotFor(ALICE)).toEqual([
-      expect.objectContaining({ channelId: vcMain, seats: [expect.objectContaining({ userId: BOB })] }),
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: nina })],
+      }),
     ]);
   });
 
   test("deleting a guild evicts the voice rooms of its channels", async () => {
+    // The evicted member belongs to the MAIN guild too: after the doomed guild is gone, their
+    // own snapshot is empty whether or not eviction ran (the membership row cascaded away), so
+    // the seat index has to be probed by joining elsewhere instead.
     const owner = "v-doomed-owner";
     const member = "v-doomed-member";
     for (const id of [owner, member]) await seedTestUser({ id, username: id });
+    await seedTestMembership(guildId, member);
     const doomedGuildId = (await createGuildWithOwner({ name: "Doomed", ownerUserId: owner })).id;
     await seedTestMembership(doomedGuildId, member);
     const vcDoomed = await seedTestVoiceChannel(doomedGuildId, "voice-doomed-guild");
@@ -541,8 +553,23 @@ describe("voice room eviction on deletion", () => {
 
     await call(appRouter.guild.delete, { guildId: doomedGuildId }, asUser(owner));
 
-    expect(await voiceSnapshotFor(member)).toHaveLength(0);
+    // The room is gone with its SFU router (the observer dies with it)...
     expect(voiceAudioLevelObserverForTests(vcDoomed)).toBeNull();
+    // ...and the seat it held is released, so the member can sit down elsewhere immediately.
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(member, "conn-dm-2"));
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: member })],
+      }),
+    ]);
+  });
+
+  test("evicting an unknown room is a no-op, and eviction is idempotent", () => {
+    expect(() => evictVoiceRoom("no-such-channel")).not.toThrow();
+    expect(() => evictGuildVoiceRooms("no-such-guild")).not.toThrow();
+    expect(() => evictVoiceRoom(vcMain)).not.toThrow();
+    expect(() => evictVoiceRoom(vcMain)).not.toThrow();
   });
 });
 

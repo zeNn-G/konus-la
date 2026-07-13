@@ -253,7 +253,7 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
         reduceVoiceOccupancy(old, event),
       );
-      if (voiceSession.channelDeleted(event.channelId)) {
+      if (voiceSession.tearDownForDeletedChannel(event.channelId)) {
         toast.info("This voice channel was deleted — you've been disconnected.");
       }
       void client.invalidateQueries({ queryKey: orpc.channel.list.key() });
@@ -300,8 +300,12 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       // Gone for everyone — same eviction as guild.member.removed's own-user branch:
       // drop the rail row and let the guild layout navigate out before any cache cleanup.
       // The tombstone only navigates, so a seat in one of its voice channels is torn down
-      // here first — otherwise the mic stays hot after the guild is gone.
-      if (voiceSession.guildDeleted(event.guildId)) {
+      // here first — otherwise the mic stays hot after the guild is gone — and its rooms are
+      // dropped from occupancy, which nothing else would ever do for them.
+      client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
+        reduceVoiceOccupancy(old, event),
+      );
+      if (voiceSession.tearDownForDeletedGuild(event.guildId)) {
         toast.info("This guild was deleted — you've been disconnected from voice.");
       }
       client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>

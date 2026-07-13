@@ -116,9 +116,10 @@ export const channelRouter = {
     .handler(async ({ input }) => {
       const deleted = await deleteChannel(input.channelId, input.guildId);
       if (!deleted) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });
-      // Row first, THEN the room: once the row is gone a concurrent join can no longer
-      // re-seat into the doomed room. Evicting first would leave exactly that window open.
-      // The deleted row carries its kind, so this costs no extra read.
+      // Row first, THEN the room: every join that has not yet read the channel is now shut
+      // out, and one already past that read is caught by joinVoice's own re-check. Evicting
+      // first would instead leave a window with no guard on either side. The deleted row
+      // carries its kind, so this costs no extra read.
       if (deleted.kind === "voice") evictVoiceRoom(input.channelId);
       await publishTo(await listGuildMemberUserIds(input.guildId), {
         type: "channel.deleted",

@@ -495,17 +495,18 @@ export class VoiceSession {
   /**
    * The seated voice channel was deleted. Local-only teardown, mirroring `sessionReplaced`:
    * the server dropped the seat along with the row, so `voice.leave` would spend the shared
-   * join/leave budget unseating nobody. Returns whether this session was the one torn down —
-   * the dispatcher toasts on that. A channel we are not seated in is a no-op.
+   * join/leave budget unseating nobody. Reports whether it was THIS session that went down, so
+   * the dispatcher can say why (`notice` is rendered by nothing today, so the message is a
+   * toast). A channel we are not seated in is a no-op.
    */
-  channelDeleted(channelId: string): boolean {
+  tearDownForDeletedChannel(channelId: string): boolean {
     if (this.store().channelId !== channelId) return false;
     this.toIdle(null);
     return true;
   }
 
   /** The same teardown for a deleted guild: it took our channel — and our seat — with it. */
-  guildDeleted(guildId: string): boolean {
+  tearDownForDeletedGuild(guildId: string): boolean {
     if (this.store().guildId !== guildId) return false;
     this.toIdle(null);
     return true;

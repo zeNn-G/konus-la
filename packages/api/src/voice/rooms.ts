@@ -250,16 +250,24 @@ export function updateSpeakingUserIds(channelId: string, speakingUserIds: string
   });
 }
 
+/** Release the room's SFU resources and forget it (closing the router cascades to the observer). */
+function dropRoom(room: Room): void {
+  safeClose(room.router);
+  room.router = null;
+  room.audioLevelObserver = null;
+  rooms.delete(room.channelId);
+}
+
 /**
- * Drop a seat and GC the room when it was the last one out — closing the router cascades
- * to the observer (dead router = no-op, so no crash special-case, #15). A leaving
- * speaker falls out of the published speaking set here rather than waiting an observer
- * interval. No occupancy events published here.
+ * Drop a seat and GC the room when it was the last one out (dead router = no-op on close, so
+ * no crash special-case, #15). A leaving speaker falls out of the published speaking set here
+ * rather than waiting an observer interval. No occupancy events published here.
  *
- * `announce: false` is the eviction path: the whole room is going, so the seats still
- * standing must hear no producer churn — `channel.deleted` is their one signal.
+ * `announce: false` is the eviction path, and it suppresses **every** fan-out — producer churn
+ * AND the parting speaking-set update: the whole room is going and `channel.deleted` is the one
+ * signal its occupants get. One flag, so a caller cannot half-silence a removal.
  */
-function removeSeat(room: Room, seat: Seat, announce = true): void {
+function removeSeat(room: Room, seat: Seat, announce: boolean): void {
   if (seat.graceTimer) clearTimeout(seat.graceTimer);
   seat.graceTimer = null;
   const peer = seat.peer;
@@ -268,12 +276,10 @@ function removeSeat(room: Room, seat: Seat, announce = true): void {
   seatChannelByUser.delete(seat.userId);
   if (peer) closePeerMedia(room, seat.userId, peer, announce && room.seats.size > 0);
   if (room.seats.size === 0) {
-    safeClose(room.router);
-    room.router = null;
-    room.audioLevelObserver = null;
-    rooms.delete(room.channelId);
+    dropRoom(room);
     return;
   }
+  if (!announce) return;
   if (room.speakingUserIds.has(seat.userId)) {
     updateSpeakingUserIds(
       room.channelId,
@@ -309,7 +315,7 @@ function startGrace(room: Room, seat: Seat, graceMs: number, announce: boolean):
   if (seat.graceTimer) clearTimeout(seat.graceTimer);
   seat.graceTimer = setTimeout(() => {
     seat.graceTimer = null;
-    removeSeat(room, seat);
+    removeSeat(room, seat, true);
     // Fire-and-forget off a timer: nothing upstream can await it. A dropped publish only
     // desyncs sidebars until their next resubscription, but must not become an unhandled
     // rejection.
@@ -317,6 +323,19 @@ function startGrace(room: Room, seat: Seat, graceMs: number, announce: boolean):
       console.error("voice: grace-expiry peerLeft publish failed", error);
     });
   }, graceMs);
+}
+
+/**
+ * Building a router is the one await a join takes before it seats, and a channel can be
+ * deleted across it. Its room is evicted and forgotten, so seating into the handle we still
+ * hold would strand the joiner in a room no later path can reach — `voiceConnectionClosed`
+ * and the snapshot both walk the registered rooms only. The joiner gets NOT_FOUND instead,
+ * which their client treats as definitive and goes idle on.
+ */
+function assertRoomStillLive(room: Room): void {
+  if (rooms.get(room.channelId) !== room) {
+    throw new VoiceNotFoundError("Voice channel was deleted.");
+  }
 }
 
 /**
@@ -371,6 +390,7 @@ export async function joinVoice(input: {
   if (current && current.room.channelId === channelId) {
     const { room, seat } = current;
     await ensureRouter(room);
+    assertRoomStillLive(room);
     const replacedSeatSessionId = seat.seatSessionId;
     const oldPeer = seat.peer;
     if (oldPeer) closePeerMedia(room, userId, oldPeer, true);
@@ -412,6 +432,7 @@ export async function joinVoice(input: {
     if (room.seats.size === 0) rooms.delete(channelId);
     throw error;
   }
+  assertRoomStillLive(room);
 
   // Seated elsewhere: implicit unseat — immediate peerLeft, no grace. Flags carry over so
   // a muted user doesn't flash unmuted in the sidebar across a switch.
@@ -423,7 +444,7 @@ export async function joinVoice(input: {
     carriedDeaf = oldSeat.selfDeaf;
     const oldPeer = oldSeat.peer;
     const replacedSeatSessionId = oldSeat.seatSessionId;
-    removeSeat(oldRoom, oldSeat);
+    removeSeat(oldRoom, oldSeat, true);
     await publishPeerLeft(oldRoom, userId);
     // Cross-channel steal: another tab was live in the old room — tell it to tear down.
     if (oldPeer && oldPeer.connectionId !== connectionId) {
@@ -459,9 +480,8 @@ export async function joinVoice(input: {
 
 /**
  * The channel is gone: empty its room. Every seat drops through the same last-seat-out path
- * as a leave, so the final removal closes the SFU router (cascading to the audio-level
- * observer), drops the room, and releases each user's one-seat index — an evicted user can
- * join elsewhere immediately.
+ * as a leave, so the SFU router (and its audio-level observer) closes, the room is forgotten,
+ * and each user's one-seat index is released — an evicted user can join elsewhere immediately.
  *
  * Publishes NOTHING: `channel.deleted` is the single client signal, and a per-user
  * `voice.peerLeft` would only race it. Idempotent; an unknown room is a no-op.
@@ -469,12 +489,12 @@ export async function joinVoice(input: {
 export function evictVoiceRoom(channelId: string): void {
   const room = rooms.get(channelId);
   if (!room) return;
-  // Cleared without publishing, so dropping a speaker's seat below can't fan out a
-  // parting activeSpeakers to a guild that is about to be told the channel is gone.
-  room.speakingUserIds = new Set();
   // removeSeat deletes each seat as we visit it — dropping the entry a Map iterator is
   // standing on is well-defined; the seats after it are still reached.
   for (const seat of room.seats.values()) removeSeat(room, seat, false);
+  // A room whose first join is still awaiting its router has no seats yet, so it never
+  // reaches the last-seat-out path above. Drop it here or its router outlives the channel.
+  if (rooms.get(channelId) === room) dropRoom(room);
 }
 
 /**
@@ -491,7 +511,7 @@ export function evictGuildVoiceRooms(guildId: string): void {
 export async function leaveVoice(userId: string): Promise<void> {
   const current = seatOf(userId);
   if (!current) return;
-  removeSeat(current.room, current.seat);
+  removeSeat(current.room, current.seat, true);
   await publishPeerLeft(current.room, userId);
 }
 

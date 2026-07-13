@@ -104,11 +104,14 @@ TanStack Query invalidation of `guild.list`.
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
   full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout /
   a lost seat steal / the channel (or guild) being deleted under us — never navigation. The last of
-  those, `channelDeleted` / `guildDeleted`, are **local-only** teardowns that deliberately skip
-  `voice.leave` (the server dropped the seat with the row, so the RPC would spend the shared
-  join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. `voice.peerLeft` is
-  explicitly NOT reused as a self-teardown signal: it also fires on a legitimate channel switch and
-  on grace expiry, so acting on it would race a fresh join and kill the session just started. `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
+  those, `tearDownForDeletedChannel` / `tearDownForDeletedGuild`, are **local-only** teardowns that
+  deliberately skip `voice.leave` (the server dropped the seat with the row, so the RPC would spend
+  the shared join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. They
+  report whether THIS session went down, which is what the dispatcher toasts on (`notice` is written
+  but rendered by nothing). `voice.peerLeft` is explicitly NOT reused as a self-teardown signal: it
+  also fires on a legitimate channel switch and on grace expiry, so acting on it would race a fresh
+  join and kill the session just started.
+  `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
   all remote `<audio>` — up to two sinks per peer, mic and **screenAudio** (the audio half of a
   screenshare), both on the ONE per-peer volume (localStorage-persisted; volume 0 mutes the person
   wholesale); video consumers stay server-paused until a component `bindVideo`s their consumerId AND

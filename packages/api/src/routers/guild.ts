@@ -116,7 +116,8 @@ export const guildRouter = {
       // Snapshot the roster BEFORE deleting — the FK cascade erases the membership rows.
       const memberIds = await listGuildMemberUserIds(input.guildId);
       await deleteGuild(input.guildId);
-      // Rows first, then the rooms — same race-safe order as channel.delete.
+      // Rows first, then the rooms — same ordering as channel.delete, and the rooms are found
+      // in memory by guildId, since the channel rows they name have already cascaded away.
       evictGuildVoiceRooms(input.guildId);
       await publishTo(new Set(memberIds), { type: "guild.deleted", guildId: input.guildId });
       return { ok: true } as const;

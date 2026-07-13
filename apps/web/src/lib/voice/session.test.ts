@@ -851,7 +851,7 @@ describe("channel & guild deletion", () => {
     await joined();
     const send = harness.device?.sendTransport;
 
-    expect(harness.session.channelDeleted("vc-1")).toBe(true);
+    expect(harness.session.tearDownForDeletedChannel("vc-1")).toBe(true);
 
     const state = useVoiceStore.getState();
     expect(state.status).toBe("idle");
@@ -864,10 +864,10 @@ describe("channel & guild deletion", () => {
   });
 
   test("channelDeleted for another channel, or while idle, does nothing", async () => {
-    expect(harness.session.channelDeleted("vc-1")).toBe(false);
+    expect(harness.session.tearDownForDeletedChannel("vc-1")).toBe(false);
 
     await joined();
-    expect(harness.session.channelDeleted("vc-2")).toBe(false);
+    expect(harness.session.tearDownForDeletedChannel("vc-2")).toBe(false);
     expect(useVoiceStore.getState().status).toBe("connected");
   });
 
@@ -875,7 +875,7 @@ describe("channel & guild deletion", () => {
     await joined();
     const send = harness.device?.sendTransport;
 
-    expect(harness.session.guildDeleted("g-1")).toBe(true);
+    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(true);
 
     expect(useVoiceStore.getState().status).toBe("idle");
     expect(send?.closed).toBe(true);
@@ -884,10 +884,10 @@ describe("channel & guild deletion", () => {
   });
 
   test("guildDeleted for another guild, or while idle, does nothing", async () => {
-    expect(harness.session.guildDeleted("g-1")).toBe(false);
+    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(false);
 
     await joined();
-    expect(harness.session.guildDeleted("g-2")).toBe(false);
+    expect(harness.session.tearDownForDeletedGuild("g-2")).toBe(false);
     expect(useVoiceStore.getState().status).toBe("connected");
   });
 });
