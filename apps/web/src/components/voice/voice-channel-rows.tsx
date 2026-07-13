@@ -64,7 +64,9 @@ function VoiceChannelRow({
 
   return (
     <div className="flex flex-col">
-      <div className="group relative">
+      {/* Named group: the shell's <Sidebar> root is itself a bare `group`, so an unnamed
+          group-hover here would reveal every row's kebab at once. */}
+      <div className="group/channel relative">
         <Link
           to="/guilds/$guildId/channels/$channelId"
           params={{ guildId, channelId: channel.id }}
@@ -84,7 +86,7 @@ function VoiceChannelRow({
                   size="icon-sm"
                   variant="ghost"
                   aria-label={`Channel options for ${channel.name}`}
-                  className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 data-popup-open:opacity-100"
+                  className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover/channel:opacity-100 data-popup-open:opacity-100"
                 />
               }
             >
