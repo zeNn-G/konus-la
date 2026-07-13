@@ -17,6 +17,7 @@ import {
 } from "../index";
 import { markReadLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
+import { evictVoiceRoom } from "../voice/rooms";
 
 /** Discord-style slugs; the client normalises as-you-type, this is the source of truth. */
 const channelNameSchema = z
@@ -105,13 +106,21 @@ export const channelRouter = {
       }
     }),
 
-  /** Hard-delete a channel — its messages cascade away with it. Owner only. */
+  /**
+   * Hard-delete a channel — its messages cascade away with it, and a voice channel's Room is
+   * evicted with it (everyone seated is dropped and their SFU resources released). Owner only.
+   */
   delete: protectedProcedure
     .input(z.object({ guildId: z.string(), channelId: z.string() }))
     .use(requireGuildOwner)
     .handler(async ({ input }) => {
       const deleted = await deleteChannel(input.channelId, input.guildId);
       if (!deleted) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });
+      // Row first, THEN the room: every join that has not yet read the channel is now shut
+      // out, and one already past that read is caught by joinVoice's own re-check. Evicting
+      // first would instead leave a window with no guard on either side. The deleted row
+      // carries its kind, so this costs no extra read.
+      if (deleted.kind === "voice") evictVoiceRoom(input.channelId);
       await publishTo(await listGuildMemberUserIds(input.guildId), {
         type: "channel.deleted",
         guildId: input.guildId,

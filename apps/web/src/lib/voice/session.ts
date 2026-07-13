@@ -492,6 +492,26 @@ export class VoiceSession {
     await this.closeLocalProducer("screenAudio");
   }
 
+  /**
+   * The seated voice channel was deleted. Local-only teardown, mirroring `sessionReplaced`:
+   * the server dropped the seat along with the row, so `voice.leave` would spend the shared
+   * join/leave budget unseating nobody. Reports whether it was THIS session that went down, so
+   * the dispatcher can say why (`notice` is rendered by nothing today, so the message is a
+   * toast). A channel we are not seated in is a no-op.
+   */
+  tearDownForDeletedChannel(channelId: string): boolean {
+    if (this.store().channelId !== channelId) return false;
+    this.toIdle(null);
+    return true;
+  }
+
+  /** The same teardown for a deleted guild: it took our channel — and our seat — with it. */
+  tearDownForDeletedGuild(guildId: string): boolean {
+    if (this.store().guildId !== guildId) return false;
+    this.toIdle(null);
+    return true;
+  }
+
   /** The realtime dispatcher's entry — the four session-scoped `voice.*` events. */
   handleRealtimeEvent(event: VoiceSessionEvent): void {
     switch (event.type) {

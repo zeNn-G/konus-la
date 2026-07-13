@@ -23,6 +23,11 @@ export type VoiceOccupancyMap = Record<string, VoiceRoomOccupancy>;
 
 export const VOICE_OCCUPANCY_KEY = ["realtime", "voice-occupancy"] as const;
 
+/**
+ * The two deletion events sit in here rather than in the dispatcher so the cleanup stays pure
+ * and unit-testable — and so a bystander watching a room they are not in stops seeing its
+ * ghosts. A deleted room's occupants are gone server-side; nothing else would ever say so.
+ */
 export type VoiceOccupancyEvent = Extract<
   RealtimeEvent,
   {
@@ -32,7 +37,9 @@ export type VoiceOccupancyEvent = Extract<
       | "voice.peerLeft"
       | "voice.peerMutedSelf"
       | "voice.peerDeafenedSelf"
-      | "voice.activeSpeakers";
+      | "voice.activeSpeakers"
+      | "channel.deleted"
+      | "guild.deleted";
   }
 >;
 
@@ -118,6 +125,18 @@ export function reduceVoiceOccupancy(
       const room = map[event.channelId];
       if (!room) return map;
       return { ...map, [event.channelId]: { ...room, speakingUserIds: event.speakingUserIds } };
+    }
+    case "channel.deleted": {
+      // The room died with the channel. A text channel simply isn't in the map.
+      if (!map[event.channelId]) return map;
+      const { [event.channelId]: _gone, ...rest } = map;
+      return rest;
+    }
+    case "guild.deleted": {
+      // The guild took its channels — and their rooms — with it.
+      const entries = Object.entries(map).filter(([, room]) => room.guildId !== event.guildId);
+      if (entries.length === Object.keys(map).length) return map;
+      return Object.fromEntries(entries);
     }
   }
 }

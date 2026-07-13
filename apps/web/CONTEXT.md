@@ -81,7 +81,13 @@ TanStack Query invalidation of `guild.list`.
   for the own user clears a stale tombstone (rejoin after kick) and refreshes the rail in other tabs.
   `guild.updated` (ownership transfer) re-reads `guild.get` — the settings entry, the crown, and the
   modal's owner-flip guard all react live. `guild.deleted` evicts every recipient the same
-  tombstone way, no per-user check.
+  tombstone way, no per-user check — plus `voiceSession.guildDeleted`, since the tombstone only
+  navigates and would otherwise leave a seated member's mic hot after the guild is gone.
+- **Channel deletion in the dispatcher**: `channel.deleted` runs the occupancy reducer (bystanders
+  watching a room they are not in stop seeing its occupants), tears the session down via
+  `voiceSession.channelDeleted` if that is the channel we are seated in, toasts why, and only THEN
+  invalidates `channel.list` — **in that order**, so the channel route's "channel vanished, bounce to
+  guild home" effect fires against an already-idle session.
 - **Key discipline**: the channel view and the dispatcher MUST build history keys through
   `historyInfiniteOptions` / `historyInfiniteKey` — a hand-built key silently misses the cache.
 - **Typing / presence** live in plain client-only query keys (`["realtime", ...]`) read via
@@ -96,8 +102,16 @@ TanStack Query invalidation of `guild.list`.
   never consumes itself), `sessionReplaced`, and `mediaReset` to the session. One recovery path:
   signaling failure / socket death / `mediaReset` / transport failure → `reconnecting` → rejoin
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
-  full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout —
-  never navigation. `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
+  full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout /
+  a lost seat steal / the channel (or guild) being deleted under us — never navigation. The last of
+  those, `tearDownForDeletedChannel` / `tearDownForDeletedGuild`, are **local-only** teardowns that
+  deliberately skip `voice.leave` (the server dropped the seat with the row, so the RPC would spend
+  the shared join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. They
+  report whether THIS session went down, which is what the dispatcher toasts on (`notice` is written
+  but rendered by nothing). `voice.peerLeft` is explicitly NOT reused as a self-teardown signal: it
+  also fires on a legitimate channel switch and on grace expiry, so acting on it would race a fresh
+  join and kill the session just started.
+  `components/voice-audio-bridge.tsx` (mounted once in the `(app)` shell) renders
   all remote `<audio>` — up to two sinks per peer, mic and **screenAudio** (the audio half of a
   screenshare), both on the ONE per-peer volume (localStorage-persisted; volume 0 mutes the person
   wholesale); video consumers stay server-paused until a component `bindVideo`s their consumerId AND

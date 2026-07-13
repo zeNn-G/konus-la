@@ -846,6 +846,52 @@ describe("leave, switch & steal", () => {
   });
 });
 
+describe("channel & guild deletion", () => {
+  test("channelDeleted for the seated channel tears down locally — no voice.leave", async () => {
+    await joined();
+    const send = harness.device?.sendTransport;
+
+    expect(harness.session.tearDownForDeletedChannel("vc-1")).toBe(true);
+
+    const state = useVoiceStore.getState();
+    expect(state.status).toBe("idle");
+    expect(state.channelId).toBeNull();
+    expect(send?.closed).toBe(true);
+    expect(harness.micTracks[0]?.stop).toHaveBeenCalled();
+    // The server dropped the seat with the row — leaving would spend the join/leave budget
+    // on a seat that no longer exists.
+    expect(harness.callsOf("leave")).toHaveLength(0);
+  });
+
+  test("channelDeleted for another channel, or while idle, does nothing", async () => {
+    expect(harness.session.tearDownForDeletedChannel("vc-1")).toBe(false);
+
+    await joined();
+    expect(harness.session.tearDownForDeletedChannel("vc-2")).toBe(false);
+    expect(useVoiceStore.getState().status).toBe("connected");
+  });
+
+  test("guildDeleted tears down a session seated in one of its channels", async () => {
+    await joined();
+    const send = harness.device?.sendTransport;
+
+    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(true);
+
+    expect(useVoiceStore.getState().status).toBe("idle");
+    expect(send?.closed).toBe(true);
+    expect(harness.micTracks[0]?.stop).toHaveBeenCalled();
+    expect(harness.callsOf("leave")).toHaveLength(0);
+  });
+
+  test("guildDeleted for another guild, or while idle, does nothing", async () => {
+    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(false);
+
+    await joined();
+    expect(harness.session.tearDownForDeletedGuild("g-2")).toBe(false);
+    expect(useVoiceStore.getState().status).toBe("connected");
+  });
+});
+
 describe("recovery", () => {
   test("a mid-ceremony signaling failure enters reconnecting and rejoins with backoff", async () => {
     vi.useFakeTimers();

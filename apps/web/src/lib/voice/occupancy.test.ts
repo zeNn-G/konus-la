@@ -109,6 +109,42 @@ describe("reduceVoiceOccupancy", () => {
     expect(next[VC]?.speakingUserIds).toEqual(["ben", "cara"]);
   });
 
+  test("channel.deleted drops the whole room", () => {
+    const next = reduceVoiceOccupancy(seeded, {
+      type: "channel.deleted",
+      guildId: G,
+      channelId: VC,
+    });
+    expect(next[VC]).toBeUndefined();
+  });
+
+  test("channel.deleted for a channel with no room (a text channel) is a no-op", () => {
+    const next = reduceVoiceOccupancy(seeded, {
+      type: "channel.deleted",
+      guildId: G,
+      channelId: "text-channel-1",
+    });
+    expect(next).toBe(seeded);
+  });
+
+  test("guild.deleted drops every room of that guild, leaving other guilds alone", () => {
+    const twoGuilds = reduceVoiceOccupancy(seeded, {
+      type: "voice.peerJoined",
+      guildId: "guild-2",
+      channelId: "vc-elsewhere",
+      userId: "ben",
+      selfMute: false,
+      selfDeaf: false,
+    });
+    const next = reduceVoiceOccupancy(twoGuilds, { type: "guild.deleted", guildId: G });
+    expect(next[VC]).toBeUndefined();
+    expect(next["vc-elsewhere"]).toBeDefined();
+  });
+
+  test("guild.deleted for a guild with no occupied rooms is a no-op", () => {
+    expect(reduceVoiceOccupancy(seeded, { type: "guild.deleted", guildId: "guild-9" })).toBe(seeded);
+  });
+
   test("events for unknown rooms or seats are no-ops (not crashes)", () => {
     expect(
       reduceVoiceOccupancy(undefined, {

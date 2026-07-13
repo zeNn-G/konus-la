@@ -12,7 +12,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
+  evictGuildVoiceRooms,
+  evictVoiceRoom,
   resetVoiceStateForTests,
+  voiceAudioLevelObserverForTests,
   voiceConnectionClosed,
   voiceSnapshotFor,
   voiceWorkerDied,
@@ -466,6 +469,107 @@ describe("voice server restart", () => {
       selfMute: false, // nothing stale survives — flags reset with the room
       selfDeaf: false,
     });
+  });
+});
+
+describe("voice room eviction on deletion", () => {
+  /**
+   * Deleting a channel/guild lives in the channel + guild routers, but its assertions belong
+   * here: this is the only test file that boots a real SFU worker, and a `voice.join` without
+   * one fails at router creation. Throwaway channels and dedicated users throughout —
+   * join/leave shares a per-user budget with no reset between tests.
+   */
+  test("deleting a voice channel empties the room, GCs it, and evicts silently", async () => {
+    const doomed = await seedTestVoiceChannel(guildId, "voice-doomed");
+    const [kit, lena] = ["v-kit", "v-lena"];
+    for (const id of [kit, lena]) {
+      await seedTestUser({ id, username: id });
+      await seedTestMembership(guildId, id);
+    }
+    await call(appRouter.voice.join, { channelId: doomed }, asWsUser(kit, "conn-kit-1"));
+    await call(appRouter.voice.join, { channelId: doomed }, asWsUser(lena, "conn-lena-1"));
+    expect(voiceAudioLevelObserverForTests(doomed)).not.toBeNull();
+
+    const alice = collect(ALICE);
+    const kitEvents = collect(kit);
+
+    await call(appRouter.channel.delete, { guildId, channelId: doomed }, asUser(ALICE));
+
+    await waitFor(() => ofType(alice, "channel.deleted").length === 1, "channel.deleted");
+    await settle();
+    // `channel.deleted` is the single client signal — a per-user peerLeft would race it.
+    expect(ofType(alice, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(kitEvents, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(alice, "channel.deleted")).toEqual([
+      expect.objectContaining({ guildId, channelId: doomed }),
+    ]);
+
+    // Both seats gone, the room GC'd, its SFU router closed (cascading to the observer).
+    expect(await voiceSnapshotFor(ALICE)).toHaveLength(0);
+    expect(voiceAudioLevelObserverForTests(doomed)).toBeNull();
+
+    // The one-seat-per-user index is released: an evicted user can join elsewhere at once.
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(kit, "conn-kit-2"));
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: kit })],
+      }),
+    ]);
+  });
+
+  test("deleting a text channel leaves voice rooms alone", async () => {
+    const nina = "v-nina";
+    await seedTestUser({ id: nina, username: nina });
+    await seedTestMembership(guildId, nina);
+    const chatter = await createChannel({ guildId, name: "chatter", kind: "text" });
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(nina, "conn-nina-1"));
+
+    await call(appRouter.channel.delete, { guildId, channelId: chatter.id }, asUser(ALICE));
+
+    await settle();
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: nina })],
+      }),
+    ]);
+  });
+
+  test("deleting a guild evicts the voice rooms of its channels", async () => {
+    // The evicted member belongs to the MAIN guild too: after the doomed guild is gone, their
+    // own snapshot is empty whether or not eviction ran (the membership row cascaded away), so
+    // the seat index has to be probed by joining elsewhere instead.
+    const owner = "v-doomed-owner";
+    const member = "v-doomed-member";
+    for (const id of [owner, member]) await seedTestUser({ id, username: id });
+    await seedTestMembership(guildId, member);
+    const doomedGuildId = (await createGuildWithOwner({ name: "Doomed", ownerUserId: owner })).id;
+    await seedTestMembership(doomedGuildId, member);
+    const vcDoomed = await seedTestVoiceChannel(doomedGuildId, "voice-doomed-guild");
+
+    await call(appRouter.voice.join, { channelId: vcDoomed }, asWsUser(member, "conn-dm-1"));
+    expect(voiceAudioLevelObserverForTests(vcDoomed)).not.toBeNull();
+
+    await call(appRouter.guild.delete, { guildId: doomedGuildId }, asUser(owner));
+
+    // The room is gone with its SFU router (the observer dies with it)...
+    expect(voiceAudioLevelObserverForTests(vcDoomed)).toBeNull();
+    // ...and the seat it held is released, so the member can sit down elsewhere immediately.
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(member, "conn-dm-2"));
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: member })],
+      }),
+    ]);
+  });
+
+  test("evicting an unknown room is a no-op, and eviction is idempotent", () => {
+    expect(() => evictVoiceRoom("no-such-channel")).not.toThrow();
+    expect(() => evictGuildVoiceRooms("no-such-guild")).not.toThrow();
+    expect(() => evictVoiceRoom(vcMain)).not.toThrow();
+    expect(() => evictVoiceRoom(vcMain)).not.toThrow();
   });
 });
 
