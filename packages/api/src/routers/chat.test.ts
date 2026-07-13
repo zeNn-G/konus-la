@@ -23,9 +23,9 @@ beforeAll(async () => {
   guildId = created.id;
   await seedTestMembership(guildId, MEMBER);
 
-  chatId = (await createChannel({ guildId, name: "chat" })).id;
-  mentionsId = (await createChannel({ guildId, name: "mentions" })).id;
-  historyId = (await createChannel({ guildId, name: "history" })).id;
+  chatId = (await createChannel({ guildId, name: "chat", kind: "text" })).id;
+  mentionsId = (await createChannel({ guildId, name: "mentions", kind: "text" })).id;
+  historyId = (await createChannel({ guildId, name: "history", kind: "text" })).id;
 });
 
 async function viewerChannel(channelId: string, userId: string) {
@@ -66,7 +66,7 @@ describe("chat.sendMessage", () => {
   });
 
   test("sending advances the author's own read watermark", async () => {
-    const channel = await createChannel({ guildId, name: "self-read" });
+    const channel = await createChannel({ guildId, name: "self-read", kind: "text" });
 
     // Someone else's message leaves you unread…
     await call(

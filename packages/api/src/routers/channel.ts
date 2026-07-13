@@ -9,7 +9,12 @@ import {
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
-import { protectedProcedure, requireChannelMember, requireGuildMember, requireGuildOwner } from "../index";
+import {
+  protectedProcedure,
+  requireChannelMember,
+  requireGuildMember,
+  requireGuildOwner,
+} from "../index";
 import { markReadLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 
@@ -27,14 +32,25 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Text-channel lifecycle + the viewer's unread state. Create/rename/delete are owner-gated
+ * Guild-channel lifecycle + the viewer's unread state. Create/rename/delete are owner-gated
  * for now — the roles rework ("Phase 3.5") will widen these to admins. Every structural
  * change fans out to all guild members so sidebars stay live.
  */
 export const channelRouter = {
-  /** Create a text channel. Names are unique per guild → CONFLICT on collision. Owner only. */
+  /**
+   * Create a guild channel. Names are unique per (guild, kind) → CONFLICT on collision, so a
+   * voice `general` may coexist with a text `#general`. `dm` is excluded from `kind`: DMs are
+   * created through the dm router (which sets a pair key), and a guild-scoped one would render
+   * as an unreachable row. Owner only.
+   */
   create: protectedProcedure
-    .input(z.object({ guildId: z.string(), name: channelNameSchema }))
+    .input(
+      z.object({
+        guildId: z.string(),
+        name: channelNameSchema,
+        kind: z.enum(["text", "voice"]).default("text"),
+      }),
+    )
     .use(requireGuildOwner)
     .handler(async ({ input }) => {
       try {

@@ -17,8 +17,9 @@ import { guild } from "./guild";
  * or is a DM (`guildId` null; participants live in `channelParticipant`). `kind` carries
  * the full enum from day one so voice (Phase 5) is purely additive; guild channels are
  * `text`/`voice`, DMs are `kind: 'dm'`. Guild channel names are lowercase slugs, unique
- * per guild (SQLite treats NULL guildIds as distinct, so DMs never collide); group-DM
- * names are free text.
+ * per (guild, kind) — so a voice `general` may sit beside a text `#general`; nothing
+ * resolves a channel by name, so names are purely display. (SQLite treats NULL guildIds as
+ * distinct, so DMs never collide.) Group-DM names are free text.
  *
  * DM flavors (ADR 0006): a 1:1 (`isGroup` false) is the unique conversation between two
  * users — `dmPairKey` is the sorted `"idA:idB"` pair and its unique index (NULLs distinct,
@@ -48,7 +49,7 @@ export const channel = sqliteTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("channel_guild_id_name_uq").on(table.guildId, table.name),
+    uniqueIndex("channel_guild_id_kind_name_uq").on(table.guildId, table.kind, table.name),
     uniqueIndex("channel_dm_pair_key_uq").on(table.dmPairKey),
     index("channel_guild_id_idx").on(table.guildId),
   ],

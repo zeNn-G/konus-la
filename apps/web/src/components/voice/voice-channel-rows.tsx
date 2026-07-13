@@ -24,10 +24,11 @@ export type VoiceChannelActions = {
 };
 
 /**
- * The sidebar's voice section (decision #10 variant A): one row per voice channel with
- * the occupant list nested beneath it, live off the tier-1 occupancy key. Clicking a
- * row joins and opens the room — join is idempotent, so re-clicking your own channel
- * just re-enters the pane.
+ * The rows of the sidebar's voice section (decision #10 variant A): one row per voice
+ * channel with the occupant list nested beneath it, live off the tier-1 occupancy key.
+ * Clicking a row joins and opens the room — join is idempotent, so re-clicking your own
+ * channel just re-enters the pane. The section header lives in ChannelSidebar, beside the
+ * Channels one; this renders nothing when there are no voice channels.
  */
 export function VoiceChannelRows({
   guildId,
@@ -43,7 +44,6 @@ export function VoiceChannelRows({
 
   return (
     <div className="flex flex-col px-2 pb-2">
-      <span className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">Voice</span>
       {channels.map((channel) => (
         <VoiceChannelRow key={channel.id} guildId={guildId} channel={channel} actions={actions} />
       ))}
@@ -64,7 +64,9 @@ function VoiceChannelRow({
 
   return (
     <div className="flex flex-col">
-      <div className="group relative">
+      {/* Named group: the shell's <Sidebar> root is itself a bare `group`, so an unnamed
+          group-hover here would reveal every row's kebab at once. */}
+      <div className="group/channel relative">
         <Link
           to="/guilds/$guildId/channels/$channelId"
           params={{ guildId, channelId: channel.id }}
@@ -84,7 +86,7 @@ function VoiceChannelRow({
                   size="icon-sm"
                   variant="ghost"
                   aria-label={`Channel options for ${channel.name}`}
-                  className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 data-popup-open:opacity-100"
+                  className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover/channel:opacity-100 data-popup-open:opacity-100"
                 />
               }
             >
