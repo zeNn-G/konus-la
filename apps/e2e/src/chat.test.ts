@@ -19,6 +19,17 @@ let pageB: Page;
 
 const composer = (page: Page) => page.getByPlaceholder(/^Message #/);
 
+/**
+ * A member's row in the guild roster. The row is a button whose accessible name folds in
+ * the avatar's alt, the presence dot's aria-label and the visible label — e.g. "bob Online
+ * Bob". The avatar's alt is always the username, while the label is the mutable
+ * displayName, so match on the username: it survives a display-name change in the seed.
+ */
+const memberRow = (page: Page, user: { username: string }) =>
+  page
+    .getByRole("complementary")
+    .getByRole("button", { name: new RegExp(`\\b${user.username}\\b`, "i") });
+
 async function signedInContext(user: { email: string; password: string }) {
   // API sign-in straight into the context's cookie jar — the login form isn't under test.
   const context = await browser.newContext({ baseURL: WEB_URL });
@@ -143,8 +154,10 @@ test("spamming past the send rate limit surfaces an error toast", { timeout: 60_
 });
 
 test("Bob's presence dot flips green → grey when he disconnects", { timeout: 40_000 }, async () => {
-  await pageA.goto(`${WEB_URL}/guilds/${guildId}`);
-  const bobRow = pageA.locator("li", { hasText: "Bob" });
+  await pageA.goto(`${WEB_URL}/guilds/${guildId}`); // redirects into #general, where the panel lives
+  // Watch the row of the very user whose socket this test drops — presence re-groups the
+  // roster, so the row is a fresh node afterwards and must be re-resolved, not cached.
+  const bobRow = memberRow(pageA, BOB);
   await bobRow.locator('[aria-label="Online"]').waitFor({ state: "visible", timeout: 15_000 });
 
   await ctxB.close(); // Bob's socket drops; offline broadcast is debounced ~5s
