@@ -198,13 +198,13 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Reused all chat code (DM is just a channel with `kind='dm'`): `requireChannelMember` branches to a participant check, fan-out to participant sets, mentions resolve against participants, presence unions DM co-participants. DM message deletion is author-only.
 - Web: Home (`/`) is the DM zone (sidebar + empty pane), `/dms/$channelId` conversation view, `/dms/new/$userId` draft view, new-DM/new-group pickers, group members popover + rename/leave menu, "Message" action on guild member rows.
 
-### Phase 5 — Voice / video MVP
+### Phase 5 — Voice / video MVP ✅
 
-- `apps/server/src/sfu/` module: worker bootstrap with Bun workaround, `rooms: Map`, helpers.
-- ORPC voice procedures: `voice.getRouterRtpCapabilities`, `voice.createTransport`, `voice.connectTransport`, `voice.produce`, `voice.consume`, `voice.closeProducer`, `voice.leave`.
-- `VoiceState` table + WS events: `voice.peerJoined / peerLeft / producerAdded / producerClosed / peerMutedSelf / peerDeafenedSelf / serverMuteSet`.
-- `AudioLevelObserver` per router → `voice.activeSpeakers` event at ~2 Hz.
-- Web: mediasoup-client integration, voice connection bar, tile grid, mute / deafen / leave controls, screen-share + webcam buttons, device pickers (in/out), per-peer volume sliders.
+- `apps/server/src/sfu/` worker manager (Bun spawn workaround, crash respawn); rooms are **in-memory only** in `packages/api/src/voice/` — Room / Seat / Peer, router + `AudioLevelObserver` created lazily per occupied channel, **no `VoiceState` table** (a restart empties every room by design). See [ADR 0007](docs/adr/0007-voice-in-memory-rooms-ws-seats.md) and the [phase-5 spec](docs/specs/phase-5-voice.md).
+- ORPC voice procedures over the realtime socket: `voice.join` (the universal entry — fresh join, channel switch, grace rebind, multi-tab steal, post-crash recovery), `leave`, `setSelfMute / setSelfDeaf`, `getRouterRtpCapabilities`, `createTransport / connectTransport`, `produce / closeProducer`, `consume / setConsumersPaused`.
+- WS events: `voice.snapshot` (on subscribe) + `peerJoined / peerLeft / peerMutedSelf / peerDeafenedSelf / activeSpeakers` (guild-wide; speaking sets edge-triggered off the observer), `producerAdded / producerClosed` (room-only), `sessionReplaced / mediaReset` (self-only). Server-mute (`serverMuteSet`) moved to Phase 6 with the rest of moderation.
+- Lifecycle hardening: 30 s grace on socket loss; deleting a channel or guild evicts its rooms (#39); kick / ban / self-leave releases the member's seat (#42); worker death/respawn recovers via `mediaReset` rebinds.
+- Web: `voiceSession` singleton (mediasoup-client, one recovery path), voice stage + connection capsule, tile grid with speaking rings, mute / deafen / leave, webcam + screenshare (opt-in share audio), device pickers (in/out), per-peer volume, visibility-driven video consumer pausing.
 
 ### Phase 6 — Moderation & audit
 
