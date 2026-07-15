@@ -26,3 +26,4 @@ export * from "./queries/roles";
 export * from "./queries/channel";
 export * from "./queries/chat";
 export * from "./queries/dm";
+export * from "./queries/moderation";

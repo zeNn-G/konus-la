@@ -4,6 +4,7 @@ import {
   listChannelsForViewer,
   listGuildMemberUserIds,
   markChannelRead,
+  recordAuditEntry,
   renameChannel,
 } from "@konus-la/db";
 import { ORPCError } from "@orpc/server";
@@ -54,9 +55,16 @@ export const channelRouter = {
       }),
     )
     .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       try {
         const created = await createChannel(input);
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "channel.create",
+          targetChannelId: created.id,
+          metadata: { name: created.name, kind: created.kind },
+        });
         await publishTo(await listGuildMemberUserIds(input.guildId), {
           type: "channel.created",
           guildId: input.guildId,
@@ -82,10 +90,17 @@ export const channelRouter = {
   update: protectedProcedure
     .input(z.object({ guildId: z.string(), channelId: z.string(), name: channelNameSchema }))
     .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       try {
         const updated = await renameChannel(input);
         if (!updated) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "channel.update",
+          targetChannelId: updated.id,
+          metadata: { name: [updated.previousName, updated.name] },
+        });
         await publishTo(await listGuildMemberUserIds(input.guildId), {
           type: "channel.updated",
           guildId: input.guildId,
@@ -114,9 +129,16 @@ export const channelRouter = {
   delete: protectedProcedure
     .input(z.object({ guildId: z.string(), channelId: z.string() }))
     .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const deleted = await deleteChannel(input.channelId, input.guildId);
       if (!deleted) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "channel.delete",
+        targetChannelId: input.channelId,
+        metadata: { name: deleted.name },
+      });
       // Row first, THEN the room: every join that has not yet read the channel is now shut
       // out, and one already past that read is caught by joinVoice's own re-check. Evicting
       // first would instead leave a window with no guard on either side. The deleted row

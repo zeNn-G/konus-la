@@ -10,6 +10,7 @@ import {
   isGuildMember,
   isGuildOwner,
   listGuildMemberUserIds,
+  recordAuditEntry,
   swapGuildRolePositions,
   unassignMemberRole,
   updateGuildRole,
@@ -90,19 +91,21 @@ async function loadRoleForMutation(
  * not `@everyone`, strictly below the actor), then the target checks — must be a member
  * (NOT_FOUND, the kick precedent), must be outranked by the actor (plain FORBIDDEN, which
  * makes equal rank, self-target, and the owner-as-target all fail identically).
+ * Returns the loaded role (the audit entry names it).
  */
 async function assertCanManageAssignment(
   input: { guildId: string; userId: string; roleId: string },
   actorId: string,
   rejectDefault: string,
-): Promise<void> {
-  await loadRoleForMutation(input.guildId, input.roleId, actorId, rejectDefault);
+) {
+  const role = await loadRoleForMutation(input.guildId, input.roleId, actorId, rejectDefault);
   if (!(await isGuildMember(input.guildId, input.userId))) {
     throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
   }
   if (!(await actorOutranksMember(input.guildId, actorId, input.userId))) {
     throw new ORPCError("FORBIDDEN");
   }
+  return role;
 }
 
 /**
@@ -118,8 +121,14 @@ export const roleRouter = {
     .input(z.object({ guildId: z.string(), name: z.string().trim().min(1).max(100) }))
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const created = await createGuildRole(input.guildId, input.name);
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "role.create",
+        metadata: { roleId: created.id, name: created.name },
+      });
       await publishRoleChanged(input.guildId);
       return {
         id: created.id,
@@ -183,6 +192,23 @@ export const roleRouter = {
         ...(input.color !== undefined && { color: input.color }),
         ...(input.permissions !== undefined && { permissions: input.permissions }),
       });
+      // Only fields that actually changed land in the diff, as `[old, new]` pairs.
+      const changed: Record<string, [unknown, unknown]> = {};
+      if (input.name !== undefined && input.name !== role.name) {
+        changed.name = [role.name, input.name];
+      }
+      if (input.color !== undefined && input.color !== role.color) {
+        changed.color = [role.color, input.color];
+      }
+      if (input.permissions !== undefined && input.permissions !== role.permissions) {
+        changed.permissions = [role.permissions, input.permissions];
+      }
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "role.update",
+        metadata: { roleId: role.id, name: input.name ?? role.name, changed },
+      });
       await publishRoleChanged(input.guildId);
       return { ok: true } as const;
     }),
@@ -193,7 +219,7 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      await loadRoleForMutation(
+      const role = await loadRoleForMutation(
         input.guildId,
         input.roleId,
         context.user.id,
@@ -201,6 +227,12 @@ export const roleRouter = {
       );
 
       await deleteGuildRole(input.guildId, input.roleId);
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "role.delete",
+        metadata: { roleId: role.id, name: role.name },
+      });
       await publishRoleChanged(input.guildId);
       return { ok: true } as const;
     }),
@@ -237,6 +269,12 @@ export const roleRouter = {
       await assertRoleStrictlyBelow(input.guildId, context.user.id, neighbor.position);
 
       await swapGuildRolePositions(input.guildId, role, neighbor);
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "role.reorder",
+        metadata: { roleId: role.id, name: role.name, from: role.position, to: neighbor.position },
+      });
       await publishRoleChanged(input.guildId);
       return { ok: true } as const;
     }),
@@ -252,9 +290,23 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      await assertCanManageAssignment(input, context.user.id, "@everyone can't be assigned.");
+      const role = await assertCanManageAssignment(
+        input,
+        context.user.id,
+        "@everyone can't be assigned.",
+      );
       const changed = await assignMemberRole(input.guildId, input.userId, input.roleId);
-      if (changed) await publishMemberRolesChanged(input.guildId, input.userId);
+      // An idempotent re-grant changed nothing — no fan-out, and no audit entry either.
+      if (changed) {
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "role.assign",
+          targetUserId: input.userId,
+          metadata: { roleId: role.id, name: role.name },
+        });
+        await publishMemberRolesChanged(input.guildId, input.userId);
+      }
       return { ok: true } as const;
     }),
 
@@ -264,9 +316,22 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      await assertCanManageAssignment(input, context.user.id, "@everyone can't be unassigned.");
+      const role = await assertCanManageAssignment(
+        input,
+        context.user.id,
+        "@everyone can't be unassigned.",
+      );
       const changed = await unassignMemberRole(input.guildId, input.userId, input.roleId);
-      if (changed) await publishMemberRolesChanged(input.guildId, input.userId);
+      if (changed) {
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "role.unassign",
+          targetUserId: input.userId,
+          metadata: { roleId: role.id, name: role.name },
+        });
+        await publishMemberRolesChanged(input.guildId, input.userId);
+      }
       return { ok: true } as const;
     }),
 };

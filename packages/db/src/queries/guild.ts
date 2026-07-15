@@ -61,10 +61,26 @@ export async function createGuildWithOwner(input: { name: string; ownerUserId: s
   });
 }
 
-/** Rename a guild. Returns the updated row, or null when the guild doesn't exist. */
+/**
+ * Rename a guild. Returns the updated row plus the pre-rename name (the audit entry's
+ * `[old, new]` pair), or null when the guild doesn't exist.
+ */
 export async function renameGuild(guildId: string, name: string) {
-  const [updated] = await db.update(guild).set({ name }).where(eq(guild.id, guildId)).returning();
-  return updated ?? null;
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ name: guild.name })
+      .from(guild)
+      .where(eq(guild.id, guildId))
+      .limit(1);
+    if (!existing) return null;
+    const [updated] = await tx
+      .update(guild)
+      .set({ name })
+      .where(eq(guild.id, guildId))
+      .returning();
+    if (!updated) return null;
+    return { ...updated, previousName: existing.name };
+  });
 }
 
 /** Guilds the user belongs to (owned or joined), oldest first. */
@@ -290,13 +306,16 @@ export async function listInvites(guildId: string) {
     .orderBy(desc(guildInvite.createdAt));
 }
 
-/** Revoke (hard-delete) an invite. Scoped to its guild. Returns true when a row was deleted. */
-export async function deleteInvite(id: string, guildId: string): Promise<boolean> {
-  const deleted = await db
+/**
+ * Revoke (hard-delete) an invite. Scoped to its guild. Returns the deleted row's identity
+ * (the audit entry's metadata), or null when nothing matched.
+ */
+export async function deleteInvite(id: string, guildId: string) {
+  const [deleted] = await db
     .delete(guildInvite)
     .where(and(eq(guildInvite.id, id), eq(guildInvite.guildId, guildId)))
-    .returning({ id: guildInvite.id });
-  return deleted.length > 0;
+    .returning({ id: guildInvite.id, code: guildInvite.code });
+  return deleted ?? null;
 }
 
 // ---------------------------------------------------------------------------

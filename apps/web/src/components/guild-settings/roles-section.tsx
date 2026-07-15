@@ -17,8 +17,11 @@ import { orpc, queryClient } from "@/utils/orpc";
 type GuildView = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>;
 type GuildRole = GuildView["roles"][number];
 
-/** The editor's toggle catalog: every bit, grouped with a one-line hint (prototype #48). */
-const PERMISSION_GROUPS: {
+/**
+ * The editor's toggle catalog: every bit, grouped with a one-line hint (prototype #48).
+ * Exported as the one bit → label source; the audit view renders permission diffs from it.
+ */
+export const PERMISSION_GROUPS: {
   label: string;
   permissions: { bit: number; label: string; hint: string }[];
 }[] = [
