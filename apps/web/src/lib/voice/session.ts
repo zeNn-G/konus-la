@@ -505,8 +505,12 @@ export class VoiceSession {
     return true;
   }
 
-  /** The same teardown for a deleted guild: it took our channel — and our seat — with it. */
-  tearDownForDeletedGuild(guildId: string): boolean {
+  /**
+   * The same teardown keyed by guild: the guild was deleted out from under us, or we were
+   * removed from it (kicked, banned, or left) — either way the server already released the
+   * seat along with our standing in the guild, so this too is local-only.
+   */
+  tearDownIfSeatedInGuild(guildId: string): boolean {
     if (this.store().guildId !== guildId) return false;
     this.toIdle(null);
     return true;

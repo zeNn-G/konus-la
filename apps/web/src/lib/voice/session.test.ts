@@ -846,7 +846,7 @@ describe("leave, switch & steal", () => {
   });
 });
 
-describe("channel & guild deletion", () => {
+describe("channel deletion & guild teardown (deletion or member removal)", () => {
   test("channelDeleted for the seated channel tears down locally — no voice.leave", async () => {
     await joined();
     const send = harness.device?.sendTransport;
@@ -871,23 +871,26 @@ describe("channel & guild deletion", () => {
     expect(useVoiceStore.getState().status).toBe("connected");
   });
 
-  test("guildDeleted tears down a session seated in one of its channels", async () => {
+  // Guild deletion and own-user removal (kick/ban/leave) share this entry point: both mean
+  // the server already released the seat with our standing in the guild.
+  test("tearDownIfSeatedInGuild tears down a session seated in one of the guild's channels", async () => {
     await joined();
     const send = harness.device?.sendTransport;
 
-    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(true);
+    expect(harness.session.tearDownIfSeatedInGuild("g-1")).toBe(true);
 
     expect(useVoiceStore.getState().status).toBe("idle");
     expect(send?.closed).toBe(true);
     expect(harness.micTracks[0]?.stop).toHaveBeenCalled();
+    // The seat is already gone server-side — voice.leave would spend the shared budget.
     expect(harness.callsOf("leave")).toHaveLength(0);
   });
 
-  test("guildDeleted for another guild, or while idle, does nothing", async () => {
-    expect(harness.session.tearDownForDeletedGuild("g-1")).toBe(false);
+  test("tearDownIfSeatedInGuild for another guild, or while idle, does nothing", async () => {
+    expect(harness.session.tearDownIfSeatedInGuild("g-1")).toBe(false);
 
     await joined();
-    expect(harness.session.tearDownForDeletedGuild("g-2")).toBe(false);
+    expect(harness.session.tearDownIfSeatedInGuild("g-2")).toBe(false);
     expect(useVoiceStore.getState().status).toBe("connected");
   });
 });
