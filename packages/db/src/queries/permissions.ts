@@ -24,8 +24,7 @@ export async function getMemberAccess(
 /**
  * Effective permission bits for a MEMBER of a guild: the OR of the `@everyone` row
  * (`isDefault`) and every role assigned via `memberRole`. One query, OR'd in JS —
- * computed fresh per gated request, no cache (Phase 6 spec; escape hatches later are a
- * per-request memo, then a real cache).
+ * computed fresh per gated request, never cached (ADR 0008).
  *
  * Callers must have verified membership first: this reads role rows only, so a
  * non-member would still receive the `@everyone` bits. Raw integers only — bit meaning

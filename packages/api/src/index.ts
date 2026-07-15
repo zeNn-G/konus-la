@@ -10,7 +10,7 @@ import {
 import { ORPCError, os } from "@orpc/server";
 
 import type { Context } from "./context";
-import { hasPermission, PERMISSIONS } from "./permissions";
+import { hasPermission, PERMISSIONS, type PermissionBit } from "./permissions";
 
 export type { ChatMessage, EventMap, RealtimeEvent } from "./realtime/events";
 export { publisher } from "./realtime/publisher";
@@ -90,7 +90,11 @@ export const requireGuildOwner = os
  * passing on `ADMINISTRATOR` or the required bit. Bits are computed fresh per request —
  * no cache.
  */
-async function assertGuildPermission(guildId: string, userId: string, bit: number): Promise<void> {
+async function assertGuildPermission(
+  guildId: string,
+  userId: string,
+  bit: PermissionBit,
+): Promise<void> {
   const access = await getMemberAccess(guildId, userId);
   if (!access) throw new ORPCError("FORBIDDEN");
   if (access.isOwner) return;
@@ -106,7 +110,7 @@ async function assertGuildPermission(guildId: string, userId: string, bit: numbe
  * `.input()` like the middlewares above, one middleware per gated procedure — it SUBSUMES
  * `requireGuildMember`. See {@link assertGuildPermission} for the check order.
  */
-export function requireGuildPermission(bit: number) {
+export function requireGuildPermission(bit: PermissionBit) {
   return os
     .$context<AuthedContext>()
     .middleware(async ({ context, next }, input: { guildId: string }) => {
@@ -121,7 +125,7 @@ export function requireGuildPermission(bit: number) {
  * runs the guild permission check against `channel.guildId`. Injects the loaded
  * `channel` so handlers don't re-query, mirroring `requireChannelMember`.
  */
-export function requireChannelPermission(bit: number) {
+export function requireChannelPermission(bit: PermissionBit) {
   return os
     .$context<AuthedContext>()
     .middleware(async ({ context, next }, input: { channelId: string }) => {
