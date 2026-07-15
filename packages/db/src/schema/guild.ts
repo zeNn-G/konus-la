@@ -30,9 +30,13 @@ export const guild = sqliteTable("guild", {
 });
 
 /**
- * GuildRole — a role within one guild. Phase 2 seeds exactly one row per guild,
+ * GuildRole — a role within one guild. Every guild seeds exactly one row,
  * `isDefault: true`, standing in for the implicit `@everyone` (identified by the FLAG,
- * never the name string). The `permissions` bitfield arrives with the deferred RBAC work.
+ * never the name string). `permissions` is the RBAC bitfield (ADR 0008): a plain JS
+ * number whose bit meanings live in `@konus-la/api/permissions` — this package traffics
+ * in raw integers only. Default 0 = grants nothing, so seeding stays behavior-preserving.
+ * `color` is `#rrggbb`; null = uncolored (no tint contribution). Higher `position` =
+ * higher rank; `@everyone` is pinned at 0.
  */
 export const guildRole = sqliteTable("guild_role", {
   // TODO: can move to a DB-generated uuid later
@@ -43,6 +47,8 @@ export const guildRole = sqliteTable("guild_role", {
   name: text("name").notNull(),
   isDefault: integer("is_default", { mode: "boolean" }).default(false).notNull(),
   position: integer("position").default(0).notNull(),
+  permissions: integer("permissions").default(0).notNull(),
+  color: text("color"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -51,7 +57,9 @@ export const guildRole = sqliteTable("guild_role", {
 /**
  * GuildMembership — a user's membership in a guild. The owner holds a row like everyone
  * else. Membership ALONE means `@everyone`; no `memberRole` row is written for the default
- * role. PK `(userId, guildId)`.
+ * role. PK `(userId, guildId)`. `serverMuted` is the persistent server-mute flag (charter 5):
+ * it survives voice leave/join, guild switches, and server restarts — voice rooms are
+ * in-memory (ADR 0007), the flag is not.
  */
 export const guildMembership = sqliteTable(
   "guild_membership",
@@ -62,6 +70,7 @@ export const guildMembership = sqliteTable(
     guildId: text("guild_id")
       .notNull()
       .references(() => guild.id, { onDelete: "cascade" }),
+    serverMuted: integer("server_muted", { mode: "boolean" }).default(false).notNull(),
     joinedAt: integer("joined_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
