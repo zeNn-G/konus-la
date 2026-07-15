@@ -13,8 +13,9 @@ import {
   protectedProcedure,
   requireChannelMember,
   requireGuildMember,
-  requireGuildOwner,
+  requireGuildPermission,
 } from "../index";
+import { PERMISSIONS } from "../permissions";
 import { markReadLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 import { evictVoiceRoom } from "../voice/rooms";
@@ -33,16 +34,16 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Guild-channel lifecycle + the viewer's unread state. Create/rename/delete are owner-gated
- * for now — the roles rework ("Phase 3.5") will widen these to admins. Every structural
- * change fans out to all guild members so sidebars stay live.
+ * Guild-channel lifecycle + the viewer's unread state. Create/rename/delete are delegable
+ * via MANAGE_CHANNELS (spec #47). Every structural change fans out to all guild members so
+ * sidebars stay live.
  */
 export const channelRouter = {
   /**
    * Create a guild channel. Names are unique per (guild, kind) → CONFLICT on collision, so a
    * voice `general` may coexist with a text `#general`. `dm` is excluded from `kind`: DMs are
    * created through the dm router (which sets a pair key), and a guild-scoped one would render
-   * as an unreachable row. Owner only.
+   * as an unreachable row. MANAGE_CHANNELS.
    */
   create: protectedProcedure
     .input(
@@ -52,7 +53,7 @@ export const channelRouter = {
         kind: z.enum(["text", "voice"]).default("text"),
       }),
     )
-    .use(requireGuildOwner)
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
     .handler(async ({ input }) => {
       try {
         const created = await createChannel(input);
@@ -77,10 +78,10 @@ export const channelRouter = {
       }
     }),
 
-  /** Rename a channel. Owner only. */
+  /** Rename a channel. MANAGE_CHANNELS. */
   update: protectedProcedure
     .input(z.object({ guildId: z.string(), channelId: z.string(), name: channelNameSchema }))
-    .use(requireGuildOwner)
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
     .handler(async ({ input }) => {
       try {
         const updated = await renameChannel(input);
@@ -108,11 +109,11 @@ export const channelRouter = {
 
   /**
    * Hard-delete a channel — its messages cascade away with it, and a voice channel's Room is
-   * evicted with it (everyone seated is dropped and their SFU resources released). Owner only.
+   * evicted with it (everyone seated is dropped and their SFU resources released). MANAGE_CHANNELS.
    */
   delete: protectedProcedure
     .input(z.object({ guildId: z.string(), channelId: z.string() }))
-    .use(requireGuildOwner)
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_CHANNELS))
     .handler(async ({ input }) => {
       const deleted = await deleteChannel(input.channelId, input.guildId);
       if (!deleted) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });

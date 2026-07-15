@@ -8,6 +8,7 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { RoleDot } from "@/components/guild-settings/role-dot";
+import { useMemberModeration } from "@/components/member-moderation";
 import type { GuildRole } from "@/lib/roles";
 import { highestRoleOf, memberRolesOf } from "@/lib/roles";
 import { orpc, queryClient } from "@/utils/orpc";
@@ -16,32 +17,9 @@ export function MembersSection({ guildId }: { guildId: string }) {
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
   const { session } = getRouteApi("/(app)").useRouteContext();
   const guildKey = orpc.guild.get.queryOptions({ input: { guildId } }).queryKey;
-  const bansKey = orpc.guild.member.banList.queryOptions({ input: { guildId } }).queryKey;
   const invalidateGuild = () => queryClient.invalidateQueries({ queryKey: guildKey });
 
-  const kick = useMutation(
-    orpc.guild.member.kick.mutationOptions({
-      onSuccess: async () => {
-        await invalidateGuild();
-        toast.success("Member removed.");
-      },
-      onError: (error) => toast.error(error.message),
-    }),
-  );
-
-  const ban = useMutation(
-    orpc.guild.member.ban.mutationOptions({
-      onSuccess: async () => {
-        // A ban changes both lists: the roster loses the member, the ban list gains them.
-        await Promise.all([
-          invalidateGuild(),
-          queryClient.invalidateQueries({ queryKey: bansKey }),
-        ]);
-        toast.success("Member banned.");
-      },
-      onError: (error) => toast.error(error.message),
-    }),
-  );
+  const { canKick, canBan, kick, ban } = useMemberModeration(guildId);
 
   const assign = useMutation(
     orpc.role.assign.mutationOptions({
@@ -73,10 +51,8 @@ export function MembersSection({ guildId }: { guildId: string }) {
   // it too). The owner outranks the whole stack; a roleless viewer outranks nothing.
   const viewerHighestPosition = viewer.isOwner
     ? Number.POSITIVE_INFINITY
-    : (highestRoleOf(
-        roles,
-        members.find((m) => m.userId === session.user.id)?.roleIds ?? [],
-      )?.position ?? 0);
+    : (highestRoleOf(roles, members.find((m) => m.userId === session.user.id)?.roleIds ?? [])
+        ?.position ?? 0);
   const assignableRoles = roles.filter(
     (role) => !role.isDefault && role.position < viewerHighestPosition,
   );
@@ -143,24 +119,28 @@ export function MembersSection({ guildId }: { guildId: string }) {
                 )}
                 {isGuildOwner && <span className="text-xs text-muted-foreground">Owner</span>}
               </div>
-              {!isGuildOwner && (
+              {!isGuildOwner && m.userId !== session.user.id && (canKick || canBan) && (
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={kick.isPending}
-                    onClick={() => kick.mutate({ guildId, userId: m.userId })}
-                  >
-                    Kick
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="destructive"
-                    disabled={ban.isPending}
-                    onClick={() => ban.mutate({ guildId, userId: m.userId })}
-                  >
-                    Ban
-                  </Button>
+                  {canKick && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={kick.isPending}
+                      onClick={() => kick.mutate({ guildId, userId: m.userId })}
+                    >
+                      Kick
+                    </Button>
+                  )}
+                  {canBan && (
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      disabled={ban.isPending}
+                      onClick={() => ban.mutate({ guildId, userId: m.userId })}
+                    >
+                      Ban
+                    </Button>
+                  )}
                 </div>
               )}
             </li>

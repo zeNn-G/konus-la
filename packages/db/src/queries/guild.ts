@@ -61,6 +61,12 @@ export async function createGuildWithOwner(input: { name: string; ownerUserId: s
   });
 }
 
+/** Rename a guild. Returns the updated row, or null when the guild doesn't exist. */
+export async function renameGuild(guildId: string, name: string) {
+  const [updated] = await db.update(guild).set({ name }).where(eq(guild.id, guildId)).returning();
+  return updated ?? null;
+}
+
 /** Guilds the user belongs to (owned or joined), oldest first. */
 export async function listUserGuilds(userId: string) {
   return db
@@ -177,9 +183,7 @@ export async function transferOwnership(guildId: string, newOwnerUserId: string)
     const [member] = await tx
       .select({ userId: guildMembership.userId })
       .from(guildMembership)
-      .where(
-        and(eq(guildMembership.guildId, guildId), eq(guildMembership.userId, newOwnerUserId)),
-      )
+      .where(and(eq(guildMembership.guildId, guildId), eq(guildMembership.userId, newOwnerUserId)))
       .limit(1);
     if (!member) return false;
     await tx.update(guild).set({ ownerId: newOwnerUserId }).where(eq(guild.id, guildId));
@@ -218,11 +222,7 @@ export async function createInvite(input: {
 
 /** An invite that can still be used: exists and not expired. Returns the row or undefined. */
 export async function findUsableInvite(code: string, now = new Date()) {
-  const [invite] = await db
-    .select()
-    .from(guildInvite)
-    .where(eq(guildInvite.code, code))
-    .limit(1);
+  const [invite] = await db.select().from(guildInvite).where(eq(guildInvite.code, code)).limit(1);
   if (!invite) return undefined;
   if (invite.expiresAt && invite.expiresAt.getTime() <= now.getTime()) return undefined;
   return invite;
@@ -245,11 +245,7 @@ export async function consumeInvite(
   now = new Date(),
 ): Promise<ConsumeInviteResult> {
   return db.transaction(async (tx) => {
-    const [invite] = await tx
-      .select()
-      .from(guildInvite)
-      .where(eq(guildInvite.code, code))
-      .limit(1);
+    const [invite] = await tx.select().from(guildInvite).where(eq(guildInvite.code, code)).limit(1);
     if (!invite) return { status: "invalid" };
     if (invite.expiresAt && invite.expiresAt.getTime() <= now.getTime()) {
       return { status: "invalid" };

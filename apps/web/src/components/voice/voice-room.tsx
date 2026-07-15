@@ -47,6 +47,7 @@ export function VoiceRoom({
         ...layout.views.map((view) => (
           <RoomTile
             key={view.tile.userId}
+            guildId={guildId}
             tile={view.tile}
             variant={view.variant}
             face={view.face}
@@ -67,6 +68,7 @@ export function VoiceRoom({
           ? [
               <RoomTile
                 key={`${layout.sharerCam.tile.userId}:cam`}
+                guildId={guildId}
                 tile={layout.sharerCam.tile}
                 variant="strip"
                 face={layout.sharerCam.face}
@@ -75,7 +77,7 @@ export function VoiceRoom({
           : []),
       ]
     : tiles.map((tile) => (
-        <RoomTile key={tile.userId} tile={tile} onFocusShare={stageFocus.focus} />
+        <RoomTile key={tile.userId} guildId={guildId} tile={tile} onFocusShare={stageFocus.focus} />
       ));
 
   const stripCount = layout ? layout.views.length - 1 + (layout.sharerCam ? 1 : 0) : 0;

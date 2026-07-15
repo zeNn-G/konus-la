@@ -179,7 +179,8 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
             ...row,
             newestMessageId: message.id,
             unread: fromSelf ? row.unread : true,
-            mentionsCount: row.mentionsCount + (event.mentionedUserIds.includes(selfUserId) ? 1 : 0),
+            mentionsCount:
+              row.mentionsCount + (event.mentionedUserIds.includes(selfUserId) ? 1 : 0),
             lastActivityAt: message.createdAt.getTime(),
           }));
         } else {
@@ -296,11 +297,13 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       break;
     }
     case "guild.updated": {
-      // Structural (today: ownership transfer) — re-read the header/roster/viewer flags:
-      // the new owner gains the settings entry, the old owner's open modal closes.
+      // Structural (ownership transfer, rename) — re-read the header/roster/viewer flags:
+      // the new owner gains the settings entry, the old owner's open modal closes. The
+      // rail re-reads too, since a rename changes its labels.
       void client.invalidateQueries({
         queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
       });
+      void client.invalidateQueries({ queryKey: orpc.guild.list.key() });
       break;
     }
     case "role.changed":
