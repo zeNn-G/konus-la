@@ -166,8 +166,7 @@ export function RolesSection({ guildId }: { guildId: string }) {
   if (!everyone) return null;
 
   // A remotely deleted selection falls back to the top of the stack.
-  const selected =
-    roles.find((role) => role.id === selectedId) ?? customRoles[0] ?? everyone;
+  const selected = roles.find((role) => role.id === selectedId) ?? customRoles[0] ?? everyone;
 
   const memberCount = (roleId: string) =>
     guild.data.members.filter((member) => member.roleIds.includes(roleId)).length;
@@ -317,8 +316,6 @@ function RoleEditPane({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-3 sm:min-h-0">
-      {/* -ml/pl pair: room for selection rings (drawn OUTSIDE elements) at the scroll
-          container's left clip edge, without shifting content. */}
       <div className="flex min-w-0 flex-col gap-4 sm:-ml-1 sm:flex-1 sm:overflow-y-auto sm:pl-1 sm:pr-1">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground uppercase">Role name</label>
@@ -392,9 +389,7 @@ function RoleEditPane({
         <div className="flex flex-col gap-4">
           {PERMISSION_GROUPS.map((group) => (
             <div key={group.label} className="flex flex-col gap-1.5">
-              <h4 className="text-xs font-medium text-muted-foreground uppercase">
-                {group.label}
-              </h4>
+              <h4 className="text-xs font-medium text-muted-foreground uppercase">{group.label}</h4>
               <div>
                 {group.permissions.map((permission) => (
                   <label
