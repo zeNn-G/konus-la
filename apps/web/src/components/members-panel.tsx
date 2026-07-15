@@ -28,16 +28,21 @@ function groupByHighestRole<M extends { userId: string; roleIds: string[] }>(
   const buckets = new Map<string | null, M[]>();
   for (const m of members) {
     const key = highestRoleOf(roles, m.roleIds)?.id ?? null;
-    buckets.set(key, [...(buckets.get(key) ?? []), m]);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(m);
+    else buckets.set(key, [m]);
   }
   const groups: MemberGroup<M>[] = roles
     .filter((role) => !role.isDefault)
-    .map((role) => ({
-      key: role.id,
-      label: `${role.name} — ${(buckets.get(role.id) ?? []).length}`,
-      color: role.color,
-      members: buckets.get(role.id) ?? [],
-    }));
+    .map((role) => {
+      const roleMembers = buckets.get(role.id) ?? [];
+      return {
+        key: role.id,
+        label: `${role.name} — ${roleMembers.length}`,
+        color: role.color,
+        members: roleMembers,
+      };
+    });
   const roleless = buckets.get(null) ?? [];
   groups.push({
     key: "members",

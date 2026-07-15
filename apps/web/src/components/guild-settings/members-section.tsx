@@ -7,7 +7,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { RoleDot } from "@/components/guild-settings/roles-section";
+import { RoleDot } from "@/components/guild-settings/role-dot";
 import type { GuildRole } from "@/lib/roles";
 import { highestRoleOf, memberRolesOf } from "@/lib/roles";
 import { orpc, queryClient } from "@/utils/orpc";
