@@ -114,7 +114,9 @@ function RoleDot({ color }: { color: string | null }) {
 /**
  * Master–detail Roles editor (prototype #48 variant A): fixed role list column with hover
  * ▲▼ reorder beside an independently scrolling edit pane. `@everyone` is selectable —
- * its bits are editable, rename/recolor/reorder/delete are not. Other clients reconcile
+ * its bits are editable, rename/recolor/reorder/delete are not. Name/color/permission
+ * edits accumulate as a LOCAL DRAFT and land as one `role.update` on "Save changes" —
+ * list actions (create / reorder / delete) commit immediately. Other clients reconcile
  * via `role.changed`; this client invalidates `guild.get` on every mutation itself.
  */
 export function RolesSection({ guildId }: { guildId: string }) {
@@ -130,12 +132,6 @@ export function RolesSection({ guildId }: { guildId: string }) {
         setSelectedId(role.id);
         await invalidateGuild();
       },
-      onError: (error) => toast.error(error.message),
-    }),
-  );
-  const update = useMutation(
-    orpc.role.update.mutationOptions({
-      onSuccess: () => invalidateGuild(),
       onError: (error) => toast.error(error.message),
     }),
   );
@@ -237,13 +233,12 @@ export function RolesSection({ guildId }: { guildId: string }) {
         </p>
       </div>
 
-      {/* Keyed by role id: switching roles resets the name/color drafts to server truth. */}
+      {/* Keyed by role id: switching roles discards the draft and re-reads server truth. */}
       <RoleEditPane
         key={selected.id}
+        guildId={guildId}
         role={selected}
         memberCount={memberCount(selected.id)}
-        updatePending={update.isPending}
-        onUpdate={(patch) => update.mutate({ guildId, roleId: selected.id, ...patch })}
         onDelete={() => {
           remove.mutate({ guildId, roleId: selected.id });
           // The prototype lands on @everyone after a delete.
@@ -255,151 +250,200 @@ export function RolesSection({ guildId }: { guildId: string }) {
   );
 }
 
+/**
+ * The detail half. Edits are a draft OVERLAYING the server row — nothing is sent until
+ * "Save changes" commits every dirty field as one `role.update` (one limiter spend, one
+ * `role.changed`). A remote edit under a clean field shows through live; a dirty field
+ * keeps the draft until Save or Reset.
+ */
 function RoleEditPane({
+  guildId,
   role,
   memberCount,
-  updatePending,
   deletePending,
-  onUpdate,
   onDelete,
 }: {
+  guildId: string;
   role: GuildRole;
   memberCount: number;
-  updatePending: boolean;
   deletePending: boolean;
-  onUpdate: (patch: { name?: string; color?: string | null; permissions?: number }) => void;
   onDelete: () => void;
 }) {
-  const [nameDraft, setNameDraft] = useState(role.name);
-  // The custom picker previews locally while dragging; the mutation lands on blur.
-  const [colorDraft, setColorDraft] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  // undefined = untouched; null = "no color" chosen.
+  const [colorDraft, setColorDraft] = useState<string | null | undefined>(undefined);
+  const [permissionsDraft, setPermissionsDraft] = useState<number | null>(null);
 
-  const commitName = () => {
-    const name = nameDraft.trim();
-    if (name && name !== role.name) onUpdate({ name });
-    else setNameDraft(role.name);
+  const name = nameDraft ?? role.name;
+  const color = colorDraft === undefined ? role.color : colorDraft;
+  const permissions = permissionsDraft ?? role.permissions;
+
+  const nameDirty = nameDraft !== null && nameDraft.trim() !== role.name;
+  const colorDirty = colorDraft !== undefined && colorDraft !== role.color;
+  const permissionsDirty = permissionsDraft !== null && permissionsDraft !== role.permissions;
+  const dirty = nameDirty || colorDirty || permissionsDirty;
+  const nameInvalid = nameDraft !== null && nameDraft.trim() === "";
+
+  const resetDraft = () => {
+    setNameDraft(null);
+    setColorDraft(undefined);
+    setPermissionsDraft(null);
   };
-  const isPresetOrNone = role.color === null || (ROLE_COLORS as readonly string[]).includes(role.color);
+
+  const update = useMutation(
+    orpc.role.update.mutationOptions({
+      onSuccess: async () => {
+        resetDraft();
+        await queryClient.invalidateQueries({
+          queryKey: orpc.guild.get.key({ input: { guildId } }),
+        });
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
+
+  const save = () => {
+    if (!dirty || nameInvalid || update.isPending) return;
+    update.mutate({
+      guildId,
+      roleId: role.id,
+      ...(nameDirty && { name: nameDraft.trim() }),
+      ...(colorDirty && { color: colorDraft }),
+      ...(permissionsDirty && { permissions: permissionsDraft }),
+    });
+  };
+
+  const isPresetOrNone = color === null || (ROLE_COLORS as readonly string[]).includes(color);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-4 sm:overflow-y-auto sm:pr-1">
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-muted-foreground uppercase">Role name</label>
-        <div className="flex items-center gap-2">
-          <Input
-            value={role.isDefault ? "@everyone" : nameDraft}
-            disabled={role.isDefault}
-            onChange={(event) => setNameDraft(event.target.value)}
-            onBlur={commitName}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="max-w-56"
-          />
-          {!role.isDefault && (
-            <span className="text-xs text-muted-foreground">
-              {memberCount} member{memberCount === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {!role.isDefault && (
+    <div className="flex min-w-0 flex-1 flex-col gap-3 sm:min-h-0">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-1 sm:overflow-y-auto sm:pr-1">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-muted-foreground uppercase">Color</label>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              title="No color"
-              onClick={() => onUpdate({ color: null })}
-              className={cn(
-                "flex size-6 items-center justify-center rounded-full border border-input text-[10px] text-muted-foreground",
-                role.color === null && "ring-2 ring-ring",
-              )}
-            >
-              —
-            </button>
-            {ROLE_COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                title={color}
-                onClick={() => onUpdate({ color })}
-                className={cn("size-6 rounded-full", role.color === color && "ring-2 ring-ring")}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-            <label
-              title="Custom color"
-              className={cn(
-                "relative size-6 cursor-pointer overflow-hidden rounded-full border border-input",
-                !isPresetOrNone && "ring-2 ring-ring",
-              )}
-              style={{
-                background:
-                  (colorDraft ?? (isPresetOrNone ? null : role.color)) ??
-                  "conic-gradient(#f43f5e,#eab308,#22c55e,#06b6d4,#3b82f6,#8b5cf6,#f43f5e)",
+          <label className="text-xs font-medium text-muted-foreground uppercase">Role name</label>
+          <div className="flex items-center gap-2">
+            <Input
+              value={role.isDefault ? "@everyone" : name}
+              disabled={role.isDefault}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") save();
               }}
-            >
-              <input
-                type="color"
-                value={colorDraft ?? role.color ?? "#99aab5"}
-                onChange={(event) => setColorDraft(event.target.value)}
-                onBlur={() => {
-                  if (colorDraft && colorDraft !== role.color) onUpdate({ color: colorDraft });
-                  setColorDraft(null);
-                }}
-                className="absolute inset-0 size-full cursor-pointer opacity-0"
-              />
-            </label>
+              className="max-w-56"
+            />
+            {!role.isDefault && (
+              <span className="text-xs text-muted-foreground">
+                {memberCount} member{memberCount === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
         </div>
-      )}
 
-      <Separator />
-      <div className="flex flex-col gap-4">
-        {PERMISSION_GROUPS.map((group) => (
-          <div key={group.label} className="flex flex-col gap-1.5">
-            <h4 className="text-xs font-medium text-muted-foreground uppercase">{group.label}</h4>
-            <div>
-              {group.permissions.map((permission) => (
-                <label
-                  key={permission.bit}
-                  className="flex cursor-pointer items-start gap-2.5 py-1.5"
-                >
-                  <Checkbox
-                    checked={(role.permissions & permission.bit) === permission.bit}
-                    disabled={updatePending}
-                    onCheckedChange={() =>
-                      onUpdate({ permissions: role.permissions ^ permission.bit })
-                    }
-                    className="mt-0.5"
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-sm leading-tight">{permission.label}</span>
-                    <span className="text-xs text-muted-foreground">{permission.hint}</span>
-                  </span>
-                </label>
+        {!role.isDefault && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground uppercase">Color</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                title="No color"
+                onClick={() => setColorDraft(null)}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full border border-input text-[10px] text-muted-foreground",
+                  color === null && "ring-2 ring-ring",
+                )}
+              >
+                —
+              </button>
+              {ROLE_COLORS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  title={preset}
+                  onClick={() => setColorDraft(preset)}
+                  className={cn("size-6 rounded-full", color === preset && "ring-2 ring-ring")}
+                  style={{ backgroundColor: preset }}
+                />
               ))}
+              <label
+                title="Custom color"
+                className={cn(
+                  "relative size-6 cursor-pointer overflow-hidden rounded-full border border-input",
+                  !isPresetOrNone && "ring-2 ring-ring",
+                )}
+                style={{
+                  background: isPresetOrNone
+                    ? "conic-gradient(#f43f5e,#eab308,#22c55e,#06b6d4,#3b82f6,#8b5cf6,#f43f5e)"
+                    : color,
+                }}
+              >
+                <input
+                  type="color"
+                  value={color ?? "#99aab5"}
+                  onChange={(event) => setColorDraft(event.target.value)}
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                />
+              </label>
             </div>
           </div>
-        ))}
+        )}
+
+        <Separator />
+        <div className="flex flex-col gap-4">
+          {PERMISSION_GROUPS.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1.5">
+              <h4 className="text-xs font-medium text-muted-foreground uppercase">
+                {group.label}
+              </h4>
+              <div>
+                {group.permissions.map((permission) => (
+                  <label
+                    key={permission.bit}
+                    className="flex cursor-pointer items-start gap-2.5 py-1.5"
+                  >
+                    <Checkbox
+                      checked={(permissions & permission.bit) === permission.bit}
+                      onCheckedChange={() => setPermissionsDraft(permissions ^ permission.bit)}
+                      className="mt-0.5"
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm leading-tight">{permission.label}</span>
+                      <span className="text-xs text-muted-foreground">{permission.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {!role.isDefault && (
+          <>
+            <Separator />
+            <Button
+              size="xs"
+              variant="destructive"
+              className="self-start"
+              disabled={deletePending}
+              onClick={onDelete}
+            >
+              <Trash2Icon className="size-3.5" />
+              Delete role
+            </Button>
+          </>
+        )}
       </div>
 
-      {!role.isDefault && (
-        <>
-          <Separator />
-          <Button
-            size="xs"
-            variant="destructive"
-            className="self-start"
-            disabled={deletePending}
-            onClick={onDelete}
-          >
-            <Trash2Icon className="size-3.5" />
-            Delete role
-          </Button>
-        </>
+      {dirty && (
+        <div className="flex shrink-0 items-center gap-2 rounded-md border border-foreground/10 bg-muted/50 px-3 py-2">
+          <span className="text-xs text-muted-foreground">You have unsaved changes.</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button size="xs" variant="ghost" disabled={update.isPending} onClick={resetDraft}>
+              Reset
+            </Button>
+            <Button size="xs" disabled={update.isPending || nameInvalid} onClick={save}>
+              Save changes
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

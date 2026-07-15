@@ -46,9 +46,12 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     (`components/guild-settings/` — Members, Roles, Bans, Invites, Danger zone; sections mount lazily so
     owner-only queries never fire unselected), not a route. **Roles** (`roles-section.tsx`) is the
     master–detail editor from prototype #48 variant A: fixed role list (hover ▲▼ reorder) beside an
-    independently scrolling edit pane — name commits on blur/Enter, preset swatches + native custom
-    color picker, permission toggles grouped with hints; `@everyone` is selectable with bits editable
-    but rename/recolor/reorder/delete disabled.
+    independently scrolling edit pane — preset swatches + native custom color picker, permission
+    toggles grouped with hints; `@everyone` is selectable with bits editable but
+    rename/recolor/reorder/delete disabled. Name/color/bit edits are a **local draft** — an
+    unsaved-changes bar pins below the pane and "Save changes" commits every dirty field as ONE
+    `role.update` (one modAction spend, one `role.changed`); list actions (create/reorder/delete)
+    commit immediately.
     Owner-gating is data-driven (`guild.get` → `viewer.isOwner`), not a route guard — the API is the source
     of truth.
 
