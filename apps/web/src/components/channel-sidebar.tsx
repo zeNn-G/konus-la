@@ -60,7 +60,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
     guild.data?.viewer.permissions ?? 0,
     PERMISSIONS.MANAGE_CHANNELS,
   );
-  // The settings entry shows iff at least one section would (no longer owner-only).
+  // The settings entry shows iff at least one section would.
   const canOpenSettings = visibleSettingsSections(guild.data?.viewer).length > 0;
 
   const textChannels = channels.data?.filter((channel) => channel.kind !== "voice") ?? [];

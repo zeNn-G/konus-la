@@ -1,4 +1,5 @@
 import { hasPermission, PERMISSIONS } from "@konus-la/api/permissions";
+import type { AppRouterClient } from "@konus-la/api/routers/index";
 import { Dialog, DialogContent, DialogTitle } from "@konus-la/ui/components/dialog";
 import { Separator } from "@konus-la/ui/components/separator";
 import { Skeleton } from "@konus-la/ui/components/skeleton";
@@ -17,7 +18,7 @@ import { orpc } from "@/utils/orpc";
 
 type SectionId = "members" | "roles" | "bans" | "invites" | "danger";
 
-type Viewer = { isOwner: boolean; permissions: number };
+type Viewer = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>["viewer"];
 
 /**
  * The spec's visibility table (#48): each section appears iff the viewer holds a

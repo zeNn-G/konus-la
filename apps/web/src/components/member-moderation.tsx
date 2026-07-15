@@ -1,6 +1,7 @@
 import { hasPermission, PERMISSIONS } from "@konus-la/api/permissions";
 import { ContextMenuItem, ContextMenuSeparator } from "@konus-la/ui/components/context-menu";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { getRouteApi } from "@tanstack/react-router";
 import { GavelIcon, UserXIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,8 +52,10 @@ export function useMemberModeration(guildId: string) {
 
 /**
  * Kick/ban items for a member-targeting context menu, each shown only with its
- * permission. Renders nothing when the viewer holds neither bit; `leadingSeparator`
- * divides them from a host menu's existing groups (the per-peer volume menu).
+ * permission. Self and the owner are never offered — statically invalid targets, not
+ * hierarchy-aware greying (rank misses still surface as the server's FORBIDDEN).
+ * Renders nothing when no item survives; `leadingSeparator` divides the items from a
+ * host menu's existing groups (the per-peer volume menu).
  */
 export function MemberModerationItems({
   guildId,
@@ -63,8 +66,11 @@ export function MemberModerationItems({
   userId: string;
   leadingSeparator?: boolean;
 }) {
+  const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
+  const { session } = getRouteApi("/(app)").useRouteContext();
   const { canKick, canBan, kick, ban } = useMemberModeration(guildId);
   if (!canKick && !canBan) return null;
+  if (userId === session.user.id || userId === guild.data?.guild.ownerId) return null;
 
   return (
     <>

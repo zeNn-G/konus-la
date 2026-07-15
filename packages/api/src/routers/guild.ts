@@ -37,6 +37,21 @@ import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 import { evictGuildVoiceRooms, evictMemberFromGuildVoice } from "../voice/rooms";
 
+/**
+ * Charter hierarchy for member-targeted moderation: owner-target, self-target, and equal
+ * rank all fail `actorOutranksMember` as one plain FORBIDDEN, indistinguishable from the
+ * permission gate's.
+ */
+async function assertActorOutranks(
+  guildId: string,
+  actorId: string,
+  targetId: string,
+): Promise<void> {
+  if (!(await actorOutranksMember(guildId, actorId, targetId))) {
+    throw new ORPCError("FORBIDDEN");
+  }
+}
+
 /** Roster-change fan-out: every remaining member plus the affected user themselves. */
 async function publishMemberEvent(
   type: "guild.member.added" | "guild.member.removed",
@@ -119,7 +134,7 @@ export const guildRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_GUILD))
     .handler(async ({ input }) => {
       const updated = await renameGuild(input.guildId, input.name);
-      if (!updated) throw new ORPCError("NOT_FOUND");
+      if (!updated) throw new ORPCError("NOT_FOUND", { message: "Guild not found." });
       await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
         type: "guild.updated",
         guildId: input.guildId,
@@ -246,9 +261,7 @@ export const guildRouter = {
       .input(z.object({ guildId: z.string(), userId: z.string() }))
       .use(requireGuildPermission(PERMISSIONS.KICK_MEMBERS))
       .handler(async ({ input, context }) => {
-        if (!(await actorOutranksMember(input.guildId, context.user.id, input.userId))) {
-          throw new ORPCError("FORBIDDEN");
-        }
+        await assertActorOutranks(input.guildId, context.user.id, input.userId);
         const removed = await kickMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
         // Row first, then the seat — the peerLeft fan-out reads the roster at publish time
@@ -269,9 +282,7 @@ export const guildRouter = {
       )
       .use(requireGuildPermission(PERMISSIONS.BAN_MEMBERS))
       .handler(async ({ input, context }) => {
-        if (!(await actorOutranksMember(input.guildId, context.user.id, input.userId))) {
-          throw new ORPCError("FORBIDDEN");
-        }
+        await assertActorOutranks(input.guildId, context.user.id, input.userId);
         await banMember({
           guildId: input.guildId,
           userId: input.userId,
