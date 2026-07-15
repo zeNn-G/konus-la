@@ -1,13 +1,17 @@
 import {
+  actorOutranksMember,
+  assignMemberRole,
   createGuildRole,
   deleteGuildRole,
   getAdjacentGuildRole,
   getEffectivePermissions,
   getGuildRole,
   getHighestRolePosition,
+  isGuildMember,
   isGuildOwner,
   listGuildMemberUserIds,
   swapGuildRolePositions,
+  unassignMemberRole,
   updateGuildRole,
 } from "@konus-la/db";
 import { ORPCError } from "@orpc/server";
@@ -34,6 +38,15 @@ const permissionMask = z
 /** Invalidate-only fan-out: every member re-reads `guild.get` after any role mutation. */
 async function publishRoleChanged(guildId: string): Promise<void> {
   await publishTo(await listGuildMemberUserIds(guildId), { type: "role.changed", guildId });
+}
+
+/** The assignment counterpart: same fan-out, but names WHOSE role set changed. */
+async function publishMemberRolesChanged(guildId: string, userId: string): Promise<void> {
+  await publishTo(await listGuildMemberUserIds(guildId), {
+    type: "member.rolesChanged",
+    guildId,
+    userId,
+  });
 }
 
 /**
@@ -70,6 +83,26 @@ async function loadRoleForMutation(
   }
   await assertRoleStrictlyBelow(guildId, userId, role.position);
   return role;
+}
+
+/**
+ * The shared assign/unassign preamble: the role checks of `loadRoleForMutation` (exists,
+ * not `@everyone`, strictly below the actor), then the target checks — must be a member
+ * (NOT_FOUND, the kick precedent), must be outranked by the actor (plain FORBIDDEN, which
+ * makes equal rank, self-target, and the owner-as-target all fail identically).
+ */
+async function assertCanManageAssignment(
+  input: { guildId: string; userId: string; roleId: string },
+  actorId: string,
+  rejectDefault: string,
+): Promise<void> {
+  await loadRoleForMutation(input.guildId, input.roleId, actorId, rejectDefault);
+  if (!(await isGuildMember(input.guildId, input.userId))) {
+    throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
+  }
+  if (!(await actorOutranksMember(input.guildId, actorId, input.userId))) {
+    throw new ORPCError("FORBIDDEN");
+  }
 }
 
 /**
@@ -205,6 +238,35 @@ export const roleRouter = {
 
       await swapGuildRolePositions(input.guildId, role, neighbor);
       await publishRoleChanged(input.guildId);
+      return { ok: true } as const;
+    }),
+
+  /**
+   * Grant a role to a member. Both charter hierarchy rules apply: the role must sit
+   * strictly below the actor's highest AND the actor must outrank the target (equal rank,
+   * self-target, and the owner-as-target all fail it). Idempotent — re-granting a held
+   * role succeeds without a second fan-out.
+   */
+  assign: protectedProcedure
+    .input(z.object({ guildId: z.string(), userId: z.string(), roleId: z.string() }))
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
+    .use(perUserRatelimit("modAction", modActionLimiter))
+    .handler(async ({ input, context }) => {
+      await assertCanManageAssignment(input, context.user.id, "@everyone can't be assigned.");
+      const changed = await assignMemberRole(input.guildId, input.userId, input.roleId);
+      if (changed) await publishMemberRolesChanged(input.guildId, input.userId);
+      return { ok: true } as const;
+    }),
+
+  /** Revoke a role from a member — the exact hierarchy rules of `role.assign`. */
+  unassign: protectedProcedure
+    .input(z.object({ guildId: z.string(), userId: z.string(), roleId: z.string() }))
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
+    .use(perUserRatelimit("modAction", modActionLimiter))
+    .handler(async ({ input, context }) => {
+      await assertCanManageAssignment(input, context.user.id, "@everyone can't be unassigned.");
+      const changed = await unassignMemberRole(input.guildId, input.userId, input.roleId);
+      if (changed) await publishMemberRolesChanged(input.guildId, input.userId);
       return { ok: true } as const;
     }),
 };
