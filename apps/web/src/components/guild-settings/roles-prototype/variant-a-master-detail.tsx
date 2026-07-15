@@ -32,8 +32,9 @@ export function VariantAMasterDetail() {
     Object.values(assignments).filter((roleIds) => roleIds.includes(roleId)).length;
 
   return (
-    <div className="flex min-h-0 flex-col gap-4 sm:flex-row">
-      <div className="flex shrink-0 flex-col gap-0.5 sm:w-44 sm:border-r sm:border-foreground/10 sm:pr-3">
+    // Desktop: fill the pane so the role list stays put while only the edit pane scrolls.
+    <div className="flex min-h-0 flex-col gap-4 sm:min-h-0 sm:flex-1 sm:flex-row">
+      <div className="flex shrink-0 flex-col gap-0.5 sm:w-44 sm:overflow-y-auto sm:border-r sm:border-foreground/10 sm:pr-3">
         <Button
           size="xs"
           variant="outline"
@@ -90,7 +91,7 @@ export function VariantAMasterDetail() {
         </p>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4 sm:overflow-y-auto sm:pr-1">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground uppercase">Role name</label>
           <div className="flex items-center gap-2">

@@ -22,6 +22,8 @@ export function RoleDot({ color, className }: { color: string | null; className?
 }
 
 export function ColorSwatchRow({ role }: { role: PrototypeRole }) {
+  const isCustom =
+    role.color !== null && !(ROLE_COLORS as readonly string[]).includes(role.color);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <button
@@ -45,6 +47,25 @@ export function ColorSwatchRow({ role }: { role: PrototypeRole }) {
           style={{ backgroundColor: color }}
         />
       ))}
+      <label
+        title="Custom color"
+        className={cn(
+          "relative size-6 cursor-pointer overflow-hidden rounded-full border border-input",
+          isCustom && "ring-2 ring-ring",
+        )}
+        style={{
+          background: isCustom
+            ? role.color!
+            : "conic-gradient(#f43f5e,#eab308,#22c55e,#06b6d4,#3b82f6,#8b5cf6,#f43f5e)",
+        }}
+      >
+        <input
+          type="color"
+          value={role.color ?? "#99aab5"}
+          onChange={(event) => updateRole(role.id, { color: event.target.value })}
+          className="absolute inset-0 size-full cursor-pointer opacity-0"
+        />
+      </label>
     </div>
   );
 }
