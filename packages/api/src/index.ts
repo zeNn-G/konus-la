@@ -1,8 +1,16 @@
 import { auth } from "@konus-la/auth";
-import { getChannel, isGuildMember, isGuildOwner, userBelongsToChannel } from "@konus-la/db";
+import {
+  getChannel,
+  getEffectivePermissions,
+  getMemberAccess,
+  isGuildMember,
+  isGuildOwner,
+  userBelongsToChannel,
+} from "@konus-la/db";
 import { ORPCError, os } from "@orpc/server";
 
 import type { Context } from "./context";
+import { hasPermission, PERMISSIONS, type PermissionBit } from "./permissions";
 
 export type { ChatMessage, EventMap, RealtimeEvent } from "./realtime/events";
 export { publisher } from "./realtime/publisher";
@@ -74,6 +82,61 @@ export const requireGuildOwner = os
     }
     return next();
   });
+
+/**
+ * Shared core of the two permission gate factories. Order is fixed: membership first
+ * (plain FORBIDDEN if absent — non-members never inherit `@everyone` bits, and unknown
+ * guilds stay indistinguishable), owner short-circuit, then the effective-bits check
+ * passing on `ADMINISTRATOR` or the required bit. Bits are computed fresh per request —
+ * no cache.
+ */
+async function assertGuildPermission(
+  guildId: string,
+  userId: string,
+  bit: PermissionBit,
+): Promise<void> {
+  const access = await getMemberAccess(guildId, userId);
+  if (!access) throw new ORPCError("FORBIDDEN");
+  if (access.isOwner) return;
+
+  const bits = await getEffectivePermissions(guildId, userId);
+  if (!hasPermission(bits, PERMISSIONS.ADMINISTRATOR) && !hasPermission(bits, bit)) {
+    throw new ORPCError("FORBIDDEN");
+  }
+}
+
+/**
+ * Permission gate factory for `guildId`-keyed procedures (ADR 0008): registered after
+ * `.input()` like the middlewares above, one middleware per gated procedure — it SUBSUMES
+ * `requireGuildMember`. See {@link assertGuildPermission} for the check order.
+ */
+export function requireGuildPermission(bit: PermissionBit) {
+  return os
+    .$context<AuthedContext>()
+    .middleware(async ({ context, next }, input: { guildId: string }) => {
+      await assertGuildPermission(input.guildId, context.user.id, bit);
+      return next();
+    });
+}
+
+/**
+ * Permission gate factory for `channelId`-keyed procedures: loads the channel (missing →
+ * FORBIDDEN, no-peek), refuses DMs (`guildId` null — there is no DM moderation), then
+ * runs the guild permission check against `channel.guildId`. Injects the loaded
+ * `channel` so handlers don't re-query, mirroring `requireChannelMember`.
+ */
+export function requireChannelPermission(bit: PermissionBit) {
+  return os
+    .$context<AuthedContext>()
+    .middleware(async ({ context, next }, input: { channelId: string }) => {
+      const channelRow = await getChannel(input.channelId);
+      if (!channelRow) throw new ORPCError("FORBIDDEN");
+      if (!channelRow.guildId) throw new ORPCError("FORBIDDEN");
+
+      await assertGuildPermission(channelRow.guildId, context.user.id, bit);
+      return next({ context: { channel: channelRow } });
+    });
+}
 
 /**
  * Channel-scoped membership gate for procedures keyed by `channelId`: loads the channel,

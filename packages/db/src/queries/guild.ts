@@ -3,7 +3,14 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../index";
 import { user } from "../schema/auth";
 import { channel } from "../schema/channel";
-import { guild, guildBan, guildInvite, guildMembership, guildRole } from "../schema/guild";
+import {
+  guild,
+  guildBan,
+  guildInvite,
+  guildMembership,
+  guildRole,
+  memberRole,
+} from "../schema/guild";
 import { randomCode } from "../constants";
 
 // ---------------------------------------------------------------------------
@@ -90,20 +97,57 @@ export async function getGuildForViewer(guildId: string, userId: string) {
   return { guild: row, isOwner: row.ownerId === userId };
 }
 
-/** Member roster for a guild (any member may see it), oldest membership first. */
+/**
+ * Member roster for a guild (any member may see it), oldest membership first. Each row
+ * carries the member's assigned `roleIds` (empty = `@everyone` only) and the persistent
+ * `serverMuted` flag, so the client can group, tint, and badge without extra fetches.
+ */
 export async function listGuildMembers(guildId: string) {
-  return db
+  const members = await db
     .select({
       userId: guildMembership.userId,
       username: user.username,
       displayName: user.name,
       image: user.image,
       joinedAt: guildMembership.joinedAt,
+      serverMuted: guildMembership.serverMuted,
     })
     .from(guildMembership)
     .innerJoin(user, eq(guildMembership.userId, user.id))
     .where(eq(guildMembership.guildId, guildId))
     .orderBy(guildMembership.joinedAt);
+
+  const assignments = await db
+    .select({ userId: memberRole.userId, roleId: memberRole.roleId })
+    .from(memberRole)
+    .where(eq(memberRole.guildId, guildId));
+  const roleIdsByUser = new Map<string, string[]>();
+  for (const { userId, roleId } of assignments) {
+    const list = roleIdsByUser.get(userId);
+    if (list) list.push(roleId);
+    else roleIdsByUser.set(userId, [roleId]);
+  }
+
+  return members.map((member) => ({
+    ...member,
+    roleIds: roleIdsByUser.get(member.userId) ?? [],
+  }));
+}
+
+/** All roles of a guild, highest position (rank) first; `@everyone` (position 0) last. */
+export async function listGuildRoles(guildId: string) {
+  return db
+    .select({
+      id: guildRole.id,
+      name: guildRole.name,
+      color: guildRole.color,
+      position: guildRole.position,
+      permissions: guildRole.permissions,
+      isDefault: guildRole.isDefault,
+    })
+    .from(guildRole)
+    .where(eq(guildRole.guildId, guildId))
+    .orderBy(desc(guildRole.position), guildRole.createdAt);
 }
 
 export async function isGuildMember(guildId: string, userId: string): Promise<boolean> {

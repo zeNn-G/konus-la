@@ -1,14 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/libsql/migrator";
 
 import { db } from "./index";
 import { dmPairKeyFor } from "./queries/dm";
 import { user } from "./schema/auth";
 import { channel, channelParticipant } from "./schema/channel";
-import { guildMembership } from "./schema/guild";
+import { guildMembership, guildRole, memberRole } from "./schema/guild";
 
 /**
  * Test-only helpers, imported by vitest setups/suites — never by app code. They live in
@@ -57,6 +57,61 @@ export async function getTestUser(id: string) {
 /** Add an existing user to an existing guild (skips the invite flow). */
 export async function seedTestMembership(guildId: string, userId: string): Promise<void> {
   await db.insert(guildMembership).values({ guildId, userId });
+}
+
+/**
+ * Insert a custom (non-default) role, skipping the role router on purpose — for suites
+ * that need roles as fixtures (permission gates, hierarchy), not as the thing under test.
+ */
+export async function seedTestRole(input: {
+  guildId: string;
+  name: string;
+  position: number;
+  permissions?: number;
+  color?: string | null;
+}): Promise<string> {
+  const roleId = crypto.randomUUID();
+  await db.insert(guildRole).values({
+    id: roleId,
+    guildId: input.guildId,
+    name: input.name,
+    position: input.position,
+    permissions: input.permissions ?? 0,
+    color: input.color ?? null,
+  });
+  return roleId;
+}
+
+/** Assign a seeded role to a member (skips the not-yet-built role router). */
+export async function seedTestMemberRole(
+  guildId: string,
+  userId: string,
+  roleId: string,
+): Promise<void> {
+  await db.insert(memberRole).values({ guildId, userId, roleId });
+}
+
+/** Flip a membership's persistent server-mute flag (skips the not-yet-built mod router). */
+export async function setTestServerMuted(
+  guildId: string,
+  userId: string,
+  serverMuted: boolean,
+): Promise<void> {
+  await db
+    .update(guildMembership)
+    .set({ serverMuted })
+    .where(and(eq(guildMembership.guildId, guildId), eq(guildMembership.userId, userId)));
+}
+
+/** Overwrite the `@everyone` row's bitfield (identified by `isDefault`, never the name). */
+export async function setTestEveryonePermissions(
+  guildId: string,
+  permissions: number,
+): Promise<void> {
+  await db
+    .update(guildRole)
+    .set({ permissions })
+    .where(and(eq(guildRole.guildId, guildId), eq(guildRole.isDefault, true)));
 }
 
 /**

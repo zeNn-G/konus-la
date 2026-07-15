@@ -6,6 +6,7 @@ import {
   createInvite,
   deleteGuild,
   deleteInvite,
+  getEffectivePermissions,
   getGuildForViewer,
   isGuildOwner,
   kickMember,
@@ -13,6 +14,7 @@ import {
   listBans,
   listGuildMemberUserIds,
   listGuildMembers,
+  listGuildRoles,
   listInvites,
   listUserGuilds,
   transferOwnership,
@@ -23,6 +25,7 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
 import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
+import { ALL_PERMISSIONS, hasPermission, PERMISSIONS } from "../permissions";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 import { evictGuildVoiceRooms, evictMemberFromGuildVoice } from "../voice/rooms";
@@ -68,15 +71,35 @@ export const guildRouter = {
     return listUserGuilds(context.user.id);
   }),
 
-  /** Guild header + full member roster + the viewer's owner flag. Members only (no peek). */
+  /**
+   * Guild header + full member roster (with `roleIds` + `serverMuted`) + the guild's
+   * roles + the viewer's owner flag and RESOLVED permission mask. Members only (no peek).
+   * Resolved = owner and `ADMINISTRATOR` collapse to all 12 bits here, so the web gates
+   * every surface with one uniform `hasPermission(viewer.permissions, bit)` — bypass
+   * logic never ships to the client.
+   */
   get: protectedProcedure
     .input(z.object({ guildId: z.string() }))
     .use(requireGuildMember)
     .handler(async ({ input, context }) => {
       const result = await getGuildForViewer(input.guildId, context.user.id);
       if (!result) throw new ORPCError("NOT_FOUND");
-      const members = await listGuildMembers(input.guildId);
-      return { guild: result.guild, members, viewer: { isOwner: result.isOwner } };
+      const [members, roles] = await Promise.all([
+        listGuildMembers(input.guildId),
+        listGuildRoles(input.guildId),
+      ]);
+      const effective = result.isOwner
+        ? ALL_PERMISSIONS
+        : await getEffectivePermissions(input.guildId, context.user.id);
+      const permissions = hasPermission(effective, PERMISSIONS.ADMINISTRATOR)
+        ? ALL_PERMISSIONS
+        : effective;
+      return {
+        guild: result.guild,
+        members,
+        roles,
+        viewer: { isOwner: result.isOwner, permissions },
+      };
     }),
 
   /**
