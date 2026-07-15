@@ -53,6 +53,26 @@ async function assertRoleStrictlyBelow(
 }
 
 /**
+ * The shared mutation preamble: load the role (NOT_FOUND when absent), reject `@everyone`
+ * when the verb doesn't apply to it (`rejectDefault` carries the verb-specific message;
+ * null = allowed, i.e. a permissions-only update), then enforce strict-below hierarchy.
+ */
+async function loadRoleForMutation(
+  guildId: string,
+  roleId: string,
+  userId: string,
+  rejectDefault: string | null,
+) {
+  const role = await getGuildRole(guildId, roleId);
+  if (!role) throw new ORPCError("NOT_FOUND", { message: "Role not found." });
+  if (rejectDefault !== null && role.isDefault) {
+    throw new ORPCError("BAD_REQUEST", { message: rejectDefault });
+  }
+  await assertRoleStrictlyBelow(guildId, userId, role.position);
+  return role;
+}
+
+/**
  * Custom-role CRUD (ADR 0008). Every mutation is gated `MANAGE_ROLES` and shares the
  * `modAction` budget with the moderation procedures.
  */
@@ -105,14 +125,14 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      const role = await getGuildRole(input.guildId, input.roleId);
-      if (!role) throw new ORPCError("NOT_FOUND", { message: "Role not found." });
-      if (role.isDefault && (input.name !== undefined || input.color !== undefined)) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "@everyone can only have its permissions edited.",
-        });
-      }
-      await assertRoleStrictlyBelow(input.guildId, context.user.id, role.position);
+      const role = await loadRoleForMutation(
+        input.guildId,
+        input.roleId,
+        context.user.id,
+        input.name !== undefined || input.color !== undefined
+          ? "@everyone can only have its permissions edited."
+          : null,
+      );
 
       if (input.permissions !== undefined) {
         const owner = await isGuildOwner(input.guildId, context.user.id);
@@ -140,12 +160,12 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      const role = await getGuildRole(input.guildId, input.roleId);
-      if (!role) throw new ORPCError("NOT_FOUND", { message: "Role not found." });
-      if (role.isDefault) {
-        throw new ORPCError("BAD_REQUEST", { message: "@everyone can't be deleted." });
-      }
-      await assertRoleStrictlyBelow(input.guildId, context.user.id, role.position);
+      await loadRoleForMutation(
+        input.guildId,
+        input.roleId,
+        context.user.id,
+        "@everyone can't be deleted.",
+      );
 
       await deleteGuildRole(input.guildId, input.roleId);
       await publishRoleChanged(input.guildId);
@@ -168,12 +188,12 @@ export const roleRouter = {
     .use(requireGuildPermission(PERMISSIONS.MANAGE_ROLES))
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
-      const role = await getGuildRole(input.guildId, input.roleId);
-      if (!role) throw new ORPCError("NOT_FOUND", { message: "Role not found." });
-      if (role.isDefault) {
-        throw new ORPCError("BAD_REQUEST", { message: "@everyone can't be moved." });
-      }
-      await assertRoleStrictlyBelow(input.guildId, context.user.id, role.position);
+      const role = await loadRoleForMutation(
+        input.guildId,
+        input.roleId,
+        context.user.id,
+        "@everyone can't be moved.",
+      );
 
       const neighbor = await getAdjacentGuildRole(input.guildId, role.position, input.direction);
       if (!neighbor) {

@@ -43,8 +43,12 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     (`components/members-panel.tsx` — presence-grouped roster, crown on the owner, per-member popover with
     a Message action): a desktop aside toggled from the header (one global localStorage key, default open)
     and an on-demand right sheet on mobile. **Guild settings** is an owner-only modal
-    (`components/guild-settings/` — Members, Bans, Invites, Danger zone; sections mount lazily so
-    owner-only queries never fire unselected), not a route.
+    (`components/guild-settings/` — Members, Roles, Bans, Invites, Danger zone; sections mount lazily so
+    owner-only queries never fire unselected), not a route. **Roles** (`roles-section.tsx`) is the
+    master–detail editor from prototype #48 variant A: fixed role list (hover ▲▼ reorder) beside an
+    independently scrolling edit pane — name commits on blur/Enter, preset swatches + native custom
+    color picker, permission toggles grouped with hints; `@everyone` is selectable with bits editable
+    but rename/recolor/reorder/delete disabled.
     Owner-gating is data-driven (`guild.get` → `viewer.isOwner`), not a route guard — the API is the source
     of truth.
 

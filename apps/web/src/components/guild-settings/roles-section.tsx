@@ -119,8 +119,8 @@ function RoleDot({ color }: { color: string | null }) {
  */
 export function RolesSection({ guildId }: { guildId: string }) {
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
-  const guildKey = orpc.guild.get.queryOptions({ input: { guildId } }).queryKey;
-  const invalidateGuild = () => queryClient.invalidateQueries({ queryKey: guildKey });
+  const invalidateGuild = () =>
+    queryClient.invalidateQueries({ queryKey: orpc.guild.get.key({ input: { guildId } }) });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -246,7 +246,8 @@ export function RolesSection({ guildId }: { guildId: string }) {
         onUpdate={(patch) => update.mutate({ guildId, roleId: selected.id, ...patch })}
         onDelete={() => {
           remove.mutate({ guildId, roleId: selected.id });
-          setSelectedId(null);
+          // The prototype lands on @everyone after a delete.
+          setSelectedId(everyone.id);
         }}
         deletePending={remove.isPending}
       />
