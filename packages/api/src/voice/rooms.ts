@@ -515,6 +515,20 @@ export async function leaveVoice(userId: string): Promise<void> {
   await publishPeerLeft(current.room, userId);
 }
 
+/**
+ * The user was removed from a guild (kick, ban, or self-leave): drop their seat — but only
+ * if it sits in a room of THAT guild. The scope is load-bearing: one user holds one seat
+ * instance-wide, so an unscoped leave would eject them from an unrelated guild's channel.
+ * Unlike deletion, the channel survives for everyone else, so this rides the ordinary leave
+ * path and publishes `voice.peerLeft` — callers run it AFTER the membership row drops, so
+ * the guild-wide fan-out reaches only the remaining members. A grace seat (peer already
+ * gone) is covered too. Idempotent — no seat, or a seat elsewhere, is a no-op.
+ */
+export async function evictMemberFromGuildVoice(userId: string, guildId: string): Promise<void> {
+  if (seatOf(userId)?.room.guildId !== guildId) return;
+  await leaveVoice(userId);
+}
+
 /** Flip the self-mute flag and broadcast it. Returns false when the user has no seat. */
 export async function setSelfMute(userId: string, muted: boolean): Promise<boolean> {
   const current = seatOf(userId);

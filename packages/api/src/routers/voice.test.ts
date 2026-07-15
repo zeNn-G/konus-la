@@ -573,6 +573,157 @@ describe("voice room eviction on deletion", () => {
   });
 });
 
+describe("voice seat eviction on member removal", () => {
+  /**
+   * Kick/ban/leave live in the guild router, but their voice assertions belong here for the
+   * same reason as the deletion block above: only this file boots a real SFU worker. Unlike
+   * deletion, the channel survives the removal, so these paths DO publish `voice.peerLeft` —
+   * the remaining occupants' sidebars must drop the seat. Throwaway guilds and dedicated
+   * users throughout — join/leave shares a per-user budget with no reset between tests.
+   */
+  test("kicking a seated member drops their seat, tells the remainers, and frees the index", async () => {
+    const owner = "v-kick-owner";
+    const target = "v-kick-target";
+    for (const id of [owner, target]) await seedTestUser({ id, username: id });
+    const kickGuildId = (await createGuildWithOwner({ name: "Kickers", ownerUserId: owner })).id;
+    await seedTestMembership(kickGuildId, target);
+    await seedTestMembership(guildId, target); // for the join-elsewhere probe below
+    const vcKick = await seedTestVoiceChannel(kickGuildId, "voice-kick");
+
+    await call(appRouter.voice.join, { channelId: vcKick }, asWsUser(owner, "conn-ko-1"));
+    await call(appRouter.voice.join, { channelId: vcKick }, asWsUser(target, "conn-kt-1"));
+
+    const ownerEvents = collect(owner);
+    const targetEvents = collect(target);
+
+    await call(
+      appRouter.guild.member.kick,
+      { guildId: kickGuildId, userId: target },
+      asUser(owner),
+    );
+
+    await waitFor(() => ofType(ownerEvents, "voice.peerLeft").length === 1, "peerLeft to remainers");
+    expect(ofType(ownerEvents, "voice.peerLeft")[0]).toMatchObject({
+      guildId: kickGuildId,
+      channelId: vcKick,
+      userId: target,
+    });
+
+    // The peerLeft fan-out reads the roster at publish time — AFTER the membership row
+    // dropped — so the kicked user is off it and learns from guild.member.removed instead.
+    await settle();
+    expect(ofType(targetEvents, "voice.peerLeft")).toHaveLength(0);
+    expect(ofType(targetEvents, "guild.member.removed")).toHaveLength(1);
+
+    // The remainer keeps their seat; the kicked member's is gone.
+    expect(await voiceSnapshotFor(owner)).toEqual([
+      expect.objectContaining({
+        channelId: vcKick,
+        seats: [expect.objectContaining({ userId: owner })],
+      }),
+    ]);
+
+    // The one-seat index is released: the kicked user can join voice elsewhere at once.
+    await call(appRouter.voice.join, { channelId: vcMain }, asWsUser(target, "conn-kt-2"));
+    expect(await voiceSnapshotFor(ALICE)).toEqual([
+      expect.objectContaining({
+        channelId: vcMain,
+        seats: [expect.objectContaining({ userId: target })],
+      }),
+    ]);
+  });
+
+  test("banning a member whose seat is in grace still drops it", async () => {
+    const owner = "v-ban-owner";
+    const target = "v-ban-target";
+    for (const id of [owner, target]) await seedTestUser({ id, username: id });
+    const banGuildId = (await createGuildWithOwner({ name: "Banners", ownerUserId: owner })).id;
+    await seedTestMembership(banGuildId, target);
+    const vcBan = await seedTestVoiceChannel(banGuildId, "voice-ban");
+
+    await call(appRouter.voice.join, { channelId: vcBan }, asWsUser(owner, "conn-bo-1"));
+    await call(appRouter.voice.join, { channelId: vcBan }, asWsUser(target, "conn-bt-1"));
+    // Socket gone, seat in grace: the peer is null but the seat (and its slot) remain. The
+    // window is far longer than the test, so any peerLeft below can only be the eviction —
+    // a short window would expire on its own and fake a pass. (Eviction clears the timer
+    // through the same removeSeat the rebind-within-grace test exercises.)
+    voiceConnectionClosed("conn-bt-1", 60_000);
+
+    const ownerEvents = collect(owner);
+
+    await call(appRouter.guild.member.ban, { guildId: banGuildId, userId: target }, asUser(owner));
+
+    await waitFor(() => ofType(ownerEvents, "voice.peerLeft").length === 1, "peerLeft on ban");
+    expect(ofType(ownerEvents, "voice.peerLeft")[0]).toMatchObject({
+      guildId: banGuildId,
+      channelId: vcBan,
+      userId: target,
+    });
+    expect(await voiceSnapshotFor(owner)).toEqual([
+      expect.objectContaining({
+        channelId: vcBan,
+        seats: [expect.objectContaining({ userId: owner })],
+      }),
+    ]);
+  });
+
+  test("leaving a guild of your own accord drops your seat in its voice channel", async () => {
+    const owner = "v-leave-owner";
+    const leaver = "v-leave-leaver";
+    for (const id of [owner, leaver]) await seedTestUser({ id, username: id });
+    const leaveGuildId = (await createGuildWithOwner({ name: "Leavers", ownerUserId: owner })).id;
+    await seedTestMembership(leaveGuildId, leaver);
+    const vcLeave = await seedTestVoiceChannel(leaveGuildId, "voice-leave");
+
+    await call(appRouter.voice.join, { channelId: vcLeave }, asWsUser(owner, "conn-lo-1"));
+    await call(appRouter.voice.join, { channelId: vcLeave }, asWsUser(leaver, "conn-ll-1"));
+
+    const ownerEvents = collect(owner);
+
+    await call(appRouter.guild.member.leave, { guildId: leaveGuildId }, asUser(leaver));
+
+    await waitFor(() => ofType(ownerEvents, "voice.peerLeft").length === 1, "peerLeft on leave");
+    expect(ofType(ownerEvents, "voice.peerLeft")[0]).toMatchObject({
+      guildId: leaveGuildId,
+      channelId: vcLeave,
+      userId: leaver,
+    });
+    expect(await voiceSnapshotFor(owner)).toEqual([
+      expect.objectContaining({
+        channelId: vcLeave,
+        seats: [expect.objectContaining({ userId: owner })],
+      }),
+    ]);
+  });
+
+  test("removal from guild A does not disturb the seat the same user holds in guild B", async () => {
+    const ownerA = "v-scope-owner-a";
+    const ownerB = "v-scope-owner-b";
+    const roamer = "v-scope-roamer";
+    for (const id of [ownerA, ownerB, roamer]) await seedTestUser({ id, username: id });
+    const guildA = (await createGuildWithOwner({ name: "Scope A", ownerUserId: ownerA })).id;
+    const guildB = (await createGuildWithOwner({ name: "Scope B", ownerUserId: ownerB })).id;
+    await seedTestMembership(guildA, roamer);
+    await seedTestMembership(guildB, roamer);
+    const vcB = await seedTestVoiceChannel(guildB, "voice-scope-b");
+
+    // One seat instance-wide: the roamer's is in guild B when guild A removes them.
+    await call(appRouter.voice.join, { channelId: vcB }, asWsUser(roamer, "conn-sr-1"));
+    const ownerBEvents = collect(ownerB);
+
+    await call(appRouter.guild.member.kick, { guildId: guildA, userId: roamer }, asUser(ownerA));
+
+    await settle();
+    expect(ofType(ownerBEvents, "voice.peerLeft")).toHaveLength(0);
+    expect(await voiceSnapshotFor(ownerB)).toEqual([
+      expect.objectContaining({
+        channelId: vcB,
+        seats: [expect.objectContaining({ userId: roamer })],
+      }),
+    ]);
+  });
+});
+
 describe("voice rate limits", () => {
   test("join and leave share one 10-per-60s budget", async () => {
     for (let i = 0; i < 5; i++) {

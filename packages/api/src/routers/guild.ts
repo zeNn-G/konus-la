@@ -25,7 +25,7 @@ import { z } from "zod";
 import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
-import { evictGuildVoiceRooms } from "../voice/rooms";
+import { evictGuildVoiceRooms, evictMemberFromGuildVoice } from "../voice/rooms";
 
 /** Roster-change fan-out: every remaining member plus the affected user themselves. */
 async function publishMemberEvent(
@@ -201,6 +201,9 @@ export const guildRouter = {
         }
         const removed = await kickMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
+        // Row first, then the seat — the peerLeft fan-out reads the roster at publish time
+        // and must reach the remaining members, not the kicked one.
+        await evictMemberFromGuildVoice(input.userId, input.guildId);
         await publishMemberEvent("guild.member.removed", input.guildId, input.userId);
         return { ok: true } as const;
       }),
@@ -225,6 +228,9 @@ export const guildRouter = {
           reason: input.reason ?? null,
           bannedByUserId: context.user.id,
         });
+        // Row first, then the seat (see kick) — this also catches a target sitting out the
+        // offline grace window: the seat exists with no peer, and must still go.
+        await evictMemberFromGuildVoice(input.userId, input.guildId);
         await publishMemberEvent("guild.member.removed", input.guildId, input.userId);
         return { ok: true } as const;
       }),
@@ -258,6 +264,8 @@ export const guildRouter = {
           });
         }
         await leaveGuild(input.guildId, context.user.id);
+        // Row first, then the seat (see kick) — leaving a guild vacates its voice channel too.
+        await evictMemberFromGuildVoice(context.user.id, input.guildId);
         await publishMemberEvent("guild.member.removed", input.guildId, context.user.id);
         return { ok: true } as const;
       }),

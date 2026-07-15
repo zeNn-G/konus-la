@@ -277,6 +277,13 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
         // layout (if mounted) navigates home and cleans the caches AFTER unmounting;
         // touching guild.get/channel.list here would refetch them as a non-member and
         // toast FORBIDDEN.
+        // A seat in one of the guild's voice channels goes first, local-only: the server
+        // released it with the membership row, so voice.leave would spend the shared
+        // join/leave budget unseating nobody. Co-members drop the seat via the peerLeft
+        // the server publishes to them.
+        if (voiceSession.tearDownIfSeatedInGuild(event.guildId)) {
+          toast.info("You're no longer in this guild — you've been disconnected from voice.");
+        }
         client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>
           old?.filter((g) => g.id !== event.guildId),
         );
@@ -305,7 +312,7 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
         reduceVoiceOccupancy(old, event),
       );
-      if (voiceSession.tearDownForDeletedGuild(event.guildId)) {
+      if (voiceSession.tearDownIfSeatedInGuild(event.guildId)) {
         toast.info("This guild was deleted — you've been disconnected from voice.");
       }
       client.setQueriesData<Array<{ id: string }>>({ queryKey: orpc.guild.list.key() }, (old) =>

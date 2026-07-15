@@ -73,7 +73,9 @@ TanStack Query invalidation of `guild.list`.
   raises the `dmEvictedKey` tombstone; the mounted conversation view watches it, navigates home, and
   removes the history/typing/`dm.get` caches only AFTER leaving — invalidating them while still
   mounted would refetch as a non-participant and toast FORBIDDEN.
-- **Guild membership events in the dispatcher**: `guild.member.removed` for the OWN user drops the
+- **Guild membership events in the dispatcher**: `guild.member.removed` for the OWN user first tears
+  down a voice session seated in that guild (`voiceSession.tearDownIfSeatedInGuild`, local-only —
+  the server released the seat with the membership row) and toasts why, then drops the
   rail row and raises the `guildEvictedKey` tombstone; the guild layout (`guilds/$guildId/route.tsx`)
   watches it, navigates home, and removes `guild.get` / `channel.list` caches only AFTER leaving
   (same FORBIDDEN-refetch discipline as DM eviction). For other users it invalidates that guild's
@@ -81,11 +83,11 @@ TanStack Query invalidation of `guild.list`.
   for the own user clears a stale tombstone (rejoin after kick) and refreshes the rail in other tabs.
   `guild.updated` (ownership transfer) re-reads `guild.get` — the settings entry, the crown, and the
   modal's owner-flip guard all react live. `guild.deleted` evicts every recipient the same
-  tombstone way, no per-user check — plus `voiceSession.guildDeleted`, since the tombstone only
-  navigates and would otherwise leave a seated member's mic hot after the guild is gone.
+  tombstone way, no per-user check — plus `voiceSession.tearDownIfSeatedInGuild`, since the tombstone
+  only navigates and would otherwise leave a seated member's mic hot after the guild is gone.
 - **Channel deletion in the dispatcher**: `channel.deleted` runs the occupancy reducer (bystanders
   watching a room they are not in stop seeing its occupants), tears the session down via
-  `voiceSession.channelDeleted` if that is the channel we are seated in, toasts why, and only THEN
+  `voiceSession.tearDownForDeletedChannel` if that is the channel we are seated in, toasts why, and only THEN
   invalidates `channel.list` — **in that order**, so the channel route's "channel vanished, bounce to
   guild home" effect fires against an already-idle session.
 - **Key discipline**: the channel view and the dispatcher MUST build history keys through
@@ -103,8 +105,9 @@ TanStack Query invalidation of `guild.list`.
   signaling failure / socket death / `mediaReset` / transport failure → `reconnecting` → rejoin
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
   full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout /
-  a lost seat steal / the channel (or guild) being deleted under us — never navigation. The last of
-  those, `tearDownForDeletedChannel` / `tearDownForDeletedGuild`, are **local-only** teardowns that
+  a lost seat steal / the channel (or guild) being deleted under us / being removed from the guild
+  (kicked, banned, or left) — never navigation. The last of
+  those, `tearDownForDeletedChannel` / `tearDownIfSeatedInGuild`, are **local-only** teardowns that
   deliberately skip `voice.leave` (the server dropped the seat with the row, so the RPC would spend
   the shared join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. They
   report whether THIS session went down, which is what the dispatcher toasts on (`notice` is written
