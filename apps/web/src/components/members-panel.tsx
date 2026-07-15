@@ -6,12 +6,52 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 import { CrownIcon, MessageSquareIcon } from "lucide-react";
 
+import { useEffect } from "react";
+
+import {
+  EVERYONE_ID,
+  customRolesByRank,
+  highestRole,
+  roleColorFor,
+  seedAssignments,
+  usePrototypeRoles,
+} from "@/components/guild-settings/roles-prototype/store";
+import { useRolesVariant } from "@/components/guild-settings/roles-prototype/use-variant";
 import { PresenceAvatar } from "@/components/presence-avatar";
 import { useMessageUser } from "@/lib/use-message-user";
 import { usePresence } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
-type MemberGroup<M> = { key: string; label: string; dimmed?: boolean; members: M[] };
+type MemberGroup<M> = {
+  key: string;
+  label: string;
+  dimmed?: boolean;
+  color?: string | null;
+  members: M[];
+};
+
+// PROTOTYPE (wayfinder #48): the "role buckets later" this file predicted — group by
+// highest custom role (rank order), everyone-only members last.
+function groupByHighestRole<M extends { userId: string }>(
+  members: M[],
+  roles: ReturnType<typeof usePrototypeRoles>["roles"],
+): MemberGroup<M>[] {
+  const buckets = new Map<string, M[]>();
+  for (const m of members) {
+    const top = highestRole(m.userId);
+    const key = top?.id ?? EVERYONE_ID;
+    buckets.set(key, [...(buckets.get(key) ?? []), m]);
+  }
+  const groups: MemberGroup<M>[] = customRolesByRank(roles).map((role) => ({
+    key: role.id,
+    label: `${role.name} — ${(buckets.get(role.id) ?? []).length}`,
+    color: role.color,
+    members: buckets.get(role.id) ?? [],
+  }));
+  const everyone = buckets.get(EVERYONE_ID) ?? [];
+  groups.push({ key: EVERYONE_ID, label: `Members — ${everyone.length}`, members: everyone });
+  return groups.filter((group) => group.members.length > 0);
+}
 
 /**
  * Presence buckets today; role buckets later are just another function returning the
@@ -40,6 +80,19 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
   const { session } = getRouteApi("/(app)").useRouteContext();
   const messageUser = useMessageUser();
 
+  // PROTOTYPE (wayfinder #48): subscribe to the in-memory role store and seed it with
+  // real member ids so grouping/tints react to edits made in the settings dialog.
+  const variant = useRolesVariant();
+  const { roles } = usePrototypeRoles();
+  useEffect(() => {
+    if (variant && guild.data) {
+      seedAssignments(
+        guild.data.members.map((m) => m.userId),
+        guild.data.guild.ownerId,
+      );
+    }
+  }, [variant, guild.data]);
+
   if (guild.isPending) {
     return (
       <aside className={cn("flex-col gap-0.5 overflow-y-auto px-2 py-3", className)}>
@@ -56,13 +109,18 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
   if (!guild.data) return null;
 
   const { guild: g, members } = guild.data;
-  const groups = groupByPresence(members, presence, session.user.id);
+  const groups = variant
+    ? groupByHighestRole(members, roles)
+    : groupByPresence(members, presence, session.user.id);
 
   return (
     <aside className={cn("flex-col overflow-y-auto pb-2", className)}>
       {groups.map((group) => (
         <section key={group.key} className={cn(group.dimmed && "opacity-60")}>
-          <h2 className="px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">
+          <h2
+            className="px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground"
+            style={{ color: group.color ?? undefined }}
+          >
             {group.label}
           </h2>
           <div className="flex flex-col gap-0.5 px-2">
@@ -80,7 +138,12 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
                     }
                   >
                     <PresenceAvatar seed={m.username ?? m.userId} src={m.image} online={online} />
-                    <span className="truncate">{name}</span>
+                    <span
+                      className="truncate"
+                      style={variant ? { color: roleColorFor(m.userId) ?? undefined } : undefined}
+                    >
+                      {name}
+                    </span>
                     {m.userId === g.ownerId && (
                       <CrownIcon
                         aria-label="Guild owner"

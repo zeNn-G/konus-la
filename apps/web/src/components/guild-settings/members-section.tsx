@@ -1,12 +1,27 @@
 import { Button } from "@konus-la/ui/components/button";
 import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { toast } from "sonner";
 
+import { MemberRoleChips } from "@/components/guild-settings/roles-prototype/member-role-chips";
+import { seedAssignments } from "@/components/guild-settings/roles-prototype/store";
+import { useRolesVariant } from "@/components/guild-settings/roles-prototype/use-variant";
 import { orpc, queryClient } from "@/utils/orpc";
 
 export function MembersSection({ guildId }: { guildId: string }) {
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
+
+  // PROTOTYPE (wayfinder #48): give the in-memory role store real member ids once.
+  const variant = useRolesVariant();
+  useEffect(() => {
+    if (variant && guild.data) {
+      seedAssignments(
+        guild.data.members.map((m) => m.userId),
+        guild.data.guild.ownerId,
+      );
+    }
+  }, [variant, guild.data]);
   const guildKey = orpc.guild.get.queryOptions({ input: { guildId } }).queryKey;
   const bansKey = orpc.guild.member.banList.queryOptions({ input: { guildId } }).queryKey;
   const invalidateGuild = () => queryClient.invalidateQueries({ queryKey: guildKey });
@@ -60,9 +75,13 @@ export function MembersSection({ guildId }: { guildId: string }) {
             <li key={m.userId} className="flex items-center gap-3 py-2">
               <span className="text-sm">{m.displayName || m.username || m.userId}</span>
               {m.username && <span className="text-xs text-muted-foreground">@{m.username}</span>}
-              <span className="ml-auto text-xs text-muted-foreground">
-                {isGuildOwner ? "Owner" : "@everyone"}
-              </span>
+              {variant ? (
+                <MemberRoleChips userId={m.userId} isOwner={isGuildOwner} />
+              ) : (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {isGuildOwner ? "Owner" : "@everyone"}
+                </span>
+              )}
               {!isGuildOwner && (
                 <div className="flex items-center gap-1.5">
                   <Button

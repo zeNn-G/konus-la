@@ -7,6 +7,11 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/chat/message-markdown";
+import {
+  roleColorFor,
+  usePrototypeRoles,
+} from "@/components/guild-settings/roles-prototype/store";
+import { useRolesVariant } from "@/components/guild-settings/roles-prototype/use-variant";
 import type { ChatMessage } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
@@ -42,6 +47,11 @@ function MessageItemRow({
   onReply,
 }: Props) {
   const isAuthor = message.author.id === selfUserId;
+  // PROTOTYPE (wayfinder #48): author names take the highest colored role's tint.
+  // The store subscription keeps memoized rows repainting as roles are edited live.
+  const rolesVariant = useRolesVariant();
+  usePrototypeRoles();
+  const authorTint = rolesVariant ? roleColorFor(message.author.id) : null;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
@@ -110,7 +120,12 @@ function MessageItemRow({
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium">{message.author.displayName}</span>
+              <span
+                className="text-sm font-medium"
+                style={{ color: authorTint ?? undefined }}
+              >
+                {message.author.displayName}
+              </span>
               <span
                 className="text-[11px] text-muted-foreground"
                 title={dateTimeFormat.format(message.createdAt)}

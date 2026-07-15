@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
+import { RolesPrototypeSwitcher } from "@/components/guild-settings/roles-prototype/switcher";
 import { guildEvictedKey } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -33,5 +34,11 @@ function GuildLayout() {
     });
   }, [evicted.data, navigate, guildId]);
 
-  return <Outlet />;
+  // PROTOTYPE (wayfinder #48): dev-only variant switcher, inert without ?variant=.
+  return (
+    <>
+      <Outlet />
+      <RolesPrototypeSwitcher />
+    </>
+  );
 }
