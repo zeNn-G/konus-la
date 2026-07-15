@@ -14,8 +14,8 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 
 ### Scope & shape
 
-- Multi-guild, but minimal: no nested categories, no custom roles, no fancy guild settings. DMs live outside any guild.
-- Per-guild roles: **Owner / Admin / Member** (single enum on `GuildMembership`).
+- Multi-guild, but minimal: no nested categories. DMs live outside any guild.
+- Per-guild roles: **custom roles + permission bitfield + position hierarchy** (Discord-style; 12 bits, multi-role, `@everyone` at position 0). Amended in Phase 6 — see [ADR 0008](docs/adr/0008-rbac-activation-permission-bitfield.md), which supersedes the earlier "Owner / Admin / Member single enum" plan. No per-channel overwrites in v1.
 - **Signup is invite-code-gated.** Instance owner mints codes; Better Auth signup wraps a code validator.
 - **Guild creation is open with a per-user cap** (default 5; env-var).
 - **Joining a guild is invite-code-only** (codes carry optional `expiresAt` + `maxUses`). No direct-add-by-username.
@@ -48,7 +48,7 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 - **NAT traversal v1:** UDP + TCP fallback (`enableUdp: true, enableTcp: true, preferUdp: true`), `announcedIp = env.PUBLIC_IP`, ports pinned to `40000-40100`. **No coturn / TURN** in v1 — add only if real users report connection failures.
 - **Voice semantics:**
   - Self-mute / self-deafen are client-side pauses with server-broadcast badges and `VoiceState` flags.
-  - Server-mute (admin) pauses the victim's producer authoritatively; victim cannot self-resume.
+  - Server-mute (`MUTE_MEMBERS`) pauses the victim's audio producers authoritatively; victim cannot self-resume. Persists as a `serverMuted` flag on `GuildMembership`, applied to fresh seats on `voice.join`.
   - PTT and voice activity are client-side toggles; audio producer always exists, paused/resumed locally.
   - Codecs: Opus (audio), VP8 (webcam + screenshare). No simulcast in v1.
   - Producer limits per peer: 1 audio + ≤1 webcam + ≤1 screenshare.
@@ -73,9 +73,9 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 
 ### Moderation, reports, audit log
 
-- **Actions in v1:** message delete (author or admin) + edit (author); voice server-mute + voice-disconnect; kick / ban / unban (admin); promote-demote admin (owner); transfer ownership (owner); channel create / delete (admin); instance-ban (instance owner, flags `User.instanceBanned`, terminates sessions). **No timeout** in v1.
-- **Reports:** `Report { reporterId, messageId, reason, resolvedAt, resolvedById }`. Any user can report; owner/admin sees a simple inbox list with "resolve" action.
-- **Audit log (per guild):** `AuditLogEntry { guildId, actorId, action, targetUserId?, targetChannelId?, targetMessageId?, metadata, createdAt }`. Every mod procedure calls `auditLog.record(...)`. Read-only paginated list view in guild settings. No retention policy in v1.
+- **Actions in v1** (each gated by its permission bit — [ADR 0008](docs/adr/0008-rbac-activation-permission-bitfield.md)): message delete (author, or `MANAGE_MESSAGES` with confirm + optional reason) + edit (author); voice server-mute (`MUTE_MEMBERS`, persistent flag) + voice-disconnect (`MOVE_MEMBERS`); kick / ban / unban (`KICK_MEMBERS` / `BAN_MEMBERS`); role management (`MANAGE_ROLES`); transfer ownership (owner); channel create / rename / delete (`MANAGE_CHANNELS`); instance-ban (instance owner, Better Auth admin plugin `banned` + full session revocation, **required reason**). Member-targeted actions also require outranking the target. **No timeout** in v1.
+- **Reports (guild messages only, no DM reports):** `Report { guildId, reporterId, messageId?, messageAuthorId, messageContent, reason, resolvedAt?, resolvedById? }` — content snapshotted at report time so reports survive hard deletes. Any member can report; the per-guild inbox is gated `MANAGE_REPORTS`; resolve = mark only.
+- **Audit log (per guild):** `AuditLogEntry { guildId, actorId, action, targetUserId?, targetChannelId?, targetMessageId?, metadata, createdAt }`. Every privileged mutation records an entry (self-service actions, joins/leaves, and instance-ban don't). Read gated `VIEW_AUDIT_LOG` — paginated list view in guild settings, no realtime tail. No retention policy in v1.
 
 ### Message history
 
@@ -133,7 +133,7 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 ## Domain language (additions to existing `CONTEXT.md` vocabulary)
 
 - **Guild** — a self-contained server people belong to; owns channels and memberships.
-- **GuildMembership** — a user's role inside one guild (`owner` | `admin` | `member`).
+- **GuildMembership** — a user's membership in one guild (+ `serverMuted` flag). Roles live in `GuildRole` (per-guild role: `permissions` bitfield, `position`, `color`; one seeded `@everyone` per guild) and `MemberRole` (assignments; membership alone = `@everyone`).
 - **Channel** — text, voice, or DM. Either belongs to a Guild or is a DM (no guild).
 - **ChannelParticipant** — only used for DM channels (1:1 or group).
 - **Message** — a text post in a channel; ULID-keyed; cursor-paginated.
@@ -186,9 +186,9 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - WS auth (session cookie at upgrade) — pulled forward from Phase 5; presence map in memory with 5 s debounced offline broadcast.
 - Web: channel sidebar (unread bold + mention badge), message list (cursor-paginated, infinite scroll, no virtualization), textarea composer with markdown + `@mention` autocomplete (no TipTap), typing line, presence dots, `useRealtime()` dispatcher.
 
-### Phase 3.5 — Guild roles (parked)
+### Phase 3.5 — Guild roles (folded into Phase 6)
 
-- Admin role assignment (`guild.member.setRole`), `requireGuildAdmin` gate widening channel management + moderation beyond the owner; `guild.memberRemoved` event so kicked members' clients react. Deferred from Phase 3 to keep it channel-focused.
+- The parked admin-role slice was superseded before it was built: delegation ships as full custom-role RBAC in Phase 6 (see [ADR 0008](docs/adr/0008-rbac-activation-permission-bitfield.md)) — no `setRole`, no `requireGuildAdmin`. (`guild.member.removed` shipped earlier, with Phase 4/5 groundwork.)
 
 ### Phase 4 — DMs (1:1 + group) ✅
 
@@ -206,12 +206,16 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - Lifecycle hardening: 30 s grace on socket loss; deleting a channel or guild evicts its rooms (#39); kick / ban / self-leave releases the member's seat (#42); worker death/respawn recovers via `mediaReset` rebinds.
 - Web: `voiceSession` singleton (mediasoup-client, one recovery path), voice stage + connection capsule, tile grid with speaking rings, mute / deafen / leave, webcam + screenshare (opt-in share audio), device pickers (in/out), per-peer volume, visibility-driven video consumer pausing.
 
-### Phase 6 — Moderation & audit
+### Phase 6 — Guild roles & moderation (absorbs Phase 3.5)
 
-- Tables: `AuditLogEntry`, `Report`.
-- `auditLog.record(...)` helper called from every mod procedure (back-fill earlier phases).
-- ORPC: `mod.kick / ban / unban / muteVoice / disconnectVoice / instanceBan`, `report.create / list / resolve`.
-- Web: audit log list view per guild, report inbox.
+See the [phase-6 spec](docs/specs/phase-6-roles-and-moderation.md) and [ADR 0008](docs/adr/0008-rbac-activation-permission-bitfield.md).
+
+- Schema (additive): `guildRole.permissions` bitfield + `guildRole.color`, `guildMembership.serverMuted`; new tables `Report`, `AuditLogEntry`.
+- Permission plumbing: frozen 12-bit catalog (`@konus-la/api/permissions`), per-request evaluation, `requireGuildPermission` / `requireChannelPermission` middleware factories, hierarchy helpers; existing owner-gated procedures regated to their bits; `guild.get` exposes `viewer.permissions` as a resolved mask.
+- ORPC: `role.create / update / delete / reorder / assign / unassign`, `mod.deleteMessage / serverMute / disconnectVoice`, `report.create / list / unresolvedCount / resolve`, `auditLog.list`, `admin.banUser / unbanUser / listBannedUsers` (instance-ban via Better Auth `banUser` + voice/socket teardown), `guild.update` (rename, `MANAGE_GUILD`).
+- `recordAuditEntry(...)` called from every privileged mutation (instrumenting existing procedures; history starts at ship).
+- Events: `role.changed`, `member.rolesChanged`, `voice.serverMuteSet`, `report.changed` (first permission-derived recipient set); voice seats grow `serverMuted`.
+- Web: master–detail roles editor, permission-gated settings sections, assignment chips on member rows, member list grouped by highest role with color tints, mod actions in context menus, report inbox + audit log views, banned sign-in inline error + zombie-tab session re-check.
 
 ### Phase 7 — Notifications & in-app polish
 
@@ -239,7 +243,9 @@ Each phase ends with something demoable. Earlier phases unblock later ones.
 - OAuth providers.
 - PWA install assets and offline shell.
 - Tauri / Electron desktop wrapper.
-- Custom roles / per-channel permission overrides.
+- Per-channel permission overwrites (custom roles shipped in Phase 6).
+- Role `hoist` flag (member list groups by highest role instead), role icons, drag-and-drop role reorder.
+- Server-deafen; timeout / temp-mute; DM message reports; instance-ban expiry UI.
 - Voice in DMs ("call your friend") — schema already supports it.
 - Channel categories / folders.
 - Audit log retention policy + filters.
@@ -256,7 +262,7 @@ After each phase:
 - **Phase 3:** two browser tabs as different users see each other's messages live, presence dots, typing indicator, unread badge, mention count.
 - **Phase 4:** open DM with anyone on the instance; create a 3-person group DM; same chat behaviors as guild channels.
 - **Phase 5:** three browser tabs join the same voice channel; each can publish mic, toggle cam, share screen; mute / deafen / leave all behave. Test across LAN and across NAT (use TCP fallback by blocking UDP). Verify audio quality with all three audio constraints. Verify channel switch tears down cleanly.
-- **Phase 6:** admin actions are visible in audit log; instance-ban kicks all sessions; reports flow shows up in inbox.
+- **Phase 6:** roles are creatable / colorable / reorderable / assignable and the member list regroups + retints live in a second browser; a member with a single permission bit sees exactly the settings sections it grants; equal-rank moderation attempts are rejected; server-mute locks the target's mic silently and survives rejoin + server restart; reports flow into the gated inbox and survive message deletion; every privileged mutation is visible in the audit log; instance-ban kicks all sessions within seconds and re-login shows the banned message.
 - **Phase 7:** background-tab notifications fire on DM / mention; sounds play; per-channel mute hides them.
 - **Phase 8:** fresh VPS → `docker compose up` → app reachable on HTTPS, voice works for users on different networks.
 
