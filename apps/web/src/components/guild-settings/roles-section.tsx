@@ -102,7 +102,7 @@ const ROLE_COLORS = [
   "#ec4899",
 ] as const;
 
-function RoleDot({ color }: { color: string | null }) {
+export function RoleDot({ color }: { color: string | null }) {
   return (
     <span
       className="inline-block size-2.5 shrink-0 rounded-full"

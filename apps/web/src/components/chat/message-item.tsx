@@ -23,6 +23,8 @@ type Props = {
   selfUserId: string;
   isGuildOwner: boolean;
   memberUsernames: ReadonlySet<string>;
+  /** The author's role tint (highest colored role) — guild channels only. */
+  authorColor?: string;
   onReply: (message: ChatMessage) => void;
 };
 
@@ -39,6 +41,7 @@ function MessageItemRow({
   selfUserId,
   isGuildOwner,
   memberUsernames,
+  authorColor,
   onReply,
 }: Props) {
   const isAuthor = message.author.id === selfUserId;
@@ -110,7 +113,9 @@ function MessageItemRow({
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium">{message.author.displayName}</span>
+              <span className="text-sm font-medium" style={{ color: authorColor }}>
+                {message.author.displayName}
+              </span>
               <span
                 className="text-[11px] text-muted-foreground"
                 title={dateTimeFormat.format(message.createdAt)}

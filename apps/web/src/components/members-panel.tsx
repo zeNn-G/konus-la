@@ -7,33 +7,48 @@ import { getRouteApi } from "@tanstack/react-router";
 import { CrownIcon, MessageSquareIcon } from "lucide-react";
 
 import { PresenceAvatar } from "@/components/presence-avatar";
+import type { GuildRole } from "@/lib/roles";
+import { highestRoleOf, roleColorOf } from "@/lib/roles";
 import { useMessageUser } from "@/lib/use-message-user";
 import { usePresence } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
-type MemberGroup<M> = { key: string; label: string; dimmed?: boolean; members: M[] };
+type MemberGroup<M> = { key: string; label: string; color: string | null; members: M[] };
 
 /**
- * Presence buckets today; role buckets later are just another function returning the
- * same shape. Empty groups are dropped. Your own row is always online — you're here.
+ * Role buckets (spec #48): one group per custom role holding the members whose HIGHEST
+ * role it is, rank order, roleless members last under "Members". Group headers carry the
+ * group role's color; empty groups are dropped. Presence stays on the avatar dot — there
+ * are no online/offline buckets inside groups.
  */
-function groupByPresence<M extends { userId: string }>(
+function groupByHighestRole<M extends { userId: string; roleIds: string[] }>(
   members: M[],
-  presence: Record<string, boolean>,
-  selfUserId: string,
+  roles: GuildRole[],
 ): MemberGroup<M>[] {
-  const online: M[] = [];
-  const offline: M[] = [];
+  const buckets = new Map<string | null, M[]>();
   for (const m of members) {
-    (m.userId === selfUserId || presence[m.userId] === true ? online : offline).push(m);
+    const key = highestRoleOf(roles, m.roleIds)?.id ?? null;
+    buckets.set(key, [...(buckets.get(key) ?? []), m]);
   }
-  return [
-    { key: "online", label: `Online — ${online.length}`, members: online },
-    { key: "offline", label: `Offline — ${offline.length}`, dimmed: true, members: offline },
-  ].filter((group) => group.members.length > 0);
+  const groups: MemberGroup<M>[] = roles
+    .filter((role) => !role.isDefault)
+    .map((role) => ({
+      key: role.id,
+      label: `${role.name} — ${(buckets.get(role.id) ?? []).length}`,
+      color: role.color,
+      members: buckets.get(role.id) ?? [],
+    }));
+  const roleless = buckets.get(null) ?? [];
+  groups.push({
+    key: "members",
+    label: `Members — ${roleless.length}`,
+    color: null,
+    members: roleless,
+  });
+  return groups.filter((group) => group.members.length > 0);
 }
 
-/** Guild roster grouped by presence. Caller owns width, border, and display breakpoints. */
+/** Guild roster grouped by highest role. Caller owns width, border, and display breakpoints. */
 export function MembersPanel({ guildId, className }: { guildId: string; className?: string }) {
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
   const presence = usePresence();
@@ -55,14 +70,17 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
   // Stale roster after a kick/ban resolves to an error — show nothing rather than crash.
   if (!guild.data) return null;
 
-  const { guild: g, members } = guild.data;
-  const groups = groupByPresence(members, presence, session.user.id);
+  const { guild: g, members, roles } = guild.data;
+  const groups = groupByHighestRole(members, roles);
 
   return (
     <aside className={cn("flex-col overflow-y-auto pb-2", className)}>
       {groups.map((group) => (
-        <section key={group.key} className={cn(group.dimmed && "opacity-60")}>
-          <h2 className="px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">
+        <section key={group.key}>
+          <h2
+            className="px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground"
+            style={{ color: group.color ?? undefined }}
+          >
             {group.label}
           </h2>
           <div className="flex flex-col gap-0.5 px-2">
@@ -80,7 +98,12 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
                     }
                   >
                     <PresenceAvatar seed={m.username ?? m.userId} src={m.image} online={online} />
-                    <span className="truncate">{name}</span>
+                    <span
+                      className="truncate"
+                      style={{ color: roleColorOf(roles, m.roleIds) ?? undefined }}
+                    >
+                      {name}
+                    </span>
                     {m.userId === g.ownerId && (
                       <CrownIcon
                         aria-label="Guild owner"

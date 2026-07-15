@@ -55,6 +55,8 @@ type Props = {
   selfUserId: string;
   isGuildOwner: boolean;
   memberUsernames: ReadonlySet<string>;
+  /** userId → role tint (highest colored role) for author names — guild channels only. */
+  authorColors?: ReadonlyMap<string, string>;
   onReply: (message: ChatMessage) => void;
   /** Overrides the guild-channel empty state — DMs speak of conversations, not channels. */
   emptyState?: { icon: React.ReactNode; title: string; description: string };
@@ -76,6 +78,7 @@ export function MessageList({
   selfUserId,
   isGuildOwner,
   memberUsernames,
+  authorColors,
   onReply,
   emptyState,
   historyStartLabel,
@@ -194,6 +197,7 @@ export function MessageList({
                   selfUserId={selfUserId}
                   isGuildOwner={isGuildOwner}
                   memberUsernames={memberUsernames}
+                  authorColor={authorColors?.get(message.author.id)}
                   onReply={onReply}
                 />
               </MessageScrollerItem>
