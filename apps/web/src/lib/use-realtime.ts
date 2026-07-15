@@ -303,6 +303,14 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       });
       break;
     }
+    case "role.changed": {
+      // Invalidate-only: guild.get carries the role list, member roleIds, and the
+      // viewer's resolved mask — one refetch reconciles the editor, tints, and gates.
+      void client.invalidateQueries({
+        queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
+      });
+      break;
+    }
     case "guild.deleted": {
       // Gone for everyone — same eviction as guild.member.removed's own-user branch:
       // drop the rail row and let the guild layout navigate out before any cache cleanup.
