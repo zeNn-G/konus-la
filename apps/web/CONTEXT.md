@@ -40,11 +40,20 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     redirects to the first channel (`beforeLoad` + `ensureQueryData(channel.list)`); with zero channels it
     renders a "No channels yet" pane that auto-enters the first channel when realtime delivers one.
     `channels/$channelId.tsx` is the chat view; it also hosts the **members panel**
-    (`components/members-panel.tsx` — presence-grouped roster, crown on the owner, per-member popover with
+    (`components/members-panel.tsx` — roster grouped by highest role in rank order, roleless members
+    last under "Members", presence on the avatar dot only; crown on the owner, per-member popover with
     a Message action): a desktop aside toggled from the header (one global localStorage key, default open)
-    and an on-demand right sheet on mobile. **Guild settings** is an owner-only modal
+    and an on-demand right sheet on mobile. Group headers, member names, and chat author names take the
+    **highest COLORED role's** tint (uncolored roles contribute none — `lib/roles.ts` holds the pure
+    lookups, all leaning on `guild.get`'s rank-ordered role list; the channel route feeds chat an
+    `authorColors` map so the memoized message rows only re-render when a tint actually changes).
+    **Guild settings** is an owner-only modal
     (`components/guild-settings/` — Members, Roles, Bans, Invites, Danger zone; sections mount lazily so
-    owner-only queries never fire unselected), not a route. **Roles** (`roles-section.tsx`) is the
+    owner-only queries never fire unselected), not a route. **Members** (`members-section.tsx`) shows
+    per-member role chips — × unassigns; a "+" popover offers the strictly-below, not-yet-held roles
+    (the charter rule the server enforces; target-side hierarchy is NOT pre-checked — a miss surfaces
+    as the server's FORBIDDEN toast, per spec #47) — with the Owner marker beside the chips.
+    **Roles** (`roles-section.tsx`) is the
     master–detail editor from prototype #48 variant A: fixed role list (hover ▲▼ reorder) beside an
     independently scrolling edit pane — preset swatches + native custom color picker, permission
     toggles grouped with hints; `@everyone` is selectable with bits editable but
@@ -89,7 +98,10 @@ TanStack Query invalidation of `guild.list`.
   `guild.get` (roster refresh — members panel / settings modal update live). `guild.member.added`
   for the own user clears a stale tombstone (rejoin after kick) and refreshes the rail in other tabs.
   `guild.updated` (ownership transfer) re-reads `guild.get` — the settings entry, the crown, and the
-  modal's owner-flip guard all react live. `guild.deleted` evicts every recipient the same
+  modal's owner-flip guard all react live. `role.changed` and `member.rolesChanged` share that same
+  one-invalidation reconciliation: `guild.get` carries the role list, per-member `roleIds`, and the
+  viewer's resolved mask, so the roles editor, roster grouping, name tints, and permission gates all
+  refresh off a single refetch. `guild.deleted` evicts every recipient the same
   tombstone way, no per-user check — plus `voiceSession.tearDownIfSeatedInGuild`, since the tombstone
   only navigates and would otherwise leave a seated member's mic hot after the guild is gone.
 - **Channel deletion in the dispatcher**: `channel.deleted` runs the occupancy reducer (bystanders
