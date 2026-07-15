@@ -317,7 +317,9 @@ function RoleEditPane({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-3 sm:min-h-0">
-      <div className="flex min-w-0 flex-col gap-4 sm:flex-1 sm:overflow-y-auto sm:pr-1">
+      {/* -ml/pl pair: room for selection rings (drawn OUTSIDE elements) at the scroll
+          container's left clip edge, without shifting content. */}
+      <div className="flex min-w-0 flex-col gap-4 sm:-ml-1 sm:flex-1 sm:overflow-y-auto sm:pl-1 sm:pr-1">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-muted-foreground uppercase">Role name</label>
           <div className="flex items-center gap-2">
