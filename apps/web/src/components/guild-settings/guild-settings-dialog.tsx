@@ -4,19 +4,21 @@ import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { BanIcon, TicketIcon, TriangleAlertIcon, UsersIcon } from "lucide-react";
+import { BanIcon, ShieldIcon, TicketIcon, TriangleAlertIcon, UsersIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { BansSection } from "@/components/guild-settings/bans-section";
 import { DangerSection } from "@/components/guild-settings/danger-section";
 import { InvitesSection } from "@/components/guild-settings/invites-section";
 import { MembersSection } from "@/components/guild-settings/members-section";
+import { RolesSection } from "@/components/guild-settings/roles-section";
 import { orpc } from "@/utils/orpc";
 
-type SectionId = "members" | "bans" | "invites" | "danger";
+type SectionId = "members" | "roles" | "bans" | "invites" | "danger";
 
 const SECTIONS: { id: SectionId; label: string; icon: LucideIcon; danger?: boolean }[] = [
   { id: "members", label: "Members", icon: UsersIcon },
+  { id: "roles", label: "Roles", icon: ShieldIcon },
   { id: "bans", label: "Bans", icon: BanIcon },
   { id: "invites", label: "Invites", icon: TicketIcon },
   { id: "danger", label: "Danger zone", icon: TriangleAlertIcon, danger: true },
@@ -95,6 +97,7 @@ export function GuildSettingsDialog({
             {SECTIONS.find((s) => s.id === section)?.label}
           </h2>
           {section === "members" && <MembersSection guildId={guildId} />}
+          {section === "roles" && <RolesSection guildId={guildId} />}
           {section === "bans" && <BansSection guildId={guildId} />}
           {section === "invites" && <InvitesSection guildId={guildId} />}
           {section === "danger" && (

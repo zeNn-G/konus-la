@@ -7,6 +7,7 @@ import { dmRouter } from "./dm";
 import { guildRouter } from "./guild";
 import { profileRouter } from "./profile";
 import { realtimeRouter } from "./realtime";
+import { roleRouter } from "./role";
 import { signupCodeRouter } from "./signup-code";
 import { userRouter } from "./user";
 import { voiceRouter } from "./voice";
@@ -19,6 +20,7 @@ export const appRouter = {
   profile: profileRouter,
   user: userRouter,
   guild: guildRouter,
+  role: roleRouter,
   channel: channelRouter,
   chat: chatRouter,
   typing: typingRouter,
