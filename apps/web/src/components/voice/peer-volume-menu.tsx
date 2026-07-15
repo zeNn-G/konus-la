@@ -11,6 +11,7 @@ import { Slider } from "@konus-la/ui/components/slider";
 import { Volume2Icon, VolumeOffIcon } from "lucide-react";
 import { cloneElement, useEffect, type ReactElement, type ReactNode } from "react";
 
+import { MemberModerationItems } from "@/components/member-moderation";
 import { useVoiceStore } from "@/lib/voice/store";
 
 /** Pre-mute volumes so "Unmute for you" restores where the peer was, not full blast. */
@@ -21,6 +22,8 @@ type PeerVolumeMenuProps = {
   name: string;
   /** False for self — your own volume isn't a thing; the element renders bare. */
   enabled: boolean;
+  /** When set, the menu grows kick/ban items per the viewer's permissions (spec #48). */
+  guildId?: string;
   /** The element the menu attaches to (it becomes the right-click target). */
   render: ReactElement<Record<string, unknown>>;
   /**
@@ -35,12 +38,13 @@ type PeerVolumeMenuProps = {
 /**
  * Right-click per-peer volume menu (decision #10): slider plus a local mute that only
  * affects this client. Volume 0 IS the local mute — the audio bridge reads the same
- * store field either way.
+ * store field either way. In a guild it doubles as the occupant's moderation menu.
  */
 export function PeerVolumeMenu({
   userId,
   name,
   enabled,
+  guildId,
   render,
   portalContainer,
   children,
@@ -91,6 +95,7 @@ export function PeerVolumeMenu({
           {locallyMuted ? <Volume2Icon /> : <VolumeOffIcon />}
           {locallyMuted ? "Unmute for you" : "Mute for you"}
         </ContextMenuItem>
+        {guildId && <MemberModerationItems guildId={guildId} userId={userId} leadingSeparator />}
       </ContextMenuContent>
     </ContextMenu>
   );

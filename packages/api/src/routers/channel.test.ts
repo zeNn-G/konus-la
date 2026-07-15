@@ -1,8 +1,14 @@
 import { createGuildWithOwner, insertMessage } from "@konus-la/db";
-import { seedTestMembership, seedTestUser } from "@konus-la/db/testing";
+import {
+  seedTestMembership,
+  seedTestMemberRole,
+  seedTestRole,
+  seedTestUser,
+} from "@konus-la/db/testing";
 import { call } from "@orpc/server";
 import { beforeAll, describe, expect, test } from "vitest";
 
+import { PERMISSIONS } from "../permissions";
 import { asNobody, asUser, expectCode } from "../testing";
 import { appRouter } from "./index";
 
@@ -212,6 +218,62 @@ describe("channel.delete", () => {
     await expectCode(
       call(appRouter.channel.delete, { guildId, channelId: issues.id }, asUser(OWNER)),
       "NOT_FOUND",
+    );
+  });
+});
+
+/**
+ * Delegation (spec #47, ticket #57): the structural verbs accept MANAGE_CHANNELS, not just
+ * the owner. Own guild — the suites above assert whole-list contents.
+ */
+describe("channel delegation via MANAGE_CHANNELS", () => {
+  const CURATOR = "u-curator"; // holds MANAGE_CHANNELS only
+  let delGuildId: string;
+
+  beforeAll(async () => {
+    await seedTestUser({ id: CURATOR, username: "cleo" });
+    const created = await createGuildWithOwner({ name: "Delegated", ownerUserId: OWNER });
+    delGuildId = created.id;
+    await seedTestMembership(delGuildId, CURATOR);
+    await seedTestMembership(delGuildId, MEMBER);
+    const role = await seedTestRole({
+      guildId: delGuildId,
+      name: "curators",
+      position: 1,
+      permissions: PERMISSIONS.MANAGE_CHANNELS,
+    });
+    await seedTestMemberRole(delGuildId, CURATOR, role);
+  });
+
+  test("a MANAGE_CHANNELS holder creates, renames, and deletes channels", async () => {
+    const created = await call(
+      appRouter.channel.create,
+      { guildId: delGuildId, name: "lounge" },
+      asUser(CURATOR),
+    );
+    expect(created).toMatchObject({ name: "lounge", kind: "text" });
+
+    await expect(
+      call(
+        appRouter.channel.update,
+        { guildId: delGuildId, channelId: created.id, name: "parlor" },
+        asUser(CURATOR),
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    await expect(
+      call(
+        appRouter.channel.delete,
+        { guildId: delGuildId, channelId: created.id },
+        asUser(CURATOR),
+      ),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  test("the bit doesn't leak sideways: a plain member stays FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.channel.create, { guildId: delGuildId, name: "nope" }, asUser(MEMBER)),
+      "FORBIDDEN",
     );
   });
 });

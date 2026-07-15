@@ -1,7 +1,13 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
-import { HeadphoneOffIcon, MaximizeIcon, MicOffIcon, Minimize2Icon, MinimizeIcon } from "lucide-react";
+import {
+  HeadphoneOffIcon,
+  MaximizeIcon,
+  MicOffIcon,
+  Minimize2Icon,
+  MinimizeIcon,
+} from "lucide-react";
 import { useCallback, useState } from "react";
 
 import type { RoomTileModel, TileFace } from "@/lib/voice/ui-model";
@@ -28,12 +34,15 @@ type StageControls = {
  * that share.
  */
 export function RoomTile({
+  guildId,
   tile,
   variant = "grid",
   face = tile.face,
   onFocusShare,
   stage,
 }: {
+  /** Enables the volume menu's kick/ban items (per the viewer's permissions). */
+  guildId?: string;
   tile: RoomTileModel;
   variant?: RoomTileVariant;
   /** Face to render here — the stage keeps `tile.face`, strip entries pass `camFace`. */
@@ -60,6 +69,7 @@ export function RoomTile({
       userId={tile.userId}
       name={tile.name}
       enabled={!tile.isSelf}
+      guildId={guildId}
       portalContainer={stage?.fullscreen ? tileNode : undefined}
       render={
         <div

@@ -1,4 +1,5 @@
 import {
+  actorOutranksMember,
   banMember,
   consumeInvite,
   countOwnedGuilds,
@@ -17,6 +18,7 @@ import {
   listGuildRoles,
   listInvites,
   listUserGuilds,
+  renameGuild,
   transferOwnership,
   unbanMember,
 } from "@konus-la/db";
@@ -24,11 +26,31 @@ import { env } from "@konus-la/env/server";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
-import { protectedProcedure, requireGuildMember, requireGuildOwner } from "../index";
+import {
+  protectedProcedure,
+  requireGuildMember,
+  requireGuildOwner,
+  requireGuildPermission,
+} from "../index";
 import { ALL_PERMISSIONS, hasPermission, PERMISSIONS } from "../permissions";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 import { evictGuildVoiceRooms, evictMemberFromGuildVoice } from "../voice/rooms";
+
+/**
+ * Charter hierarchy for member-targeted moderation: owner-target, self-target, and equal
+ * rank all fail `actorOutranksMember` as one plain FORBIDDEN, indistinguishable from the
+ * permission gate's.
+ */
+async function assertActorOutranks(
+  guildId: string,
+  actorId: string,
+  targetId: string,
+): Promise<void> {
+  if (!(await actorOutranksMember(guildId, actorId, targetId))) {
+    throw new ORPCError("FORBIDDEN");
+  }
+}
 
 /** Roster-change fan-out: every remaining member plus the affected user themselves. */
 async function publishMemberEvent(
@@ -44,9 +66,10 @@ async function publishMemberEvent(
 }
 
 /**
- * Guild lifecycle + read access. Per-guild authorization is enforced by the
- * `requireGuildMember` / `requireGuildOwner` middlewares; management procedures
- * (invites, moderation, transfer, delete) are owner-gated.
+ * Guild lifecycle + read access. Management procedures are permission-gated per the
+ * spec's catalog (invites → MANAGE_INVITES, kick/ban → KICK/BAN_MEMBERS + hierarchy,
+ * rename → MANAGE_GUILD); only `transferOwnership` and `delete` stay owner-only, never
+ * delegable.
  */
 export const guildRouter = {
   /** Create a guild (and become its owner). Rejected once the owned-guild cap is reached. */
@@ -103,6 +126,23 @@ export const guildRouter = {
     }),
 
   /**
+   * Rename a guild. Delegable via MANAGE_GUILD; every member re-reads `guild.get` (and the
+   * rail) off the `guild.updated` fan-out.
+   */
+  update: protectedProcedure
+    .input(z.object({ guildId: z.string(), name: z.string().trim().min(1).max(100) }))
+    .use(requireGuildPermission(PERMISSIONS.MANAGE_GUILD))
+    .handler(async ({ input }) => {
+      const updated = await renameGuild(input.guildId, input.name);
+      if (!updated) throw new ORPCError("NOT_FOUND", { message: "Guild not found." });
+      await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
+        type: "guild.updated",
+        guildId: input.guildId,
+      });
+      return { ok: true } as const;
+    }),
+
+  /**
    * Hand ownership to another member. The target must already be a member; the old owner
    * stays an ordinary member afterwards (single-column `ownerId` update). Owner only.
    */
@@ -148,7 +188,7 @@ export const guildRouter = {
 
   /** Shareable, multi-use invite codes. Time-only expiry; no max-uses cap. */
   invite: {
-    /** Mint an invite. `expiresInSeconds` null/omitted = never expires. Owner only. */
+    /** Mint an invite. `expiresInSeconds` null/omitted = never expires. MANAGE_INVITES. */
     create: protectedProcedure
       .input(
         z.object({
@@ -156,7 +196,7 @@ export const guildRouter = {
           expiresInSeconds: z.number().int().positive().nullish(),
         }),
       )
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.MANAGE_INVITES))
       .use(perUserRatelimit("inviteCreate", inviteCreateLimiter))
       .handler(async ({ input, context }) => {
         const expiresAt =
@@ -192,18 +232,18 @@ export const guildRouter = {
         }
       }),
 
-    /** All invites for a guild (with display-only `usedCount`). Owner only. */
+    /** All invites for a guild (with display-only `usedCount`). MANAGE_INVITES. */
     list: protectedProcedure
       .input(z.object({ guildId: z.string() }))
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.MANAGE_INVITES))
       .handler(async ({ input }) => {
         return listInvites(input.guildId);
       }),
 
-    /** Revoke (hard-delete) an invite. Owner only. */
+    /** Revoke (hard-delete) an invite. MANAGE_INVITES. */
     revoke: protectedProcedure
       .input(z.object({ guildId: z.string(), inviteId: z.string() }))
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.MANAGE_INVITES))
       .handler(async ({ input }) => {
         const removed = await deleteInvite(input.inviteId, input.guildId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "Invite not found." });
@@ -211,17 +251,17 @@ export const guildRouter = {
       }),
   },
 
-  /** Membership moderation. Owner-gated except `leave` (self-service). */
+  /** Membership moderation. Permission-gated except `leave` (self-service). */
   member: {
-    /** Remove a member; they may rejoin. The owner can't be targeted. Owner only. */
+    /**
+     * Remove a member; they may rejoin. KICK_MEMBERS + hierarchy: `actorOutranksMember`
+     * makes owner-target, self-target, and equal rank all fail as one plain FORBIDDEN.
+     */
     kick: protectedProcedure
       .input(z.object({ guildId: z.string(), userId: z.string() }))
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.KICK_MEMBERS))
       .handler(async ({ input, context }) => {
-        // The caller is the owner (gate above), so target === owner iff target === caller.
-        if (input.userId === context.user.id) {
-          throw new ORPCError("BAD_REQUEST", { message: "The owner can't be removed." });
-        }
+        await assertActorOutranks(input.guildId, context.user.id, input.userId);
         const removed = await kickMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
         // Row first, then the seat — the peerLeft fan-out reads the roster at publish time
@@ -231,7 +271,7 @@ export const guildRouter = {
         return { ok: true } as const;
       }),
 
-    /** Ban a user (drops membership + bars rejoin). The owner can't be targeted. Owner only. */
+    /** Ban a user (drops membership + bars rejoin). BAN_MEMBERS + hierarchy (see kick). */
     ban: protectedProcedure
       .input(
         z.object({
@@ -240,11 +280,9 @@ export const guildRouter = {
           reason: z.string().trim().max(500).nullish(),
         }),
       )
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.BAN_MEMBERS))
       .handler(async ({ input, context }) => {
-        if (input.userId === context.user.id) {
-          throw new ORPCError("BAD_REQUEST", { message: "The owner can't be banned." });
-        }
+        await assertActorOutranks(input.guildId, context.user.id, input.userId);
         await banMember({
           guildId: input.guildId,
           userId: input.userId,
@@ -258,20 +296,20 @@ export const guildRouter = {
         return { ok: true } as const;
       }),
 
-    /** Lift a ban. Owner only. */
+    /** Lift a ban. BAN_MEMBERS; no hierarchy — the target isn't a member anymore. */
     unban: protectedProcedure
       .input(z.object({ guildId: z.string(), userId: z.string() }))
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.BAN_MEMBERS))
       .handler(async ({ input }) => {
         const removed = await unbanMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't banned." });
         return { ok: true } as const;
       }),
 
-    /** Banned users for a guild. Owner only. */
+    /** Banned users for a guild. BAN_MEMBERS. */
     banList: protectedProcedure
       .input(z.object({ guildId: z.string() }))
-      .use(requireGuildOwner)
+      .use(requireGuildPermission(PERMISSIONS.BAN_MEMBERS))
       .handler(async ({ input }) => {
         return listBans(input.guildId);
       }),

@@ -1,9 +1,15 @@
 import { createInvite } from "@konus-la/db";
-import { seedTestUser } from "@konus-la/db/testing";
+import {
+  seedTestMembership,
+  seedTestMemberRole,
+  seedTestRole,
+  seedTestUser,
+} from "@konus-la/db/testing";
 import { call } from "@orpc/server";
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
-import { asNobody, asUser, expectCode } from "../testing";
+import { PERMISSIONS } from "../permissions";
+import { asNobody, asUser, collect, expectCode, ofType, stopCollectors, waitFor } from "../testing";
 import { appRouter } from "./index";
 
 const OWNER = "u-owner";
@@ -69,11 +75,8 @@ describe("guild.create / list / get", () => {
 });
 
 describe("guild.invite", () => {
-  test("only the owner mints and lists invites", async () => {
-    await expectCode(
-      call(appRouter.guild.invite.create, { guildId }, asUser(MEMBER)),
-      "FORBIDDEN",
-    );
+  test("members without MANAGE_INVITES can't mint or list invites", async () => {
+    await expectCode(call(appRouter.guild.invite.create, { guildId }, asUser(MEMBER)), "FORBIDDEN");
     await expectCode(call(appRouter.guild.invite.list, { guildId }, asUser(MEMBER)), "FORBIDDEN");
   });
 
@@ -130,9 +133,10 @@ describe("guild.member moderation", () => {
       call(appRouter.guild.member.kick, { guildId, userId: DRIFTER }, asUser(MEMBER)),
       "FORBIDDEN",
     );
+    // Self-target = owner-target here, and both fail `actorOutranksMember` → plain FORBIDDEN.
     await expectCode(
       call(appRouter.guild.member.kick, { guildId, userId: OWNER }, asUser(OWNER)),
-      "BAD_REQUEST",
+      "FORBIDDEN",
     );
 
     await expect(
@@ -189,17 +193,188 @@ describe("guild.member moderation", () => {
   test("banning the owner is rejected", async () => {
     await expectCode(
       call(appRouter.guild.member.ban, { guildId, userId: OWNER }, asUser(OWNER)),
-      "BAD_REQUEST",
+      "FORBIDDEN",
     );
   });
 
   test("members may leave; the owner may not", async () => {
-    await expect(
-      call(appRouter.guild.member.leave, { guildId }, asUser(DRIFTER)),
-    ).resolves.toEqual({ ok: true });
+    await expect(call(appRouter.guild.member.leave, { guildId }, asUser(DRIFTER))).resolves.toEqual(
+      { ok: true },
+    );
     await expectCode(call(appRouter.guild.get, { guildId }, asUser(DRIFTER)), "FORBIDDEN");
 
     await expectCode(call(appRouter.guild.member.leave, { guildId }, asUser(OWNER)), "FORBIDDEN");
+  });
+});
+
+/**
+ * Delegation (spec #47, ticket #57): every regated gate accepts the matching permission
+ * bit, and member-targeted acts additionally require `actorOutranksMember`. Own guild —
+ * the shared one above asserts roster contents and is order-coupled.
+ */
+describe("delegated moderation, invites, and rename", () => {
+  const D_OWNER = "u-del-owner";
+  const MOD = "u-del-mod"; // kick+ban role, position 2
+  const PEER_MOD = "u-del-peer"; // same role — MOD's equal in rank
+  const KICKER = "u-del-kicker"; // kick-only role, position 1
+  const HOST = "u-del-host"; // invite + guild management role, position 1
+  const TARGET = "u-del-target"; // roleless — outranked by everyone with a role
+
+  let delGuildId: string;
+
+  afterEach(() => stopCollectors());
+
+  beforeAll(async () => {
+    await seedTestUser({ id: D_OWNER, username: "diana" });
+    await seedTestUser({ id: MOD, username: "mora" });
+    await seedTestUser({ id: PEER_MOD, username: "pat" });
+    await seedTestUser({ id: KICKER, username: "kim" });
+    await seedTestUser({ id: HOST, username: "hank" });
+    await seedTestUser({ id: TARGET, username: "tess" });
+
+    const created = await call(appRouter.guild.create, { name: "Delegation" }, asUser(D_OWNER));
+    delGuildId = created.id;
+    for (const id of [MOD, PEER_MOD, KICKER, HOST, TARGET]) {
+      await seedTestMembership(delGuildId, id);
+    }
+
+    const modRole = await seedTestRole({
+      guildId: delGuildId,
+      name: "mods",
+      position: 2,
+      permissions: PERMISSIONS.KICK_MEMBERS | PERMISSIONS.BAN_MEMBERS,
+    });
+    const kickerRole = await seedTestRole({
+      guildId: delGuildId,
+      name: "kickers",
+      position: 1,
+      permissions: PERMISSIONS.KICK_MEMBERS,
+    });
+    const hostRole = await seedTestRole({
+      guildId: delGuildId,
+      name: "hosts",
+      position: 1,
+      permissions: PERMISSIONS.MANAGE_INVITES | PERMISSIONS.MANAGE_GUILD,
+    });
+    await seedTestMemberRole(delGuildId, MOD, modRole);
+    await seedTestMemberRole(delGuildId, PEER_MOD, modRole);
+    await seedTestMemberRole(delGuildId, KICKER, kickerRole);
+    await seedTestMemberRole(delGuildId, HOST, hostRole);
+  });
+
+  test("a MANAGE_INVITES holder mints, lists, and revokes invites", async () => {
+    const minted = await call(appRouter.guild.invite.create, { guildId: delGuildId }, asUser(HOST));
+    const invites = await call(appRouter.guild.invite.list, { guildId: delGuildId }, asUser(HOST));
+    expect(invites.map((invite) => invite.id)).toContain(minted.id);
+    await expect(
+      call(
+        appRouter.guild.invite.revoke,
+        { guildId: delGuildId, inviteId: minted.id },
+        asUser(HOST),
+      ),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  test("invite bits don't grant moderation: HOST can't kick or ban", async () => {
+    await expectCode(
+      call(appRouter.guild.member.kick, { guildId: delGuildId, userId: TARGET }, asUser(HOST)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.guild.member.ban, { guildId: delGuildId, userId: TARGET }, asUser(HOST)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("hierarchy on kick: equal rank, self, and the owner are all FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.guild.member.kick, { guildId: delGuildId, userId: PEER_MOD }, asUser(MOD)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.guild.member.kick, { guildId: delGuildId, userId: MOD }, asUser(MOD)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.guild.member.kick, { guildId: delGuildId, userId: D_OWNER }, asUser(MOD)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("KICK_MEMBERS without BAN_MEMBERS can kick downward but never ban", async () => {
+    await expectCode(
+      call(appRouter.guild.member.ban, { guildId: delGuildId, userId: TARGET }, asUser(KICKER)),
+      "FORBIDDEN",
+    );
+    await expect(
+      call(appRouter.guild.member.kick, { guildId: delGuildId, userId: TARGET }, asUser(KICKER)),
+    ).resolves.toEqual({ ok: true });
+    // Re-seed the target for the ban tests below.
+    await seedTestMembership(delGuildId, TARGET);
+  });
+
+  test("a BAN_MEMBERS holder bans downward; unban and banList need no hierarchy", async () => {
+    await expect(
+      call(appRouter.guild.member.ban, { guildId: delGuildId, userId: TARGET }, asUser(MOD)),
+    ).resolves.toEqual({ ok: true });
+
+    // KICKER holds no BAN_MEMBERS → the ban list stays owner/mod-only.
+    await expectCode(
+      call(appRouter.guild.member.banList, { guildId: delGuildId }, asUser(KICKER)),
+      "FORBIDDEN",
+    );
+    const bans = await call(appRouter.guild.member.banList, { guildId: delGuildId }, asUser(MOD));
+    expect(bans.map((ban) => ban.userId)).toContain(TARGET);
+
+    await expectCode(
+      call(appRouter.guild.member.unban, { guildId: delGuildId, userId: TARGET }, asUser(KICKER)),
+      "FORBIDDEN",
+    );
+    // PEER_MOD unbans a user banned by MOD — no member left to outrank.
+    await expect(
+      call(appRouter.guild.member.unban, { guildId: delGuildId, userId: TARGET }, asUser(PEER_MOD)),
+    ).resolves.toEqual({ ok: true });
+    await seedTestMembership(delGuildId, TARGET);
+  });
+
+  test("equal-rank ban → FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.guild.member.ban, { guildId: delGuildId, userId: PEER_MOD }, asUser(MOD)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("guild.update renames for MANAGE_GUILD holders and publishes guild.updated", async () => {
+    const observer = collect(TARGET);
+    await expect(
+      call(appRouter.guild.update, { guildId: delGuildId, name: "Delegation HQ" }, asUser(HOST)),
+    ).resolves.toEqual({ ok: true });
+
+    const view = await call(appRouter.guild.get, { guildId: delGuildId }, asUser(HOST));
+    expect(view.guild.name).toBe("Delegation HQ");
+
+    await waitFor(
+      () => ofType(observer, "guild.updated").some((event) => event.guildId === delGuildId),
+      "guild.updated fan-out",
+    );
+  });
+
+  test("guild.update without MANAGE_GUILD → FORBIDDEN; non-members no-peek", async () => {
+    await expectCode(
+      call(appRouter.guild.update, { guildId: delGuildId, name: "hax" }, asUser(MOD)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.guild.update, { guildId: delGuildId, name: "hax" }, asUser("u-drifter")),
+      "FORBIDDEN",
+    );
+  });
+
+  test("guild.update rejects blank names", async () => {
+    await expectCode(
+      call(appRouter.guild.update, { guildId: delGuildId, name: "   " }, asUser(D_OWNER)),
+      "BAD_REQUEST",
+    );
   });
 });
 
@@ -207,11 +382,7 @@ describe("guild.member moderation", () => {
 describe("guild.transferOwnership / delete", () => {
   test("transfer requires an existing member (and not yourself)", async () => {
     await expectCode(
-      call(
-        appRouter.guild.transferOwnership,
-        { guildId, newOwnerUserId: OWNER },
-        asUser(OWNER),
-      ),
+      call(appRouter.guild.transferOwnership, { guildId, newOwnerUserId: OWNER }, asUser(OWNER)),
       "BAD_REQUEST",
     );
     await expectCode(

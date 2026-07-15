@@ -17,7 +17,7 @@ import type { ChannelListItem } from "@/lib/use-realtime";
 import { PeerVolumeMenu } from "./peer-volume-menu";
 import { useRoomTiles } from "./use-voice-room";
 
-/** Owner rename/delete, lifted so the rows reuse ChannelSidebar's dialogs. */
+/** Rename/delete for MANAGE_CHANNELS holders, lifted so the rows reuse ChannelSidebar's dialogs. */
 export type VoiceChannelActions = {
   onRename: (channel: ChannelListItem) => void;
   onDelete: (channel: ChannelListItem) => void;
@@ -37,7 +37,7 @@ export function VoiceChannelRows({
 }: {
   guildId: string;
   channels: ChannelListItem[];
-  /** Present for guild owners only. */
+  /** Present for MANAGE_CHANNELS holders only. */
   actions?: VoiceChannelActions;
 }) {
   if (channels.length === 0) return null;
@@ -102,19 +102,20 @@ function VoiceChannelRow({
         )}
       </div>
       {tiles.map((tile) => (
-        <OccupantRow key={tile.userId} tile={tile} />
+        <OccupantRow key={tile.userId} guildId={guildId} tile={tile} />
       ))}
     </div>
   );
 }
 
-/** One seated user under a voice row: speaking ring, mute/deafen badge, volume menu. */
-function OccupantRow({ tile }: { tile: RoomTileModel }) {
+/** One seated user under a voice row: speaking ring, mute/deafen badge, volume/mod menu. */
+function OccupantRow({ guildId, tile }: { guildId: string; tile: RoomTileModel }) {
   return (
     <PeerVolumeMenu
       userId={tile.userId}
       name={tile.name}
       enabled={!tile.isSelf}
+      guildId={guildId}
       render={
         <div className="flex items-center gap-1.5 py-0.5 pr-2 pl-7 text-xs text-muted-foreground" />
       }

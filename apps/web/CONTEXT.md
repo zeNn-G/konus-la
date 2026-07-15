@@ -30,29 +30,38 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     `components/dm/`.
   - **`(app)/admin/`** — nested layout that adds the Instance-Owner gate (`requireAdmin`) for `/admin/*`.
   - **`(app)/guilds/$guildId/`** — a guild. `route.tsx` is a pass-through; the **channel sidebar**
-    (`components/channel-sidebar.tsx` — unread bold + red mention badge, owner-only create/rename/delete via
-    `components/channel-name-dialog.tsx`) renders from the shell. It owns BOTH section headers — Channels and
-    Voice — each with its own owner-only **+**; the **+** encodes the kind it creates, so the dialog needs no
-    kind picker. The Voice header shows for an owner even with zero voice channels (its **+** is the only way
-    to mint the first one); everyone else sees it only once one exists. Its guild-name header is a dropdown:
-    "Guild settings" (owner) opens the settings modal, "Leave guild" (non-owner) confirms, then navigates
-    home BEFORE invalidating `guild.list` (a refetch from inside the guild would 403). `index.tsx`
+    (`components/channel-sidebar.tsx` — unread bold + red mention badge, create/rename/delete for
+    `MANAGE_CHANNELS` holders via `components/channel-name-dialog.tsx`) renders from the shell. It owns BOTH
+    section headers — Channels and Voice — each with its own `MANAGE_CHANNELS`-gated **+**; the **+** encodes
+    the kind it creates, so the dialog needs no kind picker. The Voice header shows for a channel manager
+    even with zero voice channels (its **+** is the only way to mint the first one); everyone else sees it
+    only once one exists. Its guild-name header is a dropdown: "Guild settings" shows iff at least one
+    settings section passes the viewer's gates (`visibleSettingsSections`), "Leave guild" (non-owner)
+    confirms, then navigates home BEFORE invalidating `guild.list` (a refetch from inside the guild
+    would 403). `index.tsx`
     redirects to the first channel (`beforeLoad` + `ensureQueryData(channel.list)`); with zero channels it
     renders a "No channels yet" pane that auto-enters the first channel when realtime delivers one.
     `channels/$channelId.tsx` is the chat view; it also hosts the **members panel**
     (`components/members-panel.tsx` — roster grouped by highest role in rank order, roleless members
     last under "Members", presence on the avatar dot only; crown on the owner, per-member popover with
-    a Message action): a desktop aside toggled from the header (one global localStorage key, default open)
+    a Message action; right-click opens a kick/ban context menu per the viewer's permissions —
+    `components/member-moderation.tsx` holds the shared `useMemberModeration` hook + menu items, self
+    and the owner are never offered, and a rank miss surfaces as the server's FORBIDDEN toast): a desktop aside toggled from the header (one global localStorage key, default open)
     and an on-demand right sheet on mobile. Group headers, member names, and chat author names take the
     **highest COLORED role's** tint (uncolored roles contribute none — `lib/roles.ts` holds the pure
     lookups, all leaning on `guild.get`'s rank-ordered role list; the channel route feeds chat an
     `authorColors` map so the memoized message rows only re-render when a tint actually changes).
-    **Guild settings** is an owner-only modal
-    (`components/guild-settings/` — Members, Roles, Bans, Invites, Danger zone; sections mount lazily so
-    owner-only queries never fire unselected), not a route. **Members** (`members-section.tsx`) shows
+    **Guild settings** is a permission-gated modal
+    (`components/guild-settings/` — sections appear per the spec #48 visibility table with no locked
+    placeholders: Members ⇐ kick ∨ ban ∨ manage-roles, Roles ⇐ `MANAGE_ROLES`, Bans ⇐ `BAN_MEMBERS`,
+    Invites ⇐ `MANAGE_INVITES`, Danger zone owner-only; `visibleSettingsSections` is the one gate list,
+    shared with the sidebar's dialog entry; the modal closes itself when a live role edit or ownership
+    transfer strips every section, and sections mount lazily so a gated section's queries never fire for
+    a viewer who can't see it), not a route. **Members** (`members-section.tsx`) shows
     per-member role chips — × unassigns; a "+" popover offers the strictly-below, not-yet-held roles
     (the charter rule the server enforces; target-side hierarchy is NOT pre-checked — a miss surfaces
-    as the server's FORBIDDEN toast, per spec #47) — with the Owner marker beside the chips.
+    as the server's FORBIDDEN toast, per spec #47) — with the Owner marker beside the chips, and
+    Kick / Ban buttons per the viewer's corresponding permission (never on self or the owner).
     **Roles** (`roles-section.tsx`) is the
     master–detail editor from prototype #48 variant A: fixed role list (hover ▲▼ reorder) beside an
     independently scrolling edit pane — preset swatches + native custom color picker, permission
@@ -61,8 +70,8 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     unsaved-changes bar pins below the pane and "Save changes" commits every dirty field as ONE
     `role.update` (one modAction spend, one `role.changed`); list actions (create/reorder/delete)
     commit immediately.
-    Owner-gating is data-driven (`guild.get` → `viewer.isOwner`), not a route guard — the API is the source
-    of truth.
+    All gating is data-driven (`guild.get` → `viewer.permissions` resolved mask + `viewer.isOwner`), not a
+    route guard — the API is the source of truth.
 
 The **guild rail** (`components/guild-rail.tsx`) is an icon-only column: a "k" wordmark/home button (active
 in the home zone), the user's guilds from `guild.list` (tooltip = guild name), and an **add-guild** trigger
@@ -97,8 +106,8 @@ TanStack Query invalidation of `guild.list`.
   (same FORBIDDEN-refetch discipline as DM eviction). For other users it invalidates that guild's
   `guild.get` (roster refresh — members panel / settings modal update live). `guild.member.added`
   for the own user clears a stale tombstone (rejoin after kick) and refreshes the rail in other tabs.
-  `guild.updated` (ownership transfer) re-reads `guild.get` — the settings entry, the crown, and the
-  modal's owner-flip guard all react live. `role.changed` and `member.rolesChanged` share that same
+  `guild.updated` (ownership transfer, rename) re-reads `guild.get` AND `guild.list` (the rail label) —
+  the settings entry, the crown, and the modal's lost-access guard all react live. `role.changed` and `member.rolesChanged` share that same
   one-invalidation reconciliation: `guild.get` carries the role list, per-member `roleIds`, and the
   viewer's resolved mask, so the roles editor, roster grouping, name tints, and permission gates all
   refresh off a single refetch. `guild.deleted` evicts every recipient the same
@@ -148,7 +157,8 @@ TanStack Query invalidation of `guild.list`.
   flag). All render-ready shapes derive in the pure, tested `lib/voice/ui-model.ts`
   (`deriveRoomTiles`/`deriveMiniStage`; face priority screen > cam > avatar; deafen forces mute).
   Per-peer volume is a right-click `PeerVolumeMenu` (slider + local mute; volume 0 IS the local
-  mute). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
+  mute; in a guild it doubles as the occupant's moderation menu — kick/ban items per the viewer's
+  permissions via `member-moderation.tsx`, on sidebar occupant rows and room tiles alike). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
   interest contract. A focused screenshare re-lays the room into **stage** (the share full-pane,
   browser-fullscreen on double-click/button) + **filmstrip** (everyone else, cam > avatar faces —
   a screen face renders on the stage and nowhere else, so non-focused shares stay server-paused):

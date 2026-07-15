@@ -1,3 +1,4 @@
+import { hasPermission, PERMISSIONS } from "@konus-la/api/permissions";
 import {
   Empty,
   EmptyDescription,
@@ -63,9 +64,9 @@ function NoChannelsPane() {
           </EmptyMedia>
           <EmptyTitle>No channels yet</EmptyTitle>
           <EmptyDescription>
-            {guild.data?.viewer.isOwner
+            {hasPermission(guild.data?.viewer.permissions ?? 0, PERMISSIONS.MANAGE_CHANNELS)
               ? "Create the first channel from the sidebar."
-              : "The owner hasn’t created any channels yet."}
+              : "No one has created any channels yet."}
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

@@ -29,12 +29,17 @@ import { ChevronDownIcon, HashIcon, MoreVerticalIcon, PlusIcon } from "lucide-re
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { hasPermission, PERMISSIONS } from "@konus-la/api/permissions";
+
 import {
   ChannelNameDialog,
   channelLabel,
   type ChannelKind,
 } from "@/components/channel-name-dialog";
-import { GuildSettingsDialog } from "@/components/guild-settings/guild-settings-dialog";
+import {
+  GuildSettingsDialog,
+  visibleSettingsSections,
+} from "@/components/guild-settings/guild-settings-dialog";
 import { UserCard } from "@/components/user-card";
 import { ControlDeck } from "@/components/voice/control-deck";
 import { VoiceChannelRows } from "@/components/voice/voice-channel-rows";
@@ -42,14 +47,21 @@ import type { ChannelListItem } from "@/lib/use-realtime";
 import { orpc, queryClient } from "@/utils/orpc";
 
 /**
- * Per-guild channel rail: `channel.list` rows with unread bold + mention badge, owner-only
- * create / rename / delete. Live updates arrive via the realtime dispatcher (setQueryData
- * for read-state, invalidation for structural changes) — no polling.
+ * Per-guild channel rail: `channel.list` rows with unread bold + mention badge,
+ * create / rename / delete for MANAGE_CHANNELS holders. Live updates arrive via the
+ * realtime dispatcher (setQueryData for read-state, invalidation for structural
+ * changes) — no polling.
  */
 export function ChannelSidebar({ guildId }: { guildId: string }) {
   const channels = useQuery(orpc.channel.list.queryOptions({ input: { guildId } }));
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
   const isOwner = guild.data?.viewer.isOwner ?? false;
+  const canManageChannels = hasPermission(
+    guild.data?.viewer.permissions ?? 0,
+    PERMISSIONS.MANAGE_CHANNELS,
+  );
+  // The settings entry shows iff at least one section would.
+  const canOpenSettings = visibleSettingsSections(guild.data?.viewer).length > 0;
 
   const textChannels = channels.data?.filter((channel) => channel.kind !== "voice") ?? [];
   const voiceChannels = channels.data?.filter((channel) => channel.kind === "voice") ?? [];
@@ -105,11 +117,12 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
             <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
-            {isOwner ? (
+            {canOpenSettings && (
               <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
                 Guild settings
               </DropdownMenuItem>
-            ) : (
+            )}
+            {!isOwner && (
               <DropdownMenuItem variant="destructive" onClick={() => setLeaveOpen(true)}>
                 Leave guild
               </DropdownMenuItem>
@@ -121,7 +134,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
       <SidebarContent>
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <span className="text-xs font-medium text-muted-foreground">Channels</span>
-          {isOwner && (
+          {canManageChannels && (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -161,8 +174,9 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   <span
                     className={cn(
                       "ml-auto rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white",
-                      // Owners get a kebab in the same spot on hover — the badge yields to it.
-                      isOwner &&
+                      // Channel managers get a kebab in the same spot on hover — the badge
+                      // yields to it.
+                      canManageChannels &&
                         "group-hover/channel:hidden group-has-data-popup-open/channel:hidden",
                     )}
                   >
@@ -171,7 +185,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                 )}
               </Link>
 
-              {isOwner && (
+              {canManageChannels && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
@@ -202,12 +216,13 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           ))}
         </nav>
 
-        {/* An owner with no voice channels still gets the header — its "+" is the only way to
-            make the first one, which is exactly when discovery matters. Members see nothing. */}
-        {(isOwner || voiceChannels.length > 0) && (
+        {/* A channel manager with no voice channels still gets the header — its "+" is the
+            only way to make the first one, which is exactly when discovery matters. Everyone
+            else sees nothing. */}
+        {(canManageChannels || voiceChannels.length > 0) && (
           <div className="flex items-center justify-between px-4 pt-3 pb-1">
             <span className="text-xs font-medium text-muted-foreground">Voice</span>
-            {isOwner && (
+            {canManageChannels && (
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -224,7 +239,9 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
         <VoiceChannelRows
           guildId={guildId}
           channels={voiceChannels}
-          actions={isOwner ? { onRename: setRenameTarget, onDelete: setDeleteTarget } : undefined}
+          actions={
+            canManageChannels ? { onRename: setRenameTarget, onDelete: setDeleteTarget } : undefined
+          }
         />
       </SidebarContent>
 

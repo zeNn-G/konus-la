@@ -1,4 +1,9 @@
 import { Button } from "@konus-la/ui/components/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@konus-la/ui/components/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@konus-la/ui/components/popover";
 import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { cn } from "@konus-la/ui/lib/utils";
@@ -6,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 import { CrownIcon, MessageSquareIcon } from "lucide-react";
 
+import { MemberModerationItems, useMemberModeration } from "@/components/member-moderation";
 import { PresenceAvatar } from "@/components/presence-avatar";
 import type { GuildRole } from "@/lib/roles";
 import { highestRoleOf, roleColorOf } from "@/lib/roles";
@@ -59,6 +65,7 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
   const presence = usePresence();
   const { session } = getRouteApi("/(app)").useRouteContext();
   const messageUser = useMessageUser();
+  const { canKick, canBan } = useMemberModeration(guildId);
 
   if (guild.isPending) {
     return (
@@ -92,30 +99,46 @@ export function MembersPanel({ guildId, className }: { guildId: string; classNam
             {group.members.map((m) => {
               const name = m.displayName || m.username || m.userId;
               const online = m.userId === session.user.id || presence[m.userId] === true;
+              // Kick/ban ride a right-click menu on the row (spec #48). Self and the owner
+              // are never valid targets; rank misses still surface as the server's FORBIDDEN.
+              const moderatable =
+                (canKick || canBan) && m.userId !== session.user.id && m.userId !== g.ownerId;
+              const rowTrigger = (
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted data-popup-open:bg-muted"
+                    />
+                  }
+                >
+                  <PresenceAvatar seed={m.username ?? m.userId} src={m.image} online={online} />
+                  <span
+                    className="truncate"
+                    style={{ color: roleColorOf(roles, m.roleIds) ?? undefined }}
+                  >
+                    {name}
+                  </span>
+                  {m.userId === g.ownerId && (
+                    <CrownIcon
+                      aria-label="Guild owner"
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                  )}
+                </PopoverTrigger>
+              );
               return (
                 <Popover key={m.userId}>
-                  <PopoverTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted data-popup-open:bg-muted"
-                      />
-                    }
-                  >
-                    <PresenceAvatar seed={m.username ?? m.userId} src={m.image} online={online} />
-                    <span
-                      className="truncate"
-                      style={{ color: roleColorOf(roles, m.roleIds) ?? undefined }}
-                    >
-                      {name}
-                    </span>
-                    {m.userId === g.ownerId && (
-                      <CrownIcon
-                        aria-label="Guild owner"
-                        className="size-3.5 shrink-0 text-muted-foreground"
-                      />
-                    )}
-                  </PopoverTrigger>
+                  {moderatable ? (
+                    <ContextMenu>
+                      <ContextMenuTrigger render={rowTrigger} />
+                      <ContextMenuContent className="w-44">
+                        <MemberModerationItems guildId={guildId} userId={m.userId} />
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  ) : (
+                    rowTrigger
+                  )}
                   <PopoverContent align="start" side="left" className="w-56 p-3">
                     <div className="flex items-center gap-3">
                       <PresenceAvatar
