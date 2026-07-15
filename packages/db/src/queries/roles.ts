@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 
 import { db } from "../index";
-import { guildRole } from "../schema/guild";
+import { guildRole, memberRole } from "../schema/guild";
 
 /**
  * Role CRUD for the `role` router (ADR 0008). Positions: higher = higher rank, `@everyone`
@@ -83,6 +83,42 @@ export async function swapGuildRolePositions(
       .set({ position: a.position })
       .where(and(eq(guildRole.guildId, guildId), eq(guildRole.id, b.id)));
   });
+}
+
+/**
+ * Grant a role to a member. Idempotent — re-granting a held role is a no-op; the return
+ * value says whether an assignment row was actually created (callers publish only then).
+ */
+export async function assignMemberRole(
+  guildId: string,
+  userId: string,
+  roleId: string,
+): Promise<boolean> {
+  const inserted = await db
+    .insert(memberRole)
+    .values({ guildId, userId, roleId })
+    .onConflictDoNothing()
+    .returning({ roleId: memberRole.roleId });
+  return inserted.length > 0;
+}
+
+/** Revoke a role from a member. Idempotent; returns whether an assignment row existed. */
+export async function unassignMemberRole(
+  guildId: string,
+  userId: string,
+  roleId: string,
+): Promise<boolean> {
+  const deleted = await db
+    .delete(memberRole)
+    .where(
+      and(
+        eq(memberRole.guildId, guildId),
+        eq(memberRole.userId, userId),
+        eq(memberRole.roleId, roleId),
+      ),
+    )
+    .returning({ roleId: memberRole.roleId });
+  return deleted.length > 0;
 }
 
 /**

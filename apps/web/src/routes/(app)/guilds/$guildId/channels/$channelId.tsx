@@ -14,6 +14,7 @@ import { MembersPanel } from "@/components/members-panel";
 import { TypingLine } from "@/components/chat/typing-line";
 import { VoiceMiniStage } from "@/components/voice/voice-mini-stage";
 import { VoiceRoom } from "@/components/voice/voice-room";
+import { roleColorOf } from "@/lib/roles";
 import type { ChannelListItem, ChatMessage, HistoryCache } from "@/lib/use-realtime";
 import { useMembersPanelPref } from "@/lib/use-members-panel";
 import { historyInfiniteKey } from "@/lib/use-realtime";
@@ -87,6 +88,15 @@ function ChannelView() {
   }, [channelId]);
 
   const members = guild.data?.members;
+  const roles = guild.data?.roles;
+  const authorColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    for (const member of members ?? []) {
+      const color = roleColorOf(roles ?? [], member.roleIds);
+      if (color) colors.set(member.userId, color);
+    }
+    return colors;
+  }, [members, roles]);
   const memberUsernames = useMemo(
     () => new Set((members ?? []).flatMap((member) => (member.username ? [member.username] : []))),
     [members],
@@ -146,6 +156,7 @@ function ChannelView() {
               selfUserId={session.user.id}
               isGuildOwner={guild.data?.viewer.isOwner ?? false}
               memberUsernames={memberUsernames}
+              authorColors={authorColors}
               onReply={setReplyTo}
             />
 

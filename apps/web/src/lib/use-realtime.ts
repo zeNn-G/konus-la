@@ -303,9 +303,11 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       });
       break;
     }
-    case "role.changed": {
+    case "role.changed":
+    case "member.rolesChanged": {
       // Invalidate-only: guild.get carries the role list, member roleIds, and the
-      // viewer's resolved mask — one refetch reconciles the editor, tints, and gates.
+      // viewer's resolved mask — one refetch reconciles the editor, roster grouping,
+      // name tints, and gates. Which member changed doesn't matter to the client.
       void client.invalidateQueries({
         queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
       });

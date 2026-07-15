@@ -12,6 +12,8 @@ import { asUser, collect, expectCode, ofType, settle, stopCollectors } from "../
 import { appRouter } from "./index";
 
 const OWNER = "u-owner";
+const OWNER2 = "u-owner2"; // owns the assign/unassign fixtures — OWNER is at the guild cap
+const PEER = "u-peer"; // holds captains like MANAGER — the equal-rank target
 const MANAGER = "u-manager"; // holds captains (pos 3, MANAGE_ROLES)
 const MEMBER = "u-member"; // membership only — no MANAGE_ROLES
 const ADMIN = "u-admin"; // holds eminence (pos 5, ADMINISTRATOR only)
@@ -63,6 +65,8 @@ async function rolesOf(guildId: string, as = OWNER) {
 
 beforeAll(async () => {
   await seedTestUser({ id: OWNER, username: "alice" });
+  await seedTestUser({ id: OWNER2, username: "alice2" });
+  await seedTestUser({ id: PEER, username: "peggy" });
   await seedTestUser({ id: MANAGER, username: "bob" });
   await seedTestUser({ id: MEMBER, username: "carol" });
   await seedTestUser({ id: ADMIN, username: "erin" });
@@ -445,12 +449,261 @@ describe("role.reorder", () => {
   });
 });
 
+describe("role.assign", () => {
+  let guildId: string;
+  let captainsId: string;
+  let knightsId: string;
+  let pagesId: string;
+  let eminenceId: string;
+
+  beforeAll(async () => {
+    ({ guildId, captainsId, knightsId, pagesId } = await makeGuildFixture(OWNER2));
+    eminenceId = await seedAdmin(guildId);
+    await seedTestMembership(guildId, PEER);
+    await seedTestMemberRole(guildId, PEER, captainsId);
+  });
+
+  test("grants a strictly-below role to a lower-ranked member, fans out member.rolesChanged", async () => {
+    const memberFeed = collect(MEMBER);
+    const drifterFeed = collect(DRIFTER);
+    await call(
+      appRouter.role.assign,
+      { guildId, userId: MEMBER, roleId: pagesId },
+      asUser(MANAGER),
+    );
+    await settle();
+
+    const view = await call(appRouter.guild.get, { guildId }, asUser(OWNER2));
+    expect(view.members.find((m) => m.userId === MEMBER)?.roleIds).toEqual([pagesId]);
+    expect(ofType(memberFeed, "member.rolesChanged")).toEqual([
+      { type: "member.rolesChanged", guildId, userId: MEMBER },
+    ]);
+    expect(ofType(drifterFeed, "member.rolesChanged")).toEqual([]);
+  });
+
+  test("a member without MANAGE_ROLES → FORBIDDEN; a non-member too", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: knightsId }, asUser(MEMBER)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: knightsId }, asUser(DRIFTER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("a role at or above the actor's highest → FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: captainsId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: eminenceId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("an equal-rank target → FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("self-target → FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MANAGER, roleId: pagesId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("the owner as target → FORBIDDEN", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: OWNER2, roleId: pagesId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("a target who isn't a member → NOT_FOUND", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: DRIFTER, roleId: pagesId }, asUser(MANAGER)),
+      "NOT_FOUND",
+    );
+  });
+
+  test("@everyone isn't assignable", async () => {
+    const everyone = (await rolesOf(guildId, OWNER2)).find((role) => role.isDefault);
+    if (!everyone) throw new Error("fixture lost @everyone");
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: everyone.id }, asUser(OWNER2)),
+      "BAD_REQUEST",
+    );
+  });
+
+  test("unknown role → NOT_FOUND", async () => {
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: "no-such" }, asUser(OWNER2)),
+      "NOT_FOUND",
+    );
+  });
+
+  test("ADMINISTRATOR bypasses the permission gate but NOT hierarchy", async () => {
+    // ADMIN holds no MANAGE_ROLES bit, yet assigns fine below eminence…
+    await call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: knightsId }, asUser(ADMIN));
+    const view = await call(appRouter.guild.get, { guildId }, asUser(OWNER2));
+    expect(view.members.find((m) => m.userId === MEMBER)?.roleIds).toContain(knightsId);
+    // …but can't hand out eminence itself (not strictly below their highest).
+    await expectCode(
+      call(appRouter.role.assign, { guildId, userId: MEMBER, roleId: eminenceId }, asUser(ADMIN)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("the owner assigns any role to anyone — hierarchy never binds them", async () => {
+    await call(appRouter.role.assign, { guildId, userId: PEER, roleId: eminenceId }, asUser(OWNER2));
+    const view = await call(appRouter.guild.get, { guildId }, asUser(OWNER2));
+    expect(view.members.find((m) => m.userId === PEER)?.roleIds).toContain(eminenceId);
+  });
+
+  test("re-granting a held role succeeds without a second fan-out", async () => {
+    const memberFeed = collect(MEMBER);
+    const result = await call(
+      appRouter.role.assign,
+      { guildId, userId: MEMBER, roleId: pagesId },
+      asUser(MANAGER),
+    );
+    await settle();
+    expect(result).toEqual({ ok: true });
+    expect(ofType(memberFeed, "member.rolesChanged")).toEqual([]);
+  });
+});
+
+describe("role.unassign", () => {
+  let guildId: string;
+  let captainsId: string;
+  let knightsId: string;
+  let pagesId: string;
+
+  beforeAll(async () => {
+    ({ guildId, captainsId, knightsId, pagesId } = await makeGuildFixture(OWNER2));
+    await seedTestMembership(guildId, PEER);
+    await seedTestMemberRole(guildId, PEER, captainsId);
+    await seedTestMemberRole(guildId, MEMBER, pagesId);
+    await seedTestMemberRole(guildId, MEMBER, knightsId);
+  });
+
+  test("a member without MANAGE_ROLES → FORBIDDEN", async () => {
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: MEMBER, roleId: pagesId },
+        asUser(MEMBER),
+      ),
+      "FORBIDDEN",
+    );
+  });
+
+  test("revokes a strictly-below role from a lower-ranked member, fans out member.rolesChanged", async () => {
+    const memberFeed = collect(MEMBER);
+    const drifterFeed = collect(DRIFTER);
+    await call(
+      appRouter.role.unassign,
+      { guildId, userId: MEMBER, roleId: pagesId },
+      asUser(MANAGER),
+    );
+    await settle();
+
+    const view = await call(appRouter.guild.get, { guildId }, asUser(OWNER2));
+    expect(view.members.find((m) => m.userId === MEMBER)?.roleIds).toEqual([knightsId]);
+    expect(ofType(memberFeed, "member.rolesChanged")).toEqual([
+      { type: "member.rolesChanged", guildId, userId: MEMBER },
+    ]);
+    expect(ofType(drifterFeed, "member.rolesChanged")).toEqual([]);
+  });
+
+  test("a role at or above the actor's highest → FORBIDDEN", async () => {
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: PEER, roleId: captainsId },
+        asUser(MANAGER),
+      ),
+      "FORBIDDEN",
+    );
+  });
+
+  test("an equal-rank target → FORBIDDEN, even for a strictly-below role", async () => {
+    await seedTestMemberRole(guildId, PEER, pagesId);
+    await expectCode(
+      call(appRouter.role.unassign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER)),
+      "FORBIDDEN",
+    );
+  });
+
+  test("self-target → FORBIDDEN", async () => {
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: MANAGER, roleId: pagesId },
+        asUser(MANAGER),
+      ),
+      "FORBIDDEN",
+    );
+  });
+
+  test("a target who isn't a member → NOT_FOUND", async () => {
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: DRIFTER, roleId: pagesId },
+        asUser(MANAGER),
+      ),
+      "NOT_FOUND",
+    );
+  });
+
+  test("@everyone isn't unassignable either", async () => {
+    const everyone = (await rolesOf(guildId, OWNER2)).find((role) => role.isDefault);
+    if (!everyone) throw new Error("fixture lost @everyone");
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: MEMBER, roleId: everyone.id },
+        asUser(OWNER2),
+      ),
+      "BAD_REQUEST",
+    );
+  });
+
+  test("revoking a role the target doesn't hold succeeds without a fan-out", async () => {
+    const memberFeed = collect(MEMBER);
+    const result = await call(
+      appRouter.role.unassign,
+      { guildId, userId: MEMBER, roleId: pagesId },
+      asUser(MANAGER),
+    );
+    await settle();
+    expect(result).toEqual({ ok: true });
+    expect(ofType(memberFeed, "member.rolesChanged")).toEqual([]);
+  });
+
+  test("the owner revokes any role from anyone — hierarchy never binds them", async () => {
+    await call(
+      appRouter.role.unassign,
+      { guildId, userId: PEER, roleId: captainsId },
+      asUser(OWNER2),
+    );
+    const view = await call(appRouter.guild.get, { guildId }, asUser(OWNER2));
+    expect(view.members.find((m) => m.userId === PEER)?.roleIds).not.toContain(captainsId);
+  });
+});
+
 describe("modAction rate limit", () => {
   // A dedicated user: the limiter is keyed per user across guilds, so anyone who mutated
   // roles above has already spent budget.
   const LIMITED = "u-limited";
 
-  test("all four mutations share one 30/60s budget", async () => {
+  test("all six mutations share one 30/60s budget", async () => {
     await seedTestUser({ id: LIMITED, username: "frank" });
     const created = await call(appRouter.guild.create, { name: "Limit Lab" }, asUser(LIMITED));
     const guildId = created.id;
@@ -464,13 +717,29 @@ describe("modAction rate limit", () => {
       );
     }
 
-    // Budget spent by create + 29 updates — the OTHER two verbs are refused off it.
+    // Budget spent by create + 29 updates — the OTHER four verbs are refused off it.
     await expectCode(
       call(appRouter.role.reorder, { guildId, roleId: role.id, direction: "up" }, asUser(LIMITED)),
       "TOO_MANY_REQUESTS",
     );
     await expectCode(
       call(appRouter.role.delete, { guildId, roleId: role.id }, asUser(LIMITED)),
+      "TOO_MANY_REQUESTS",
+    );
+    await expectCode(
+      call(
+        appRouter.role.assign,
+        { guildId, userId: LIMITED, roleId: role.id },
+        asUser(LIMITED),
+      ),
+      "TOO_MANY_REQUESTS",
+    );
+    await expectCode(
+      call(
+        appRouter.role.unassign,
+        { guildId, userId: LIMITED, roleId: role.id },
+        asUser(LIMITED),
+      ),
       "TOO_MANY_REQUESTS",
     );
   });

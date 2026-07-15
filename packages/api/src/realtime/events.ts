@@ -122,6 +122,16 @@ export type RealtimeEvent =
     }
   | {
       /**
+       * One member's role SET changed (assign / unassign). Invalidate-only like
+       * `role.changed`: every member refetches `guild.get` — roster regrouping, name
+       * tints, and the target's own permission gates all reconcile off that one read.
+       */
+      type: "member.rolesChanged";
+      guildId: string;
+      userId: string;
+    }
+  | {
+      /**
        * Voice occupancy bootstrap — yielded right after `presence.snapshot` on every
        * subscription: every occupied voice channel in the subscriber's guilds, flags
        * included. Socket-connected ⇔ occupancy-correct; there is no fetch path (ADR 0007).

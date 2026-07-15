@@ -11,6 +11,7 @@ import { ChevronDownIcon, ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-rea
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { RoleDot } from "@/components/guild-settings/role-dot";
 import { orpc, queryClient } from "@/utils/orpc";
 
 type GuildView = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>;
@@ -101,15 +102,6 @@ const ROLE_COLORS = [
   "#8b5cf6",
   "#ec4899",
 ] as const;
-
-function RoleDot({ color }: { color: string | null }) {
-  return (
-    <span
-      className="inline-block size-2.5 shrink-0 rounded-full"
-      style={{ backgroundColor: color ?? "var(--muted-foreground)" }}
-    />
-  );
-}
 
 /**
  * Master–detail Roles editor (prototype #48 variant A): fixed role list column with hover
