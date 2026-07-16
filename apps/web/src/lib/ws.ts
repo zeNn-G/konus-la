@@ -4,6 +4,8 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import ReconnectingWebSocket from "partysocket/ws";
 
+import { attachSessionWatchdog } from "@/lib/session-watchdog";
+
 /**
  * The single /ws signaling socket, shared by the realtime subscription (use-realtime.ts)
  * and the VoiceSession service — voice.* procedures are connection-scoped on the server,
@@ -29,6 +31,10 @@ export function getWs(): WsHandle {
     );
     // partysocket types readyState as plain `number`; structurally it's a WebSocket.
     const link = new RPCLink({ websocket: socket as unknown as WebSocket });
+    // Zombie-tab fix: the upgrade requires a live session, so a dead one turns reconnects
+    // into a forever-retry — the watchdog re-checks the session on drops and lands the tab
+    // on /login when it's gone (session-watchdog.ts).
+    attachSessionWatchdog(socket);
     handle = { socket, client: createORPCClient(link) };
   }
   return handle;
