@@ -54,7 +54,13 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     **Guild settings** is a permission-gated modal
     (`components/guild-settings/` — sections appear per the spec #48 visibility table with no locked
     placeholders: Members ⇐ kick ∨ ban ∨ manage-roles, Roles ⇐ `MANAGE_ROLES`, Bans ⇐ `BAN_MEMBERS`,
-    Invites ⇐ `MANAGE_INVITES`, Audit log ⇐ `VIEW_AUDIT_LOG` (read-only forensic list, `staleTime: 0`
+    Invites ⇐ `MANAGE_INVITES`, Reports ⇐ `MANAGE_REPORTS` (`reports-section.tsx` — the inbox: each
+    row shows the SNAPSHOT (author, content, reporter, reason, relative time), so it renders intact
+    after the message is deleted; Resolve marks and greys the row into a "Resolved (n)" toggle; the
+    nav item carries a live unresolved-count badge fed by `report.unresolvedCount`, queried from the
+    dialog itself — gated `enabled` so it never fires FORBIDDEN — and kept live by `report.changed`
+    invalidation, which is how one mod's resolve drops every other mod's badge),
+    Audit log ⇐ `VIEW_AUDIT_LOG` (read-only forensic list, `staleTime: 0`
     so it's fresh on every open, ULID-cursor "Load older" paging, metadata rendered inline via
     `describeEntry`), Danger zone owner-only; `visibleSettingsSections` is the one gate list,
     shared with the sidebar's dialog entry; the modal closes itself when a live role edit or ownership
@@ -112,7 +118,10 @@ TanStack Query invalidation of `guild.list`.
   the settings entry, the crown, and the modal's lost-access guard all react live. `role.changed` and `member.rolesChanged` share that same
   one-invalidation reconciliation: `guild.get` carries the role list, per-member `roleIds`, and the
   viewer's resolved mask, so the roles editor, roster grouping, name tints, and permission gates all
-  refresh off a single refetch. `guild.deleted` evicts every recipient the same
+  refresh off a single refetch. `report.changed` invalidates the guild's `report.unresolvedCount` +
+  `report.list` — only permission holders ever receive it (the recipient set is computed server-side),
+  so the badge and inbox stay live across moderators with no client-side gating.
+  `guild.deleted` evicts every recipient the same
   tombstone way, no per-user check — plus `voiceSession.tearDownIfSeatedInGuild`, since the tombstone
   only navigates and would otherwise leave a seated member's mic hot after the guild is gone.
 - **Channel deletion in the dispatcher**: `channel.deleted` runs the occupancy reducer (bystanders
@@ -199,9 +208,12 @@ TanStack Query invalidation of `guild.list`.
   instead the history cache is trimmed to the newest ~150 messages whenever the reader is back at the live
   edge, so long sessions stay bounded), `message-item` (hover reply/edit/delete; your own message deletes
   outright, someone else's — offered only to `MANAGE_MESSAGES` holders, never in DMs — goes through
-  `mod-delete-dialog`; cache updates come from
+  `mod-delete-dialog`; a Report action — guild channels only (`canReport`, hardcoded false on the DM
+  route), any member, never on your own messages — opens `report-message-dialog`; cache updates come from
   the author's own realtime events, never from mutation handlers), `mod-delete-dialog` (confirm for
   `mod.deleteMessage`: message preview + optional 500-char reason that lands in the audit entry),
+  `report-message-dialog` (message preview + REQUIRED 1–500-char reason → `report.create`; success is
+  a toast — the reporter gets no inbox),
   `message-markdown` (react-markdown +
   GFM, mention pills), `composer` (raw-markdown textarea, Enter sends, `@` autocomplete, 4 s typing
   throttle; sending jumps the reader to the live edge), `typing-line`. The channel route wraps list +
