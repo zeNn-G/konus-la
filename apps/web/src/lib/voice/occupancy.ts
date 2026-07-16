@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
  * mediasoup/tier-2 state never touches this cache.
  */
 
-export type VoiceSeatInfo = { selfMute: boolean; selfDeaf: boolean };
+export type VoiceSeatInfo = { selfMute: boolean; selfDeaf: boolean; serverMuted: boolean };
 
 export type VoiceRoomOccupancy = {
   guildId: string;
@@ -37,6 +37,7 @@ export type VoiceOccupancyEvent = Extract<
       | "voice.peerLeft"
       | "voice.peerMutedSelf"
       | "voice.peerDeafenedSelf"
+      | "voice.serverMuteSet"
       | "voice.activeSpeakers"
       | "channel.deleted"
       | "guild.deleted";
@@ -62,7 +63,11 @@ export function reduceVoiceOccupancy(
             seats: Object.fromEntries(
               room.seats.map((seat) => [
                 seat.userId,
-                { selfMute: seat.selfMute, selfDeaf: seat.selfDeaf },
+                {
+                  selfMute: seat.selfMute,
+                  selfDeaf: seat.selfDeaf,
+                  serverMuted: seat.serverMuted,
+                },
               ]),
             ),
             speakingUserIds: room.speakingUserIds,
@@ -82,7 +87,11 @@ export function reduceVoiceOccupancy(
           ...room,
           seats: {
             ...room.seats,
-            [event.userId]: { selfMute: event.selfMute, selfDeaf: event.selfDeaf },
+            [event.userId]: {
+              selfMute: event.selfMute,
+              selfDeaf: event.selfDeaf,
+              serverMuted: event.serverMuted,
+            },
           },
         },
       };
@@ -121,6 +130,24 @@ export function reduceVoiceOccupancy(
         },
       };
     }
+    case "voice.serverMuteSet": {
+      // channelId null = target unseated: nothing to patch here — the dispatcher
+      // invalidates guild.get for that flavor.
+      if (event.channelId === null) return map;
+      const seat = map[event.channelId]?.seats[event.userId];
+      if (!seat) return map;
+      const room = map[event.channelId]!;
+      return {
+        ...map,
+        [event.channelId]: {
+          ...room,
+          seats: {
+            ...room.seats,
+            [event.userId]: { ...seat, serverMuted: event.serverMuted },
+          },
+        },
+      };
+    }
     case "voice.activeSpeakers": {
       const room = map[event.channelId];
       if (!room) return map;
@@ -139,6 +166,25 @@ export function reduceVoiceOccupancy(
       return Object.fromEntries(entries);
     }
   }
+}
+
+/**
+ * A user's seat anywhere in one guild; undefined = not in voice there. One seat per user
+ * instance-wide (ADR 0007), so the first hit is the only hit. For seated users this is
+ * fresher than `guild.get`'s member rows — `voice.serverMuteSet` patches it in place.
+ */
+export function useGuildVoiceSeat(guildId: string, userId: string): VoiceSeatInfo | undefined {
+  const { data } = useQuery({
+    queryKey: VOICE_OCCUPANCY_KEY,
+    queryFn: () => ({}) as VoiceOccupancyMap,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
+    select: (map) =>
+      Object.values(map).find((room) => room.guildId === guildId && room.seats[userId])?.seats[
+        userId
+      ],
+  });
+  return data;
 }
 
 /** One channel's occupancy; undefined = nobody seated there. */

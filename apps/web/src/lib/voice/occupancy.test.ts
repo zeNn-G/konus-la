@@ -8,7 +8,7 @@ const VC = "vc-1";
 const seeded: VoiceOccupancyMap = {
   [VC]: {
     guildId: G,
-    seats: { anna: { selfMute: false, selfDeaf: false } },
+    seats: { anna: { selfMute: false, selfDeaf: false, serverMuted: false } },
     speakingUserIds: ["anna"],
   },
 };
@@ -21,7 +21,7 @@ describe("reduceVoiceOccupancy", () => {
         {
           guildId: G,
           channelId: "vc-2",
-          seats: [{ userId: "ben", selfMute: true, selfDeaf: false }],
+          seats: [{ userId: "ben", selfMute: true, selfDeaf: false, serverMuted: true }],
           speakingUserIds: [],
         },
       ],
@@ -29,7 +29,7 @@ describe("reduceVoiceOccupancy", () => {
     expect(next).toEqual({
       "vc-2": {
         guildId: G,
-        seats: { ben: { selfMute: true, selfDeaf: false } },
+        seats: { ben: { selfMute: true, selfDeaf: false, serverMuted: true } },
         speakingUserIds: [],
       },
     });
@@ -43,10 +43,11 @@ describe("reduceVoiceOccupancy", () => {
       userId: "anna",
       selfMute: false,
       selfDeaf: true,
+      serverMuted: true,
     });
     expect(next[VC]).toEqual({
       guildId: G,
-      seats: { anna: { selfMute: false, selfDeaf: true } },
+      seats: { anna: { selfMute: false, selfDeaf: true, serverMuted: true } },
       speakingUserIds: [],
     });
   });
@@ -59,6 +60,7 @@ describe("reduceVoiceOccupancy", () => {
       userId: "ben",
       selfMute: false,
       selfDeaf: false,
+      serverMuted: false,
     });
     const afterAnna = reduceVoiceOccupancy(twoSeats, {
       type: "voice.peerLeft",
@@ -68,7 +70,7 @@ describe("reduceVoiceOccupancy", () => {
     });
     expect(afterAnna[VC]).toEqual({
       guildId: G,
-      seats: { ben: { selfMute: false, selfDeaf: false } },
+      seats: { ben: { selfMute: false, selfDeaf: false, serverMuted: false } },
       speakingUserIds: [],
     });
     const empty = reduceVoiceOccupancy(afterAnna, {
@@ -88,7 +90,7 @@ describe("reduceVoiceOccupancy", () => {
       userId: "anna",
       selfMute: true,
     });
-    expect(muted[VC]?.seats.anna).toEqual({ selfMute: true, selfDeaf: false });
+    expect(muted[VC]?.seats.anna).toEqual({ selfMute: true, selfDeaf: false, serverMuted: false });
     const deafened = reduceVoiceOccupancy(muted, {
       type: "voice.peerDeafenedSelf",
       guildId: G,
@@ -96,7 +98,37 @@ describe("reduceVoiceOccupancy", () => {
       userId: "anna",
       selfDeaf: true,
     });
-    expect(deafened[VC]?.seats.anna).toEqual({ selfMute: true, selfDeaf: true });
+    expect(deafened[VC]?.seats.anna).toEqual({ selfMute: true, selfDeaf: true, serverMuted: false });
+  });
+
+  test("serverMuteSet patches the seat; unseated (channelId null) and unknown seats are no-ops", () => {
+    const muted = reduceVoiceOccupancy(seeded, {
+      type: "voice.serverMuteSet",
+      guildId: G,
+      channelId: VC,
+      userId: "anna",
+      serverMuted: true,
+    });
+    expect(muted[VC]?.seats.anna).toEqual({ selfMute: false, selfDeaf: false, serverMuted: true });
+
+    expect(
+      reduceVoiceOccupancy(seeded, {
+        type: "voice.serverMuteSet",
+        guildId: G,
+        channelId: null,
+        userId: "anna",
+        serverMuted: true,
+      }),
+    ).toBe(seeded);
+    expect(
+      reduceVoiceOccupancy(seeded, {
+        type: "voice.serverMuteSet",
+        guildId: G,
+        channelId: VC,
+        userId: "ghost",
+        serverMuted: true,
+      }),
+    ).toBe(seeded);
   });
 
   test("activeSpeakers replaces the room's set wholesale", () => {
@@ -135,6 +167,7 @@ describe("reduceVoiceOccupancy", () => {
       userId: "ben",
       selfMute: false,
       selfDeaf: false,
+      serverMuted: false,
     });
     const next = reduceVoiceOccupancy(twoGuilds, { type: "guild.deleted", guildId: G });
     expect(next[VC]).toBeUndefined();

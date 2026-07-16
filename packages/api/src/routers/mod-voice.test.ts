@@ -317,8 +317,9 @@ describe("mod.disconnectVoice", () => {
   });
 
   test("evicts the seat — peerLeft flows naturally, the audit entry names the channel, rejoin works", async () => {
-    await call(appRouter.voice.join, { channelId: vcA }, asWsUser(FINN, "dc-f1"));
+    const joined = await call(appRouter.voice.join, { channelId: vcA }, asWsUser(FINN, "dc-f1"));
     const memberTab = collect(MEMBER);
+    const finnTab = collect(FINN);
 
     await expect(
       call(appRouter.mod.disconnectVoice, { guildId, userId: FINN }, asUser(MODERATOR)),
@@ -331,6 +332,19 @@ describe("mod.disconnectVoice", () => {
       userId: FINN,
     });
     expect(await voiceSnapshotFor(OWNER)).toEqual([]);
+
+    // The target's own session is told to stand down (kick/ban targets tear down off
+    // guild.member.removed; a disconnect target stays a member and has no other signal —
+    // without this its client treats the dead transports as a failure and auto-rejoins).
+    await waitFor(
+      () => ofType(finnTab, "voice.sessionReplaced").length === 1,
+      "sessionReplaced to the target",
+    );
+    expect(ofType(finnTab, "voice.sessionReplaced")[0]).toEqual({
+      type: "voice.sessionReplaced",
+      channelId: vcA,
+      replacedSeatSessionId: joined.seatSessionId,
+    });
 
     const page = await call(appRouter.auditLog.list, { guildId }, asUser(OWNER));
     expect(page.entries[0]).toMatchObject({

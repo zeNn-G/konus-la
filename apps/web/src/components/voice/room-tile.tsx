@@ -13,6 +13,7 @@ import { useCallback, useState } from "react";
 import type { RoomTileModel, TileFace } from "@/lib/voice/ui-model";
 
 import { PeerVolumeMenu } from "./peer-volume-menu";
+import { ServerMuteBadge } from "./server-mute-badge";
 import { VideoSurface } from "./video-surface";
 
 export type RoomTileVariant = "grid" | "stage" | "strip";
@@ -117,9 +118,10 @@ export function RoomTile({
       >
         {tile.name}
         {tile.isSelf && variant !== "strip" && <span className="text-muted-foreground">(you)</span>}
+        {tile.serverMuted && <ServerMuteBadge className="size-3.5" />}
         {tile.selfDeaf ? (
           <HeadphoneOffIcon className="size-3 shrink-0 text-red-500" />
-        ) : tile.selfMute ? (
+        ) : tile.selfMute && !tile.serverMuted ? (
           <MicOffIcon className="size-3 shrink-0 text-red-500" />
         ) : null}
       </span>

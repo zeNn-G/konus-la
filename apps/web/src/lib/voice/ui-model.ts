@@ -28,6 +28,8 @@ export type RoomTileModel = {
   speaking: boolean;
   selfMute: boolean;
   selfDeaf: boolean;
+  /** Moderator-imposed mute (spec §Server-mute) — renders the distinct server-mute badge. */
+  serverMuted: boolean;
   /** Sharing a screen — the tile grows and carries the LIVE badge. */
   live: boolean;
   face: TileFace;
@@ -82,7 +84,7 @@ export function deriveRoomTiles(input: DeriveRoomTilesInput): RoomTileModel[] {
   // While joining, the own voice.peerJoined may not have landed yet — seat self locally
   // so the room never renders without you in it.
   if (connectedHere && !seats[selfUserId]) {
-    seats[selfUserId] = { selfMute: input.selfMute, selfDeaf: input.selfDeaf };
+    seats[selfUserId] = { selfMute: input.selfMute, selfDeaf: input.selfDeaf, serverMuted: false };
   }
 
   const speaking = new Set(occupancy?.speakingUserIds ?? []);
@@ -107,6 +109,8 @@ export function deriveRoomTiles(input: DeriveRoomTilesInput): RoomTileModel[] {
       // the buttons and the tile never disagree while the server round-trip is in flight.
       selfMute: isSelf && connectedHere ? input.selfMute : seat.selfMute,
       selfDeaf: isSelf && connectedHere ? input.selfDeaf : seat.selfDeaf,
+      // Never optimistic: only the server flips it, and the seat patch arrives with it.
+      serverMuted: seat.serverMuted,
       live: face.kind === "screen",
       face,
       camFace,

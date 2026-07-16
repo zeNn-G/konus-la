@@ -346,6 +346,21 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       );
       break;
     }
+    case "voice.serverMuteSet": {
+      // Seated: patch the seat like the self-flag events — badge and mic-lock re-render
+      // off the occupancy key. Either way guild.get refetches: its member rows carry the
+      // persistent flag, and the seated patch alone would leave the roster (and the
+      // context-menu label) stale once the target leaves voice.
+      if (event.channelId !== null) {
+        client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
+          reduceVoiceOccupancy(old, event),
+        );
+      }
+      void client.invalidateQueries({
+        queryKey: orpc.guild.get.key({ input: { guildId: event.guildId } }),
+      });
+      break;
+    }
     case "voice.producerAdded":
     case "voice.producerClosed": {
       // Room-only producer churn includes our OWN producers (publishRoomOnly fans out to

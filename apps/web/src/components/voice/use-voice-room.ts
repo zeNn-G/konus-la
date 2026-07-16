@@ -179,6 +179,8 @@ export type VoiceControls = {
   selfMute: boolean;
   selfDeaf: boolean;
   micError: boolean;
+  /** Moderator-imposed (spec §Server-mute): the mic button locks; only a mod unlocks it. */
+  serverMuted: boolean;
   sharing: boolean;
   camOn: boolean;
   toggleMute: () => void;
@@ -192,9 +194,15 @@ export type VoiceControls = {
 
 /** The five session controls shared by the room capsule and the sidebar deck. */
 export function useVoiceControls(): VoiceControls {
+  const { session } = appRoute.useRouteContext();
   const selfMute = useVoiceStore((s) => s.selfMute);
   const selfDeaf = useVoiceStore((s) => s.selfDeaf);
   const micError = useVoiceStore((s) => s.micError);
+  // The lock reads the own seat off tier-1 occupancy — snapshot, peerJoined, and
+  // serverMuteSet all keep it current, so a muted user re-joining locks immediately.
+  const sessionChannelId = useVoiceStore((s) => s.channelId);
+  const occupancy = useVoiceOccupancy(sessionChannelId ?? "");
+  const serverMuted = occupancy?.seats[session.user.id]?.serverMuted ?? false;
   const sharing = useVoiceStore((s) => s.localTracks.screen !== undefined);
   const camOn = useVoiceStore((s) => s.localTracks.cam !== undefined);
   // Optimistic "starting" (#25): the button lights on the click and reverts if capture
@@ -211,9 +219,11 @@ export function useVoiceControls(): VoiceControls {
     selfMute,
     selfDeaf,
     micError,
+    serverMuted,
     sharing: sharing || sharePending,
     camOn: camOn || camPending,
     toggleMute: () => {
+      if (serverMuted) return; // locked — only mod.serverMute(false) releases it
       // Listen-only join: the mic button IS the retry; a failed retry is a repeat
       // denial and gets the check-browser-permissions toast (spec §UX).
       if (micError) {

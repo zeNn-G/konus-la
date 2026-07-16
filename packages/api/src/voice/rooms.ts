@@ -535,17 +535,38 @@ export async function leaveVoice(userId: string): Promise<void> {
  * Unlike deletion, the channel survives for everyone else, so this rides the ordinary leave
  * path and publishes `voice.peerLeft` — callers run it AFTER the membership row drops, so
  * the guild-wide fan-out reaches only the remaining members. A grace seat (peer already
- * gone) is covered too. Idempotent — no seat, or a seat elsewhere, is a no-op; returns
- * the evicted seat's channel so mod.disconnectVoice can audit it, null on the no-op.
+ * gone) is covered too. Idempotent — no seat, or a seat elsewhere, is a no-op.
  */
-export async function evictMemberFromGuildVoice(
+export async function evictMemberFromGuildVoice(userId: string, guildId: string): Promise<void> {
+  if (seatOf(userId)?.room.guildId !== guildId) return;
+  await leaveVoice(userId);
+}
+
+/**
+ * mod.disconnectVoice's eviction: the ordinary guild-scoped eviction PLUS a self-only
+ * `voice.sessionReplaced` naming the evicted seat-session. Kick/ban targets tear down off
+ * their `guild.member.removed`, but a disconnect target stays a member and gets no such
+ * signal — without one, their client reads the dead transports as a failure and silently
+ * auto-rejoins within seconds, undoing the moderation action. The client's
+ * sessionReplaced handler is already race-proof (only the named session stands down, and
+ * it stops an in-flight rejoin loop), so a deliberate rejoin stays possible — this is a
+ * disconnect, not a ban. Returns the evicted channel for the audit entry, null on no-op.
+ */
+export async function disconnectMemberFromGuildVoice(
   userId: string,
   guildId: string,
 ): Promise<string | null> {
   const current = seatOf(userId);
   if (!current || current.room.guildId !== guildId) return null;
+  const { channelId } = current.room;
+  const replacedSeatSessionId = current.seat.seatSessionId;
   await leaveVoice(userId);
-  return current.room.channelId;
+  await publishTo([userId], {
+    type: "voice.sessionReplaced",
+    channelId,
+    replacedSeatSessionId,
+  });
+  return channelId;
 }
 
 /** Flip the self-mute flag and broadcast it. Returns false when the user has no seat. */

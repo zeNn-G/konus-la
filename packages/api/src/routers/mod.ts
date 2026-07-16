@@ -12,7 +12,7 @@ import { protectedProcedure, requireChannelPermission, requireGuildPermission } 
 import { PERMISSIONS } from "../permissions";
 import { modActionLimiter, perUserRatelimit } from "../ratelimit";
 import { channelRecipientUserIds, publishTo } from "../realtime/publishers";
-import { evictMemberFromGuildVoice, setServerMute } from "../voice/rooms";
+import { disconnectMemberFromGuildVoice, setServerMute } from "../voice/rooms";
 
 /**
  * Charter hierarchy for member-targeted moderation (guild.ts precedent): owner-target,
@@ -102,9 +102,10 @@ export const modRouter = {
 
   /**
    * Evict a member's voice seat (spec §mod router): rides the guild-scoped eviction path
-   * (#42), so `voice.peerLeft` flows naturally and the target may rejoin — a disconnect,
-   * not a ban. An unseated target is NOT_FOUND: there is nothing to disconnect, and a
-   * no-op must not leave an audit entry claiming otherwise.
+   * (#42) — `voice.peerLeft` flows naturally, plus a self-only stand-down so the target's
+   * client doesn't auto-rejoin (see disconnectMemberFromGuildVoice). The target may
+   * deliberately rejoin — a disconnect, not a ban. An unseated target is NOT_FOUND: there
+   * is nothing to disconnect, and a no-op must not leave an audit entry claiming otherwise.
    */
   disconnectVoice: protectedProcedure
     .input(z.object({ guildId: z.string(), userId: z.string() }))
@@ -112,7 +113,7 @@ export const modRouter = {
     .use(perUserRatelimit("modAction", modActionLimiter))
     .handler(async ({ input, context }) => {
       await assertActorOutranks(input.guildId, context.user.id, input.userId);
-      const channelId = await evictMemberFromGuildVoice(input.userId, input.guildId);
+      const channelId = await disconnectMemberFromGuildVoice(input.userId, input.guildId);
       if (!channelId) {
         throw new ORPCError("NOT_FOUND", { message: "Member is not in a voice channel." });
       }
