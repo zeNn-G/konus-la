@@ -112,7 +112,13 @@ export function createAuth() {
         httpOnly: true,
       },
     },
-    plugins: [admin()],
+    plugins: [
+      admin({
+        // Static string by design — the ban reason stays admin-only (spec §Instance-ban
+        // sign-in UX, #52). The login form pins this message to the card via BANNED_USER.
+        bannedUserMessage: "This account has been banned from this instance.",
+      }),
+    ],
   });
 }
 
