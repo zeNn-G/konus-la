@@ -31,9 +31,7 @@ export function getWs(): WsHandle {
     );
     // partysocket types readyState as plain `number`; structurally it's a WebSocket.
     const link = new RPCLink({ websocket: socket as unknown as WebSocket });
-    // Zombie-tab fix: the upgrade requires a live session, so a dead one turns reconnects
-    // into a forever-retry — the watchdog re-checks the session on drops and lands the tab
-    // on /login when it's gone (session-watchdog.ts).
+    // Zombie-tab fix: dead-session recovery on socket drops (session-watchdog.ts).
     attachSessionWatchdog(socket);
     handle = { socket, client: createORPCClient(link) };
   }

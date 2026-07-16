@@ -34,7 +34,7 @@ function setup(getSession: SessionWatchdogDeps["getSession"]) {
   return { socket, navigateToLogin };
 }
 
-/** Flush the microtask chain the watchdog's async check rides on. */
+/** Yield a macrotask so the watchdog's async check runs to completion. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("session watchdog", () => {

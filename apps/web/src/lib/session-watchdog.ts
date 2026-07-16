@@ -30,7 +30,7 @@ const defaultDeps: SessionWatchdogDeps = {
 
 export function attachSessionWatchdog(socket: SocketLike, deps = defaultDeps): void {
   // A reconnect storm fires one close per failed attempt; drops during an in-flight
-  // check collapse into it, so the check cadence is bounded by the retry backoff.
+  // check collapse into it.
   // Navigating latches the watchdog: the page is on its way out, so later drops of the
   // dying socket must not re-check or re-navigate.
   let checking = false;
@@ -49,7 +49,7 @@ export function attachSessionWatchdog(socket: SocketLike, deps = defaultDeps): v
     }
   };
   socket.addEventListener("close", () => void check());
-  // partysocket's connect-timeout path dispatches only `error` (ws.js _handleError), so
-  // `close` alone would miss it; the in-flight collapse absorbs the usual error+close pair.
+  // partysocket's connect-timeout path dispatches only `error`, so `close` alone would
+  // miss it; the in-flight collapse absorbs the usual error+close pair.
   socket.addEventListener("error", () => void check());
 }
