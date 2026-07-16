@@ -39,5 +39,11 @@ export function closeUserConnections(userId: string): void {
   // Drop the entry first: each close() re-enters connectionClosed via the socket's close
   // hook, which must find nothing left to touch.
   socketsByUser.delete(userId);
-  for (const socket of sockets) socket.close();
+  for (const socket of sockets) {
+    try {
+      socket.close();
+    } catch {
+      // one broken socket must not shield the rest from closing
+    }
+  }
 }

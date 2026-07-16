@@ -1,16 +1,7 @@
 import { describe, expect, test } from "vitest";
 
+import { fakeSocket } from "../testing";
 import { closeUserConnections, connectionClosed, connectionOpened } from "./connections";
-
-/** Minimal stand-in for a Bun ServerWebSocket — the registry only ever calls close(). */
-function fakeSocket() {
-  return {
-    closed: false,
-    close() {
-      this.closed = true;
-    },
-  };
-}
 
 describe("closeUserConnections", () => {
   test("closes every registered socket of the user and only theirs", () => {

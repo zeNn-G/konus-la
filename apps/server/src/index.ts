@@ -128,8 +128,6 @@ const server = Bun.serve<WSData, string>({
   websocket: {
     open(ws) {
       // Only successfully upgraded (= authenticated) sockets reach here.
-      // Presence tracks counts; the connection registry holds the handle itself so
-      // admin.banUser can force-close a banned user's tabs.
       connectionOpened(ws.data.userId, ws);
       void presenceConnectionOpened(ws.data.userId).catch((error) => {
         logger.error({ error }, "presence online broadcast failed");

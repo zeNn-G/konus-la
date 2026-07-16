@@ -30,6 +30,16 @@ export function asWsUser(userId: string, connectionId: string): { context: Conte
   };
 }
 
+/** Minimal stand-in for a Bun ServerWebSocket — the connection registry only calls close(). */
+export function fakeSocket() {
+  return {
+    closed: false,
+    close() {
+      this.closed = true;
+    },
+  };
+}
+
 /** Assert a procedure call rejects with the given ORPC error code. */
 export async function expectCode(promise: Promise<unknown>, code: string): Promise<void> {
   const error = await promise.then(

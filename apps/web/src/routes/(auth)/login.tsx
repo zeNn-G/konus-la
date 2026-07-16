@@ -24,7 +24,7 @@ export const Route = createFileRoute("/(auth)/login")({
 function LoginComponent() {
   const navigate = useNavigate();
   // Banned is durable state, not a transient failure — it pins to the card instead of
-  // toasting, and only a fresh attempt (which will re-set it while banned) clears it.
+  // toasting, and only a fresh attempt clears it.
   const [bannedMessage, setBannedMessage] = useState<string | null>(null);
 
   const form = useForm({

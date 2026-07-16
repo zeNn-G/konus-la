@@ -12,6 +12,7 @@ import {
   asWsUser,
   collect,
   expectCode,
+  fakeSocket,
   ofType,
   stopCollectors,
   waitFor,
@@ -50,8 +51,8 @@ describe("admin router gate", () => {
 
 describe("admin.banUser", () => {
   test("bans with the reason on record and force-closes the target's live sockets", async () => {
-    const targetTab = { closed: false, close: () => void (targetTab.closed = true) };
-    const adminTab = { closed: false, close: () => void (adminTab.closed = true) };
+    const targetTab = fakeSocket();
+    const adminTab = fakeSocket();
     connectionOpened(TARGET, targetTab);
     connectionOpened(ROOT, adminTab);
 
