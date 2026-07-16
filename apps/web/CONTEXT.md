@@ -131,12 +131,15 @@ TanStack Query invalidation of `guild.list`.
   module-singleton **`voiceSession`** (`session.ts`) — the ONLY writer of the
   `idle → joining → connected → reconnecting` machine. mediasoup-client objects never enter any
   cache. The dispatcher forwards `producerAdded/producerClosed` (own-user events filtered — a peer
-  never consumes itself), `sessionReplaced`, and `mediaReset` to the session. One recovery path:
+  never consumes itself), `sessionReplaced`, `disconnected` (a moderator evicted the named
+  seat-session — same race-proof guard and local-only stand-down as a lost steal, and it stops
+  the rejoin loop that would otherwise undo the disconnect), and `mediaReset` to the session.
+  One recovery path:
   signaling failure / socket death / `mediaReset` / transport failure → `reconnecting` → rejoin
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
   full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout /
-  a lost seat steal / the channel (or guild) being deleted under us / being removed from the guild
-  (kicked, banned, or left) — never navigation. The last of
+  a lost seat steal / a moderator disconnect / the channel (or guild) being deleted under us /
+  being removed from the guild (kicked, banned, or left) — never navigation. The last of
   those, `tearDownForDeletedChannel` / `tearDownIfSeatedInGuild`, are **local-only** teardowns that
   deliberately skip `voice.leave` (the server dropped the seat with the row, so the RPC would spend
   the shared join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. They
@@ -159,8 +162,16 @@ TanStack Query invalidation of `guild.list`.
   flag). All render-ready shapes derive in the pure, tested `lib/voice/ui-model.ts`
   (`deriveRoomTiles`/`deriveMiniStage`; face priority screen > cam > avatar; deafen forces mute).
   Per-peer volume is a right-click `PeerVolumeMenu` (slider + local mute; volume 0 IS the local
-  mute; in a guild it doubles as the occupant's moderation menu — kick/ban items per the viewer's
-  permissions via `member-moderation.tsx`, on sidebar occupant rows and room tiles alike). Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
+  mute; in a guild it doubles as the occupant's moderation menu — server-mute/unmute, disconnect,
+  kick, and ban items per the viewer's permissions via `member-moderation.tsx`, on sidebar occupant
+  rows, room tiles, and members-panel rows alike; Disconnect only shows while the target holds a
+  seat in the guild, read via `useGuildVoiceSeat`). **Server-mute (Phase 6)**: `voice.serverMuteSet`
+  patches the occupancy seat when the target is seated (unseated flavor invalidates `guild.get`);
+  server-muted peers show the distinct `ServerMuteBadge` (`server-mute-badge.tsx`, red-filled — not
+  the plain red self-mute icon) on tiles and occupant rows, and the muted user's own `MicButton`
+  locks — no toast by design (#49), the "Muted by a moderator" tooltip is the only explanation. The
+  lock derives from the own seat in occupancy (`useVoiceControls.serverMuted`), so it applies on
+  snapshot, join, and live flips alike; `toggleMute` refuses while locked. Remote video renders through `video-surface.tsx`, which owns the bindVideo/unbindVideo
   interest contract. A focused screenshare re-lays the room into **stage** (the share full-pane,
   browser-fullscreen on double-click/button) + **filmstrip** (everyone else, cam > avatar faces —
   a screen face renders on the stage and nowhere else, so non-focused shares stay server-paused):

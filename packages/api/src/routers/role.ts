@@ -1,5 +1,4 @@
 import {
-  actorOutranksMember,
   assignMemberRole,
   createGuildRole,
   deleteGuildRole,
@@ -18,7 +17,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
-import { protectedProcedure, requireGuildPermission } from "../index";
+import { assertActorOutranks, protectedProcedure, requireGuildPermission } from "../index";
 import { ALL_PERMISSIONS, hasPermission, PERMISSIONS } from "../permissions";
 import { modActionLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
@@ -102,9 +101,7 @@ async function assertCanManageAssignment(
   if (!(await isGuildMember(input.guildId, input.userId))) {
     throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
   }
-  if (!(await actorOutranksMember(input.guildId, actorId, input.userId))) {
-    throw new ORPCError("FORBIDDEN");
-  }
+  await assertActorOutranks(input.guildId, actorId, input.userId);
   return role;
 }
 

@@ -15,6 +15,7 @@ import type { RoomTileModel } from "@/lib/voice/ui-model";
 import type { ChannelListItem } from "@/lib/use-realtime";
 
 import { PeerVolumeMenu } from "./peer-volume-menu";
+import { ServerMuteBadge } from "./server-mute-badge";
 import { useRoomTiles } from "./use-voice-room";
 
 /** Rename/delete for MANAGE_CHANNELS holders, lifted so the rows reuse ChannelSidebar's dialogs. */
@@ -126,9 +127,12 @@ function OccupantRow({ guildId, tile }: { guildId: string; tile: RoomTileModel }
         className={cn("size-4.5 ring-1 ring-transparent", tile.speaking && "ring-green-500")}
       />
       <span className={cn("truncate", tile.speaking && "text-foreground")}>{tile.name}</span>
+      {tile.serverMuted && <ServerMuteBadge className="ml-auto size-3" />}
       {tile.selfDeaf ? (
-        <HeadphoneOffIcon className="ml-auto size-3 shrink-0 text-red-500/80" />
-      ) : tile.selfMute ? (
+        <HeadphoneOffIcon
+          className={cn("size-3 shrink-0 text-red-500/80", !tile.serverMuted && "ml-auto")}
+        />
+      ) : tile.selfMute && !tile.serverMuted ? (
         <MicOffIcon className="ml-auto size-3 shrink-0 text-red-500/80" />
       ) : null}
     </PeerVolumeMenu>

@@ -141,7 +141,12 @@ export type RealtimeEvent =
       rooms: Array<{
         guildId: string;
         channelId: string;
-        seats: Array<{ userId: string; selfMute: boolean; selfDeaf: boolean }>;
+        seats: Array<{
+          userId: string;
+          selfMute: boolean;
+          selfDeaf: boolean;
+          serverMuted: boolean;
+        }>;
         speakingUserIds: string[];
       }>;
     }
@@ -153,6 +158,7 @@ export type RealtimeEvent =
       userId: string;
       selfMute: boolean;
       selfDeaf: boolean;
+      serverMuted: boolean;
     }
   | {
       /** Guild-wide: a seat emptied — explicit leave, channel switch, or grace expiry. */
@@ -174,6 +180,19 @@ export type RealtimeEvent =
       channelId: string;
       userId: string;
       selfDeaf: boolean;
+    }
+  | {
+      /**
+       * Guild-wide: a moderator flipped a member's persistent server-mute (#49).
+       * `channelId` names the room the target sat in when it flipped — the client patches
+       * occupancy (and locks its own mic when self); null = target unseated, clients
+       * invalidate `guild.get` instead.
+       */
+      type: "voice.serverMuteSet";
+      guildId: string;
+      channelId: string | null;
+      userId: string;
+      serverMuted: boolean;
     }
   | {
       /**
@@ -215,6 +234,17 @@ export type RealtimeEvent =
       type: "voice.sessionReplaced";
       channelId: string;
       replacedSeatSessionId: string;
+    }
+  | {
+      /**
+       * Self-only: a moderator evicted your seat (mod.disconnectVoice). Stand down to
+       * idle ONLY if `seatSessionId` matches your own — race-proof against a fresh
+       * rejoin, exactly like `sessionReplaced`. A deliberate rejoin stays allowed:
+       * this is a disconnect, not a ban.
+       */
+      type: "voice.disconnected";
+      channelId: string;
+      seatSessionId: string;
     }
   | {
       /**

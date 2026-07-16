@@ -123,7 +123,7 @@ export async function produce(
     source: ProducerSource;
   },
 ): Promise<{ producerId: string }> {
-  const { room, peer } = requireLivePeer(userId, connectionId);
+  const { room, seat, peer } = requireLivePeer(userId, connectionId);
   if (peer.state !== "connected" && peer.state !== "producing") {
     throw new VoiceInvalidStateError("produce before the ceremony reached connected.");
   }
@@ -144,6 +144,9 @@ export async function produce(
     producer = await peer.sendTransport.produce({
       kind: input.kind,
       rtpParameters: input.rtpParameters,
+      // No self-resume while server-muted (spec §Server-mute): audio — mic AND
+      // screenAudio — is born paused; only mod.serverMute(false) resumes it.
+      paused: input.kind === "audio" && seat.serverMuted,
       appData: { userId, source: input.source },
     });
   } catch (error) {

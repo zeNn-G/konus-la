@@ -72,6 +72,8 @@ export function ControlToggleButton({
 /**
  * The mic button is the one component that knows about a failed capture (spec §UX):
  * on a listen-only join it shows the unavailable treatment and the click retries.
+ * A server-mute outranks both other states — the button locks silently (no toast, #49);
+ * this tooltip is the one place the target learns why their mic is off.
  */
 export function MicButton({
   controls,
@@ -82,6 +84,20 @@ export function MicButton({
   sizing: ControlSize;
   className?: string;
 }) {
+  if (controls.serverMuted) {
+    return (
+      <Button
+        size={sizing.size}
+        variant="ghost"
+        aria-label="Muted by a moderator"
+        aria-disabled
+        title="You've been muted by a moderator"
+        className={cn("cursor-not-allowed bg-red-500/15 text-red-500 hover:text-red-500", className)}
+      >
+        <MicOffIcon className={sizing.iconClass} />
+      </Button>
+    );
+  }
   if (controls.micError) {
     return (
       <Button

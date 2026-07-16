@@ -4,6 +4,7 @@ import { monotonicFactory } from "ulid";
 
 import { db } from "../index";
 import { user } from "../schema/auth";
+import { guildMembership } from "../schema/guild";
 import { auditLogEntry } from "../schema/moderation";
 
 /** One factory per process: monotonic within a millisecond, so insert order == id order. */
@@ -62,6 +63,34 @@ export async function recordAuditEntry(input: {
     targetMessageId: input.targetMessageId ?? null,
     metadata: JSON.stringify(input.metadata ?? {}),
   });
+}
+
+/**
+ * Flip a membership's persistent server-mute flag (charter 5, #49): survives voice
+ * leave/join and server restarts — the in-memory seat only mirrors it. Returns false
+ * when the target has no membership row.
+ */
+export async function setMemberServerMuted(
+  guildId: string,
+  userId: string,
+  serverMuted: boolean,
+): Promise<boolean> {
+  const updated = await db
+    .update(guildMembership)
+    .set({ serverMuted })
+    .where(and(eq(guildMembership.guildId, guildId), eq(guildMembership.userId, userId)))
+    .returning({ userId: guildMembership.userId });
+  return updated.length > 0;
+}
+
+/** A membership's persistent server-mute flag; false for non-members. */
+export async function isMemberServerMuted(guildId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ serverMuted: guildMembership.serverMuted })
+    .from(guildMembership)
+    .where(and(eq(guildMembership.guildId, guildId), eq(guildMembership.userId, userId)))
+    .limit(1);
+  return row?.serverMuted ?? false;
 }
 
 const actor = alias(user, "actor");

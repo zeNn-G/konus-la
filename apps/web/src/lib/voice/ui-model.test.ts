@@ -25,8 +25,8 @@ function occupancy(overrides?: Partial<VoiceRoomOccupancy>): VoiceRoomOccupancy 
   return {
     guildId: G,
     seats: {
-      anna: { selfMute: false, selfDeaf: false },
-      ben: { selfMute: true, selfDeaf: false },
+      anna: { selfMute: false, selfDeaf: false, serverMuted: false },
+      ben: { selfMute: true, selfDeaf: false, serverMuted: false },
     },
     speakingUserIds: [],
     ...overrides,
@@ -76,7 +76,7 @@ describe("deriveRoomTiles", () => {
   test("a seat without a member entry falls back to the userId", () => {
     const tiles = deriveRoomTiles({
       ...disconnected,
-      occupancy: occupancy({ seats: { ghost: { selfMute: false, selfDeaf: false } } }),
+      occupancy: occupancy({ seats: { ghost: { selfMute: false, selfDeaf: false, serverMuted: false } } }),
     });
     expect(tiles[0]).toMatchObject({ userId: "ghost", name: "ghost", seed: "ghost" });
   });
@@ -106,7 +106,7 @@ describe("deriveRoomTiles", () => {
     const tiles = deriveRoomTiles({
       ...disconnected,
       occupancy: occupancy({
-        seats: { self: { selfMute: false, selfDeaf: false } },
+        seats: { self: { selfMute: false, selfDeaf: false, serverMuted: false } },
       }),
       connectedHere: true,
       selfMute: true,
@@ -114,6 +114,18 @@ describe("deriveRoomTiles", () => {
     });
     expect(tiles).toHaveLength(1);
     expect(tiles[0]).toMatchObject({ isSelf: true, selfMute: true, selfDeaf: true });
+  });
+
+  test("serverMuted flows from the seat to the tile; the pre-seat self upsert defaults it off", () => {
+    const tiles = deriveRoomTiles({
+      ...disconnected,
+      occupancy: occupancy({
+        seats: { anna: { selfMute: false, selfDeaf: false, serverMuted: true } },
+      }),
+      connectedHere: true,
+    });
+    expect(tiles.find((t) => t.userId === "anna")?.serverMuted).toBe(true);
+    expect(tiles.find((t) => t.isSelf)?.serverMuted).toBe(false);
   });
 
   test("remote face priority: screen beats cam, cam beats avatar; LIVE follows screen", () => {
@@ -136,7 +148,7 @@ describe("deriveRoomTiles", () => {
     const screen = fakeTrack();
     const tiles = deriveRoomTiles({
       ...disconnected,
-      occupancy: occupancy({ seats: { self: { selfMute: false, selfDeaf: false } } }),
+      occupancy: occupancy({ seats: { self: { selfMute: false, selfDeaf: false, serverMuted: false } } }),
       connectedHere: true,
       localTracks: { mic: fakeTrack(), screen },
     });
@@ -166,6 +178,7 @@ describe("deriveMiniStage", () => {
     speaking: false,
     selfMute: false,
     selfDeaf: false,
+    serverMuted: false,
     live: false,
     face: { kind: "avatar" as const },
     camFace: { kind: "avatar" as const },
@@ -259,7 +272,7 @@ describe("camFace (deriveRoomTiles)", () => {
     const cam = fakeTrack();
     const tiles = deriveRoomTiles({
       ...disconnected,
-      occupancy: occupancy({ seats: { self: { selfMute: false, selfDeaf: false } } }),
+      occupancy: occupancy({ seats: { self: { selfMute: false, selfDeaf: false, serverMuted: false } } }),
       connectedHere: true,
       localTracks: { screen: fakeTrack(), cam },
     });
@@ -277,6 +290,7 @@ const stageTile = (userId: string, over: Partial<RoomTileModel> = {}): RoomTileM
   speaking: false,
   selfMute: false,
   selfDeaf: false,
+  serverMuted: false,
   live: false,
   face: { kind: "avatar" },
   camFace: { kind: "avatar" },
