@@ -134,7 +134,7 @@ export function requireChannelPermission(bit: PermissionBit) {
       if (!channelRow.guildId) throw new ORPCError("FORBIDDEN");
 
       await assertGuildPermission(channelRow.guildId, context.user.id, bit);
-      // Spread to narrow: past the DM refusal, handlers see a guild channel.
+      // Past the DM refusal, handlers see a guild channel (guildId non-null).
       return next({ context: { channel: { ...channelRow, guildId: channelRow.guildId } } });
     });
 }

@@ -216,7 +216,7 @@ function MessageItemRow({
         </div>
       )}
 
-      {/* Mounted only while open so the reason field starts blank every time. */}
+      {/* The reason field starts blank on every open. */}
       {modDeleteOpen && (
         <ModDeleteDialog
           message={message}

@@ -42,7 +42,7 @@ export const modRouter = {
         targetUserId: meta.authorId,
         targetChannelId: input.channelId,
         targetMessageId: input.messageId,
-        metadata: { reason: input.reason ?? null, contentSnippet: meta.content.slice(0, 200) },
+        metadata: { reason: input.reason || null, contentSnippet: meta.content.slice(0, 200) },
       });
       await publishTo(await channelRecipientUserIds(context.channel), {
         type: "message.deleted",

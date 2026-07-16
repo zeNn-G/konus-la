@@ -186,8 +186,12 @@ TanStack Query invalidation of `guild.list`.
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —
   instead the history cache is trimmed to the newest ~150 messages whenever the reader is back at the live
-  edge, so long sessions stay bounded), `message-item` (hover reply/edit/delete; cache updates come from
-  the author's own realtime events, never from mutation handlers), `message-markdown` (react-markdown +
+  edge, so long sessions stay bounded), `message-item` (hover reply/edit/delete; your own message deletes
+  outright, someone else's — offered only to `MANAGE_MESSAGES` holders, never in DMs — goes through
+  `mod-delete-dialog`; cache updates come from
+  the author's own realtime events, never from mutation handlers), `mod-delete-dialog` (confirm for
+  `mod.deleteMessage`: message preview + optional 500-char reason that lands in the audit entry),
+  `message-markdown` (react-markdown +
   GFM, mention pills), `composer` (raw-markdown textarea, Enter sends, `@` autocomplete, 4 s typing
   throttle; sending jumps the reader to the live edge), `typing-line`. The channel route wraps list +
   composer in one `MessageScrollerProvider` keyed by channel.

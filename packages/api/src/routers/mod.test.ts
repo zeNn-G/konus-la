@@ -92,9 +92,13 @@ describe("mod.deleteMessage", () => {
     });
   });
 
-  test("an omitted reason is recorded as null", async () => {
+  test("an omitted or blank reason is recorded as null", async () => {
     const message = await post(MEMBER, "no reason given");
-    await call(appRouter.mod.deleteMessage, { channelId, messageId: message.id }, asUser(MODERATOR));
+    await call(
+      appRouter.mod.deleteMessage,
+      { channelId, messageId: message.id, reason: "   " },
+      asUser(MODERATOR),
+    );
 
     const page = await call(appRouter.auditLog.list, { guildId }, asUser(OWNER));
     const entry = page.entries.find((e) => e.targetMessageId === message.id);
