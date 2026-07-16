@@ -53,7 +53,8 @@ type Props = {
   channelId: string;
   channelName: string;
   selfUserId: string;
-  isGuildOwner: boolean;
+  /** Viewer holds MANAGE_MESSAGES — offers the mod delete on others' messages. Always false in DMs. */
+  canModerate: boolean;
   memberUsernames: ReadonlySet<string>;
   /** userId → role tint (highest colored role) for author names — guild channels only. */
   authorColors?: ReadonlyMap<string, string>;
@@ -76,7 +77,7 @@ export function MessageList({
   channelId,
   channelName,
   selfUserId,
-  isGuildOwner,
+  canModerate,
   memberUsernames,
   authorColors,
   onReply,
@@ -195,7 +196,7 @@ export function MessageList({
                   message={message}
                   grouped={grouped}
                   selfUserId={selfUserId}
-                  isGuildOwner={isGuildOwner}
+                  canModerate={canModerate}
                   memberUsernames={memberUsernames}
                   authorColor={authorColors?.get(message.author.id)}
                   onReply={onReply}

@@ -175,7 +175,7 @@ describe("chat.editMessage", () => {
 });
 
 describe("chat.deleteMessage", () => {
-  test("author and guild owner may delete; other members may not", async () => {
+  test("only the author may delete — even the guild owner rides mod.deleteMessage instead", async () => {
     const ownMessage = await call(
       appRouter.chat.sendMessage,
       { channelId: chatId, content: "delete me" },
@@ -184,6 +184,10 @@ describe("chat.deleteMessage", () => {
     await expect(
       call(appRouter.chat.deleteMessage, { messageId: ownMessage.id }, asUser(MEMBER)),
     ).resolves.toEqual({ ok: true });
+    await expectCode(
+      call(appRouter.chat.deleteMessage, { messageId: ownMessage.id }, asUser(MEMBER)),
+      "NOT_FOUND",
+    );
 
     const ownersMessage = await call(
       appRouter.chat.sendMessage,
@@ -200,13 +204,9 @@ describe("chat.deleteMessage", () => {
       { channelId: chatId, content: "moderate me" },
       asUser(MEMBER),
     );
-    await expect(
-      call(appRouter.chat.deleteMessage, { messageId: membersMessage.id }, asUser(OWNER)),
-    ).resolves.toEqual({ ok: true });
-
     await expectCode(
       call(appRouter.chat.deleteMessage, { messageId: membersMessage.id }, asUser(OWNER)),
-      "NOT_FOUND",
+      "FORBIDDEN",
     );
   });
 

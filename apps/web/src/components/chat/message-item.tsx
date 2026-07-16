@@ -7,6 +7,7 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/chat/message-markdown";
+import { ModDeleteDialog } from "@/components/chat/mod-delete-dialog";
 import type { ChatMessage } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
@@ -21,7 +22,8 @@ type Props = {
   /** Hide the avatar/name header when the previous message is same-author and recent. */
   grouped: boolean;
   selfUserId: string;
-  isGuildOwner: boolean;
+  /** Viewer holds MANAGE_MESSAGES here — offers the mod delete on others' messages. Always false in DMs. */
+  canModerate: boolean;
   memberUsernames: ReadonlySet<string>;
   /** The author's role tint (highest colored role) — guild channels only. */
   authorColor?: string;
@@ -39,13 +41,14 @@ function MessageItemRow({
   message,
   grouped,
   selfUserId,
-  isGuildOwner,
+  canModerate,
   memberUsernames,
   authorColor,
   onReply,
 }: Props) {
   const isAuthor = message.author.id === selfUserId;
   const [editing, setEditing] = useState(false);
+  const [modDeleteOpen, setModDeleteOpen] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
@@ -195,18 +198,31 @@ function MessageItemRow({
               <PencilIcon className="size-3.5" />
             </Button>
           )}
-          {(isAuthor || isGuildOwner) && (
+          {(isAuthor || canModerate) && (
             <Button
               size="icon-sm"
               variant="ghost"
               aria-label="Delete"
               title="Delete"
-              onClick={() => remove.mutate({ messageId: message.id })}
+              // Your own message deletes outright; someone else's is a moderation act —
+              // confirm dialog, optional reason, audit entry.
+              onClick={() =>
+                isAuthor ? remove.mutate({ messageId: message.id }) : setModDeleteOpen(true)
+              }
             >
               <Trash2Icon className="size-3.5 text-red-500" />
             </Button>
           )}
         </div>
+      )}
+
+      {/* Mounted only while open so the reason field starts blank every time. */}
+      {modDeleteOpen && (
+        <ModDeleteDialog
+          message={message}
+          open
+          onOpenChange={(open) => !open && setModDeleteOpen(false)}
+        />
       )}
     </div>
   );

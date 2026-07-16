@@ -121,6 +121,7 @@ export async function getMessageMeta(messageId: string) {
       id: message.id,
       channelId: message.channelId,
       authorId: message.authorId,
+      content: message.content,
       guildId: channel.guildId,
     })
     .from(message)

@@ -140,7 +140,7 @@ function DmChannelView() {
           channelId={channelId}
           channelName={title}
           selfUserId={selfUserId}
-          isGuildOwner={false}
+          canModerate={false}
           memberUsernames={memberUsernames}
           onReply={setReplyTo}
           emptyState={

@@ -3,7 +3,6 @@ import {
   getHistoryPage,
   getMessageMeta,
   insertMessage,
-  isGuildOwner,
   markChannelRead,
   updateMessage,
   userBelongsToChannel,
@@ -123,8 +122,9 @@ export const chatRouter = {
     }),
 
   /**
-   * Hard-delete a message — allowed for its author or the guild owner. In DMs deletion is
-   * author-only: the group owner moderates people (removeParticipant), never messages.
+   * Hard-delete your own message — strictly author-only and unaudited, in guilds and DMs
+   * alike. Deleting someone else's message is moderation: `mod.deleteMessage`, gated
+   * MANAGE_MESSAGES and audited (the owner takes that path too — no unaudited backdoor).
    */
   deleteMessage: protectedProcedure
     .input(z.object({ messageId: z.string() }))
@@ -133,9 +133,8 @@ export const chatRouter = {
       if (!meta) throw new ORPCError("NOT_FOUND", { message: "Message not found." });
 
       const allowed =
-        (meta.authorId === context.user.id &&
-          (await userBelongsToChannel(meta.channelId, meta.guildId, context.user.id))) ||
-        (meta.guildId !== null && (await isGuildOwner(meta.guildId, context.user.id)));
+        meta.authorId === context.user.id &&
+        (await userBelongsToChannel(meta.channelId, meta.guildId, context.user.id));
       if (!allowed) throw new ORPCError("FORBIDDEN");
 
       await deleteMessageRow(input.messageId);
