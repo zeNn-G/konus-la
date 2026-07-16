@@ -6,6 +6,7 @@ import { channelRouter } from "./channel";
 import { chatRouter, typingRouter } from "./chat";
 import { dmRouter } from "./dm";
 import { guildRouter } from "./guild";
+import { modRouter } from "./mod";
 import { profileRouter } from "./profile";
 import { realtimeRouter } from "./realtime";
 import { roleRouter } from "./role";
@@ -25,6 +26,7 @@ export const appRouter = {
   auditLog: auditLogRouter,
   channel: channelRouter,
   chat: chatRouter,
+  mod: modRouter,
   typing: typingRouter,
   dm: dmRouter,
   realtime: realtimeRouter,

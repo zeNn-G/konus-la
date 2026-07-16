@@ -1,3 +1,4 @@
+import { hasPermission, PERMISSIONS } from "@konus-la/api/permissions";
 import { Button } from "@konus-la/ui/components/button";
 import { MessageScrollerProvider } from "@konus-la/ui/components/message-scroller";
 import { Sheet, SheetContent, SheetTitle } from "@konus-la/ui/components/sheet";
@@ -154,7 +155,10 @@ function ChannelView() {
               channelId={channelId}
               channelName={channel.name ?? ""}
               selfUserId={session.user.id}
-              isGuildOwner={guild.data?.viewer.isOwner ?? false}
+              canModerate={hasPermission(
+                guild.data?.viewer.permissions ?? 0,
+                PERMISSIONS.MANAGE_MESSAGES,
+              )}
               memberUsernames={memberUsernames}
               authorColors={authorColors}
               onReply={setReplyTo}
