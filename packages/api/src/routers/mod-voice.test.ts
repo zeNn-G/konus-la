@@ -337,13 +337,13 @@ describe("mod.disconnectVoice", () => {
     // guild.member.removed; a disconnect target stays a member and has no other signal —
     // without this its client treats the dead transports as a failure and auto-rejoins).
     await waitFor(
-      () => ofType(finnTab, "voice.sessionReplaced").length === 1,
-      "sessionReplaced to the target",
+      () => ofType(finnTab, "voice.disconnected").length === 1,
+      "voice.disconnected to the target",
     );
-    expect(ofType(finnTab, "voice.sessionReplaced")[0]).toEqual({
-      type: "voice.sessionReplaced",
+    expect(ofType(finnTab, "voice.disconnected")[0]).toEqual({
+      type: "voice.disconnected",
       channelId: vcA,
-      replacedSeatSessionId: joined.seatSessionId,
+      seatSessionId: joined.seatSessionId,
     });
 
     const page = await call(appRouter.auditLog.list, { guildId }, asUser(OWNER));

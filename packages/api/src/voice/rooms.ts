@@ -544,7 +544,7 @@ export async function evictMemberFromGuildVoice(userId: string, guildId: string)
 
 /**
  * mod.disconnectVoice's eviction: the ordinary guild-scoped eviction PLUS a self-only
- * `voice.sessionReplaced` naming the evicted seat-session. Kick/ban targets tear down off
+ * `voice.disconnected` naming the evicted seat-session. Kick/ban targets tear down off
  * their `guild.member.removed`, but a disconnect target stays a member and gets no such
  * signal — without one, their client reads the dead transports as a failure and silently
  * auto-rejoins within seconds, undoing the moderation action. Only the named session
@@ -558,13 +558,9 @@ export async function disconnectMemberFromGuildVoice(
   const current = seatOf(userId);
   if (!current || current.room.guildId !== guildId) return null;
   const { channelId } = current.room;
-  const replacedSeatSessionId = current.seat.seatSessionId;
+  const seatSessionId = current.seat.seatSessionId;
   await leaveVoice(userId);
-  await publishTo([userId], {
-    type: "voice.sessionReplaced",
-    channelId,
-    replacedSeatSessionId,
-  });
+  await publishTo([userId], { type: "voice.disconnected", channelId, seatSessionId });
   return channelId;
 }
 

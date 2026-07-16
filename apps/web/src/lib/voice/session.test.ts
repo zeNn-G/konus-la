@@ -844,6 +844,34 @@ describe("leave, switch & steal", () => {
     });
     expect(useVoiceStore.getState().status).toBe("connected");
   });
+
+  test("voice.disconnected (mod eviction) with the OWN seat-session id stands down — no voice.leave, no auto-rejoin", async () => {
+    await joined();
+    const send = harness.device?.sendTransport;
+
+    harness.session.handleRealtimeEvent({
+      type: "voice.disconnected",
+      channelId: "vc-1",
+      seatSessionId: "seat-1",
+    });
+
+    const state = useVoiceStore.getState();
+    expect(state.status).toBe("idle");
+    expect(send?.closed).toBe(true);
+    // The server already evicted the seat — leaving would spend budget unseating nobody.
+    expect(harness.callsOf("leave")).toHaveLength(0);
+    expect(harness.callsOf("join")).toHaveLength(1); // no rejoin loop woke up
+  });
+
+  test("voice.disconnected naming a FOREIGN seat-session id is ignored (raced a fresh rejoin)", async () => {
+    await joined();
+    harness.session.handleRealtimeEvent({
+      type: "voice.disconnected",
+      channelId: "vc-1",
+      seatSessionId: "a-seat-this-session-never-held",
+    });
+    expect(useVoiceStore.getState().status).toBe("connected");
+  });
 });
 
 describe("channel deletion & guild teardown (deletion or member removal)", () => {

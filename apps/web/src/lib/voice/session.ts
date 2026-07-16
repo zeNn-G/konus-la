@@ -125,6 +125,7 @@ export type VoiceSessionEvent = Extract<
       | "voice.producerAdded"
       | "voice.producerClosed"
       | "voice.sessionReplaced"
+      | "voice.disconnected"
       | "voice.mediaReset";
   }
 >;
@@ -566,6 +567,17 @@ export class VoiceSession {
         const state = this.store();
         if (!state.seatSessionId || event.replacedSeatSessionId !== state.seatSessionId) return;
         this.toIdle("Voice moved to another window");
+        return;
+      }
+      case "voice.disconnected": {
+        // A moderator evicted the named seat-session (mod.disconnectVoice). Same guard
+        // and local-only teardown as sessionReplaced: the seat is already gone server-side
+        // (`voice.leave` would unseat nobody), a mismatched id means this session already
+        // rejoined, and matching while `reconnecting` stops the rejoin loop — otherwise
+        // the loop would undo the disconnect. A deliberate rejoin stays allowed.
+        const state = this.store();
+        if (!state.seatSessionId || event.seatSessionId !== state.seatSessionId) return;
+        this.toIdle("Disconnected by a moderator");
         return;
       }
       case "voice.mediaReset": {

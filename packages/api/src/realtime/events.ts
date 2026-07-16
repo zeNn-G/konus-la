@@ -237,6 +237,17 @@ export type RealtimeEvent =
     }
   | {
       /**
+       * Self-only: a moderator evicted your seat (mod.disconnectVoice). Stand down to
+       * idle ONLY if `seatSessionId` matches your own — race-proof against a fresh
+       * rejoin, exactly like `sessionReplaced`. A deliberate rejoin stays allowed:
+       * this is a disconnect, not a ban.
+       */
+      type: "voice.disconnected";
+      channelId: string;
+      seatSessionId: string;
+    }
+  | {
+      /**
        * Self-only, published after an SFU worker respawn: keep your seat, redo your
        * plumbing — re-run `voice.join` (it lands as a grace rebind).
        */

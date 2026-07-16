@@ -131,12 +131,15 @@ TanStack Query invalidation of `guild.list`.
   module-singleton **`voiceSession`** (`session.ts`) — the ONLY writer of the
   `idle → joining → connected → reconnecting` machine. mediasoup-client objects never enter any
   cache. The dispatcher forwards `producerAdded/producerClosed` (own-user events filtered — a peer
-  never consumes itself), `sessionReplaced`, and `mediaReset` to the session. One recovery path:
+  never consumes itself), `sessionReplaced`, `disconnected` (a moderator evicted the named
+  seat-session — same race-proof guard and local-only stand-down as a lost steal, and it stops
+  the rejoin loop that would otherwise undo the disconnect), and `mediaReset` to the session.
+  One recovery path:
   signaling failure / socket death / `mediaReset` / transport failure → `reconnecting` → rejoin
   (`voice.join` is the universal entry), EXCEPT `TOO_MANY_REQUESTS` and definitive rejections (room
   full, channel gone), which surface and go idle. Teardown only on leave / channel switch / logout /
-  a lost seat steal / the channel (or guild) being deleted under us / being removed from the guild
-  (kicked, banned, or left) — never navigation. The last of
+  a lost seat steal / a moderator disconnect / the channel (or guild) being deleted under us /
+  being removed from the guild (kicked, banned, or left) — never navigation. The last of
   those, `tearDownForDeletedChannel` / `tearDownIfSeatedInGuild`, are **local-only** teardowns that
   deliberately skip `voice.leave` (the server dropped the seat with the row, so the RPC would spend
   the shared join/leave budget unseating nobody) — the same reasoning as `sessionReplaced`. They

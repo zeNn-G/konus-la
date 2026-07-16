@@ -368,6 +368,7 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       break;
     }
     case "voice.sessionReplaced":
+    case "voice.disconnected":
     case "voice.mediaReset": {
       voiceSession.handleRealtimeEvent(event);
       break;
