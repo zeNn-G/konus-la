@@ -547,10 +547,9 @@ export async function evictMemberFromGuildVoice(userId: string, guildId: string)
  * `voice.sessionReplaced` naming the evicted seat-session. Kick/ban targets tear down off
  * their `guild.member.removed`, but a disconnect target stays a member and gets no such
  * signal — without one, their client reads the dead transports as a failure and silently
- * auto-rejoins within seconds, undoing the moderation action. The client's
- * sessionReplaced handler is already race-proof (only the named session stands down, and
- * it stops an in-flight rejoin loop), so a deliberate rejoin stays possible — this is a
- * disconnect, not a ban. Returns the evicted channel for the audit entry, null on no-op.
+ * auto-rejoins within seconds, undoing the moderation action. Only the named session
+ * stands down, so a deliberate rejoin stays possible — this is a disconnect, not a ban.
+ * Returns the evicted channel for the audit entry, null on no-op.
  */
 export async function disconnectMemberFromGuildVoice(
   userId: string,

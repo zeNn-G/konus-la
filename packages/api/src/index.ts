@@ -1,5 +1,6 @@
 import { auth } from "@konus-la/auth";
 import {
+  actorOutranksMember,
   getChannel,
   getEffectivePermissions,
   getMemberAccess,
@@ -101,6 +102,22 @@ async function assertGuildPermission(
 
   const bits = await getEffectivePermissions(guildId, userId);
   if (!hasPermission(bits, PERMISSIONS.ADMINISTRATOR) && !hasPermission(bits, bit)) {
+    throw new ORPCError("FORBIDDEN");
+  }
+}
+
+/**
+ * Charter hierarchy for member-targeted moderation (kick / ban / mute / disconnect /
+ * role-assign), called at handler level — target ids arrive under varying input names.
+ * Owner-target, self-target, and equal rank all fail as one plain FORBIDDEN,
+ * indistinguishable from the permission gates'.
+ */
+export async function assertActorOutranks(
+  guildId: string,
+  actorId: string,
+  targetId: string,
+): Promise<void> {
+  if (!(await actorOutranksMember(guildId, actorId, targetId))) {
     throw new ORPCError("FORBIDDEN");
   }
 }

@@ -1,5 +1,4 @@
 import {
-  actorOutranksMember,
   banMember,
   consumeInvite,
   countOwnedGuilds,
@@ -28,6 +27,7 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
 import {
+  assertActorOutranks,
   protectedProcedure,
   requireGuildMember,
   requireGuildOwner,
@@ -37,21 +37,6 @@ import { ALL_PERMISSIONS, hasPermission, PERMISSIONS } from "../permissions";
 import { inviteCreateLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
 import { evictGuildVoiceRooms, evictMemberFromGuildVoice } from "../voice/rooms";
-
-/**
- * Charter hierarchy for member-targeted moderation: owner-target, self-target, and equal
- * rank all fail `actorOutranksMember` as one plain FORBIDDEN, indistinguishable from the
- * permission gate's.
- */
-async function assertActorOutranks(
-  guildId: string,
-  actorId: string,
-  targetId: string,
-): Promise<void> {
-  if (!(await actorOutranksMember(guildId, actorId, targetId))) {
-    throw new ORPCError("FORBIDDEN");
-  }
-}
 
 /** Roster-change fan-out: every remaining member plus the affected user themselves. */
 async function publishMemberEvent(

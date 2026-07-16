@@ -1,5 +1,4 @@
 import {
-  actorOutranksMember,
   deleteMessageRow,
   getMessageMeta,
   recordAuditEntry,
@@ -8,26 +7,16 @@ import {
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
-import { protectedProcedure, requireChannelPermission, requireGuildPermission } from "../index";
+import {
+  assertActorOutranks,
+  protectedProcedure,
+  requireChannelPermission,
+  requireGuildPermission,
+} from "../index";
 import { PERMISSIONS } from "../permissions";
 import { modActionLimiter, perUserRatelimit } from "../ratelimit";
 import { channelRecipientUserIds, publishTo } from "../realtime/publishers";
 import { disconnectMemberFromGuildVoice, setServerMute } from "../voice/rooms";
-
-/**
- * Charter hierarchy for member-targeted moderation (guild.ts precedent): owner-target,
- * self-target, and equal rank all fail as one plain FORBIDDEN, indistinguishable from
- * the permission gate's.
- */
-async function assertActorOutranks(
-  guildId: string,
-  actorId: string,
-  targetId: string,
-): Promise<void> {
-  if (!(await actorOutranksMember(guildId, actorId, targetId))) {
-    throw new ORPCError("FORBIDDEN");
-  }
-}
 
 export const modRouter = {
   /**
