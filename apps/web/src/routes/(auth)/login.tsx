@@ -10,6 +10,7 @@ import { Input } from "@konus-la/ui/components/input";
 import { Label } from "@konus-la/ui/components/label";
 import { useForm } from "@tanstack/react-form";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -22,6 +23,9 @@ export const Route = createFileRoute("/(auth)/login")({
 
 function LoginComponent() {
   const navigate = useNavigate();
+  // Banned is durable state, not a transient failure — it pins to the card instead of
+  // toasting, and only a fresh attempt (which will re-set it while banned) clears it.
+  const [bannedMessage, setBannedMessage] = useState<string | null>(null);
 
   const form = useForm({
     defaultValues: { email: "", password: "" },
@@ -32,6 +36,7 @@ function LoginComponent() {
       }),
     },
     onSubmit: async ({ value }) => {
+      setBannedMessage(null);
       await authClient.signIn.email(
         { email: value.email, password: value.password },
         {
@@ -42,6 +47,12 @@ function LoginComponent() {
             toast.success("Signed in.");
           },
           onError: (error) => {
+            if (error.error.code === "BANNED_USER") {
+              setBannedMessage(
+                error.error.message || "This account has been banned from this instance.",
+              );
+              return;
+            }
             toast.error(error.error.message || error.error.statusText);
           },
         },
@@ -57,6 +68,14 @@ function LoginComponent() {
           <CardDescription>Welcome back to konus-la.</CardDescription>
         </CardHeader>
         <CardContent>
+          {bannedMessage && (
+            <div
+              role="alert"
+              className="mb-3 rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-red-500"
+            >
+              {bannedMessage}
+            </div>
+          )}
           <form
             className="flex flex-col gap-3"
             onSubmit={(e) => {

@@ -6,7 +6,10 @@ Vite + React 19 SPA. File-based routing via TanStack Router, server state via Ta
 
 Routes are organised into pathless groups under `src/routes/` (group names don't affect URLs):
 
-- **`(auth)/`** — public pages with no app shell: `login`, `signup`.
+- **`(auth)/`** — public pages with no app shell: `login`, `signup`. The login form special-cases
+  `code === "BANNED_USER"` into a **persistent inline error on the card** (banned is durable state, not a
+  transient failure — the static message comes from the server's `bannedUserMessage`); every other sign-in
+  error keeps the toast.
 - **`(app)/`** — the authenticated area. `(app)/route.tsx` is a layout that guards every child once
   (`beforeLoad` → `requireSession`) and renders the shared shell: a shadcn `SidebarProvider` with
   `components/app-sidebar.tsx` (nested-rails panel, sidebar-09 shape) beside a `SidebarInset` for the
@@ -29,6 +32,9 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     members-popover (owner-only remove, add-people search) + kebab (rename / leave) in
     `components/dm/`.
   - **`(app)/admin/`** — nested layout that adds the Instance-Owner gate (`requireAdmin`) for `/admin/*`.
+    `codes` mints signup codes; `bans` (issue #63) is the instance-ban surface — user search picker +
+    **required reason** (the ban's only record — instance bans are never audit-logged), banned list with
+    reasons + unban. Both are reachable from the user-card's admin shortcuts.
   - **`(app)/guilds/$guildId/`** — a guild. `route.tsx` is a pass-through; the **channel sidebar**
     (`components/channel-sidebar.tsx` — unread bold + red mention badge, create/rename/delete for
     `MANAGE_CHANNELS` holders via `components/channel-name-dialog.tsx`) renders from the shell. It owns BOTH

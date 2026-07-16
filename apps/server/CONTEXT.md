@@ -2,7 +2,7 @@
 
 Bun runtime (`Bun.serve`). Dispatches by URL path:
 
-- `/ws` — WebSocket upgrade for ORPC over WS (`@orpc/server/bun-ws`). **Authenticated at upgrade**: Origin check (CSWSH guard) → Better Auth session from the cookie → 401 before upgrading. `{ userId, headers, connectionId }` is stashed as `ws.data`; the upgrade headers plus the `connectionId` (minted at upgrade — voice's socket identity, what `voice.*` procedures gate on) become the per-message ORPC context so `requireAuth` works unchanged over WS. Socket `open`/`close` drive presence (`presenceConnectionOpened/Closed` from `@konus-la/api`); `close` also starts the voice seat grace (`voiceConnectionClosed`).
+- `/ws` — WebSocket upgrade for ORPC over WS (`@orpc/server/bun-ws`). **Authenticated at upgrade**: Origin check (CSWSH guard) → Better Auth session from the cookie → 401 before upgrading. `{ userId, headers, connectionId }` is stashed as `ws.data`; the upgrade headers plus the `connectionId` (minted at upgrade — voice's socket identity, what `voice.*` procedures gate on) become the per-message ORPC context so `requireAuth` works unchanged over WS. Socket `open`/`close` drive presence (`presenceConnectionOpened/Closed` from `@konus-la/api`) and the connection registry (`connectionOpened/Closed` — the handle itself, so `admin.banUser` can force-close a banned user's tabs); `close` also starts the voice seat grace (`voiceConnectionClosed`).
 - `/api/auth/*` — Better Auth handler.
 - `/rpc/*` — ORPC HTTP `RPCHandler`.
 - `/` — health probe.

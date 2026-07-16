@@ -1,4 +1,6 @@
 import {
+  connectionClosed,
+  connectionOpened,
   presenceConnectionClosed,
   presenceConnectionOpened,
   voiceConnectionClosed,
@@ -126,6 +128,9 @@ const server = Bun.serve<WSData, string>({
   websocket: {
     open(ws) {
       // Only successfully upgraded (= authenticated) sockets reach here.
+      // Presence tracks counts; the connection registry holds the handle itself so
+      // admin.banUser can force-close a banned user's tabs.
+      connectionOpened(ws.data.userId, ws);
       void presenceConnectionOpened(ws.data.userId).catch((error) => {
         logger.error({ error }, "presence online broadcast failed");
       });
@@ -137,6 +142,7 @@ const server = Bun.serve<WSData, string>({
     },
     close(ws) {
       wsHandler.close(ws);
+      connectionClosed(ws.data.userId, ws);
       presenceConnectionClosed(ws.data.userId);
       // If this socket owned a voice peer, its seat enters the 30 s grace window.
       voiceConnectionClosed(ws.data.connectionId);

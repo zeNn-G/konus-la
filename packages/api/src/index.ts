@@ -15,6 +15,7 @@ import { hasPermission, PERMISSIONS, type PermissionBit } from "./permissions";
 
 export type { ChatMessage, EventMap, RealtimeEvent } from "./realtime/events";
 export { publisher } from "./realtime/publisher";
+export { connectionClosed, connectionOpened } from "./realtime/connections";
 export { presenceConnectionClosed, presenceConnectionOpened } from "./realtime/presence";
 export { voiceConnectionClosed } from "./voice/rooms";
 

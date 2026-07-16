@@ -1,7 +1,7 @@
 import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { KeyRoundIcon, LogOutIcon } from "lucide-react";
+import { GavelIcon, KeyRoundIcon, LogOutIcon } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
 import { voiceSession } from "@/lib/voice/session";
@@ -28,15 +28,26 @@ export function UserCard() {
       </Link>
 
       {session.user.role === "admin" && (
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Invite codes"
-          title="Invite codes"
-          render={<Link to="/admin/codes" />}
-        >
-          <KeyRoundIcon className="size-4" />
-        </Button>
+        <>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Invite codes"
+            title="Invite codes"
+            render={<Link to="/admin/codes" />}
+          >
+            <KeyRoundIcon className="size-4" />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Instance bans"
+            title="Instance bans"
+            render={<Link to="/admin/bans" />}
+          >
+            <GavelIcon className="size-4" />
+          </Button>
+        </>
       )}
 
       <Button

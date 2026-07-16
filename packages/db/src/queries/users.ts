@@ -58,6 +58,25 @@ export async function searchUsers(input: { query: string; limit: number; exclude
     .limit(input.limit);
 }
 
+/** Instance-tier role (`admin` | `user`) for one user; null when no such user. */
+export async function getUserRole(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ role: user.role })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+  return row ? (row.role ?? "user") : null;
+}
+
+/** Instance-banned users with their reasons — the admin bans page's list. */
+export async function listBannedUsers() {
+  return db
+    .select({ id: user.id, ...publicUserColumns, banReason: user.banReason })
+    .from(user)
+    .where(eq(user.banned, true))
+    .orderBy(asc(user.username));
+}
+
 /** Public profile shape for one user (DM draft headers etc.). */
 export async function getPublicUser(userId: string) {
   const [row] = await db

@@ -54,6 +54,17 @@ export async function getTestUser(id: string) {
   return row ?? null;
 }
 
+/** Write the admin-plugin ban columns — for the test-side Better Auth fake, never suites. */
+export async function setTestUserBan(
+  userId: string,
+  ban: { banned: boolean; banReason: string | null },
+): Promise<void> {
+  await db
+    .update(user)
+    .set({ banned: ban.banned, banReason: ban.banReason, banExpires: null })
+    .where(eq(user.id, userId));
+}
+
 /** Add an existing user to an existing guild (skips the invite flow). */
 export async function seedTestMembership(guildId: string, userId: string): Promise<void> {
   await db.insert(guildMembership).values({ guildId, userId });

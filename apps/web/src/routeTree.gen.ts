@@ -19,6 +19,7 @@ import { Route as appAdminRouteRouteImport } from './routes/(app)/admin/route'
 import { Route as appDmsIndexRouteImport } from './routes/(app)/dms/index'
 import { Route as appDmsChannelIdRouteImport } from './routes/(app)/dms/$channelId'
 import { Route as appAdminCodesRouteImport } from './routes/(app)/admin/codes'
+import { Route as appAdminBansRouteImport } from './routes/(app)/admin/bans'
 import { Route as appGuildsGuildIdRouteRouteImport } from './routes/(app)/guilds/$guildId/route'
 import { Route as appGuildsGuildIdIndexRouteImport } from './routes/(app)/guilds/$guildId/index'
 import { Route as appDmsNewUserIdRouteImport } from './routes/(app)/dms/new/$userId'
@@ -73,6 +74,11 @@ const appAdminCodesRoute = appAdminCodesRouteImport.update({
   path: '/codes',
   getParentRoute: () => appAdminRouteRoute,
 } as any)
+const appAdminBansRoute = appAdminBansRouteImport.update({
+  id: '/bans',
+  path: '/bans',
+  getParentRoute: () => appAdminRouteRoute,
+} as any)
 const appGuildsGuildIdRouteRoute = appGuildsGuildIdRouteRouteImport.update({
   id: '/guilds/$guildId',
   path: '/guilds/$guildId',
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
   '/guilds/$guildId': typeof appGuildsGuildIdRouteRouteWithChildren
+  '/admin/bans': typeof appAdminBansRoute
   '/admin/codes': typeof appAdminCodesRoute
   '/dms/$channelId': typeof appDmsChannelIdRoute
   '/dms/': typeof appDmsIndexRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
   '/signup': typeof authSignupRoute
   '/': typeof appIndexRoute
+  '/admin/bans': typeof appAdminBansRoute
   '/admin/codes': typeof appAdminCodesRoute
   '/dms/$channelId': typeof appDmsChannelIdRoute
   '/dms': typeof appDmsIndexRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/(auth)/signup': typeof authSignupRoute
   '/(app)/': typeof appIndexRoute
   '/(app)/guilds/$guildId': typeof appGuildsGuildIdRouteRouteWithChildren
+  '/(app)/admin/bans': typeof appAdminBansRoute
   '/(app)/admin/codes': typeof appAdminCodesRoute
   '/(app)/dms/$channelId': typeof appDmsChannelIdRoute
   '/(app)/dms/': typeof appDmsIndexRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/'
     | '/guilds/$guildId'
+    | '/admin/bans'
     | '/admin/codes'
     | '/dms/$channelId'
     | '/dms/'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/'
+    | '/admin/bans'
     | '/admin/codes'
     | '/dms/$channelId'
     | '/dms'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/(auth)/signup'
     | '/(app)/'
     | '/(app)/guilds/$guildId'
+    | '/(app)/admin/bans'
     | '/(app)/admin/codes'
     | '/(app)/dms/$channelId'
     | '/(app)/dms/'
@@ -265,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof appAdminCodesRouteImport
       parentRoute: typeof appAdminRouteRoute
     }
+    '/(app)/admin/bans': {
+      id: '/(app)/admin/bans'
+      path: '/bans'
+      fullPath: '/admin/bans'
+      preLoaderRoute: typeof appAdminBansRouteImport
+      parentRoute: typeof appAdminRouteRoute
+    }
     '/(app)/guilds/$guildId': {
       id: '/(app)/guilds/$guildId'
       path: '/guilds/$guildId'
@@ -297,10 +316,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface appAdminRouteRouteChildren {
+  appAdminBansRoute: typeof appAdminBansRoute
   appAdminCodesRoute: typeof appAdminCodesRoute
 }
 
 const appAdminRouteRouteChildren: appAdminRouteRouteChildren = {
+  appAdminBansRoute: appAdminBansRoute,
   appAdminCodesRoute: appAdminCodesRoute,
 }
 
