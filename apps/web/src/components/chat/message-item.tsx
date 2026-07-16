@@ -2,12 +2,13 @@ import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMutation } from "@tanstack/react-query";
-import { CornerUpLeftIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { CornerUpLeftIcon, FlagIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageMarkdown } from "@/components/chat/message-markdown";
 import { ModDeleteDialog } from "@/components/chat/mod-delete-dialog";
+import { ReportMessageDialog } from "@/components/chat/report-message-dialog";
 import type { ChatMessage } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
 
@@ -24,6 +25,8 @@ type Props = {
   selfUserId: string;
   /** Viewer holds MANAGE_MESSAGES here — offers the mod delete on others' messages. Always false in DMs. */
   canModerate: boolean;
+  /** Guild channels only — offers Report on others' messages. Always false in DMs (never reportable). */
+  canReport: boolean;
   memberUsernames: ReadonlySet<string>;
   /** The author's role tint (highest colored role) — guild channels only. */
   authorColor?: string;
@@ -42,6 +45,7 @@ function MessageItemRow({
   grouped,
   selfUserId,
   canModerate,
+  canReport,
   memberUsernames,
   authorColor,
   onReply,
@@ -49,6 +53,7 @@ function MessageItemRow({
   const isAuthor = message.author.id === selfUserId;
   const [editing, setEditing] = useState(false);
   const [modDeleteOpen, setModDeleteOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
@@ -198,6 +203,17 @@ function MessageItemRow({
               <PencilIcon className="size-3.5" />
             </Button>
           )}
+          {!isAuthor && canReport && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Report"
+              title="Report"
+              onClick={() => setReportOpen(true)}
+            >
+              <FlagIcon className="size-3.5" />
+            </Button>
+          )}
           {(isAuthor || canModerate) && (
             <Button
               size="icon-sm"
@@ -216,7 +232,15 @@ function MessageItemRow({
         </div>
       )}
 
-      {/* The reason field starts blank on every open. */}
+      {/* Both dialogs mount on open so their reason fields start blank every time. */}
+      {reportOpen && (
+        <ReportMessageDialog
+          message={message}
+          open
+          onOpenChange={(open) => !open && setReportOpen(false)}
+        />
+      )}
+
       {modDeleteOpen && (
         <ModDeleteDialog
           message={message}

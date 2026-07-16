@@ -141,6 +141,7 @@ function DmChannelView() {
           channelName={title}
           selfUserId={selfUserId}
           canModerate={false}
+          canReport={false}
           memberUsernames={memberUsernames}
           onReply={setReplyTo}
           emptyState={

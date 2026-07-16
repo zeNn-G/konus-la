@@ -316,6 +316,18 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       });
       break;
     }
+    case "report.changed": {
+      // Invalidate-only: the inbox badge count and (if open) the list refetch. Only
+      // holders ever receive this — recipients are permission-derived server-side, so a
+      // resolve on one mod's client decrements every other mod's badge and nobody else's.
+      void client.invalidateQueries({
+        queryKey: orpc.report.unresolvedCount.key({ input: { guildId: event.guildId } }),
+      });
+      void client.invalidateQueries({
+        queryKey: orpc.report.list.key({ input: { guildId: event.guildId } }),
+      });
+      break;
+    }
     case "guild.deleted": {
       // Gone for everyone — same eviction as guild.member.removed's own-user branch:
       // drop the rail row and let the guild layout navigate out before any cache cleanup.

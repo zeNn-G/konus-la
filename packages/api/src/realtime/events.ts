@@ -132,6 +132,17 @@ export type RealtimeEvent =
     }
   | {
       /**
+       * The guild's report set changed (create / resolve collapse into one —
+       * invalidate-only: recipients refetch the unresolved count and, if open, the list;
+       * a resolve must decrement the OTHER mods' badges too). The first permission-derived
+       * recipient set: owner ∪ ADMINISTRATOR ∪ MANAGE_REPORTS holders, computed at publish
+       * time — non-holders simply never receive it, so gating is server-side.
+       */
+      type: "report.changed";
+      guildId: string;
+    }
+  | {
+      /**
        * Voice occupancy bootstrap — yielded right after `presence.snapshot` on every
        * subscription: every occupied voice channel in the subscriber's guilds, flags
        * included. Socket-connected ⇔ occupancy-correct; there is no fetch path (ADR 0007).

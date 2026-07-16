@@ -34,6 +34,7 @@ export const voiceConsumeLimiter = new MemoryRatelimiter({ maxRequests: 60, wind
  * scripted abuse, roomy for real moderation (ADR 0008 spec).
  */
 export const modActionLimiter = new MemoryRatelimiter({ maxRequests: 30, window: 60_000 });
+export const reportCreateLimiter = new MemoryRatelimiter({ maxRequests: 10, window: 3_600_000 });
 
 /** Rate-limit an authenticated procedure by caller id. Chain after `protectedProcedure`. */
 export function perUserRatelimit(
