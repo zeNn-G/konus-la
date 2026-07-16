@@ -4,8 +4,8 @@ import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { PERMISSION_GROUPS } from "@/components/guild-settings/permission-groups";
 import { RoleDot } from "@/components/guild-settings/role-dot";
-import { PERMISSION_GROUPS } from "@/components/guild-settings/roles-section";
 import { orpc } from "@/utils/orpc";
 
 type AuditPage = Awaited<ReturnType<AppRouterClient["auditLog"]["list"]>>;
@@ -37,11 +37,11 @@ function displayName(user: { username: string | null; displayName: string | null
   return user?.displayName || user?.username || null;
 }
 
-const name = (value: ReactNode) => <span className="font-medium">{value}</span>;
+const strong = (value: ReactNode) => <span className="font-medium">{value}</span>;
 
 /** The target member's name; a deleted account falls back to its recorded id. */
 function target(entry: AuditEntry): ReactNode {
-  return name(displayName(entry.targetUser) ?? entry.targetUserId ?? "someone");
+  return strong(displayName(entry.targetUser) ?? entry.targetUserId ?? "someone");
 }
 
 const permissionLabels = new Map(
@@ -130,21 +130,21 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
         ),
       };
     case "role.create":
-      return { phrase: <>created role {name(String(meta.name))}</> };
+      return { phrase: <>created role {strong(String(meta.name))}</> };
     case "role.update": {
       const changed = (meta.changed ?? {}) as Record<string, [unknown, unknown]>;
       return {
-        phrase: <>updated role {name(String(meta.name))}</>,
+        phrase: <>updated role {strong(String(meta.name))}</>,
         detail: Object.keys(changed).length > 0 ? roleUpdateDetail(changed) : undefined,
       };
     }
     case "role.delete":
-      return { phrase: <>deleted role {name(String(meta.name))}</> };
+      return { phrase: <>deleted role {strong(String(meta.name))}</> };
     case "role.reorder":
       return {
         phrase: (
           <>
-            moved role {name(String(meta.name))} from position {String(meta.from)} to{" "}
+            moved role {strong(String(meta.name))} from position {String(meta.from)} to{" "}
             {String(meta.to)}
           </>
         ),
@@ -153,7 +153,7 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
       return {
         phrase: (
           <>
-            assigned {name(String(meta.name))} to {target(entry)}
+            assigned {strong(String(meta.name))} to {target(entry)}
           </>
         ),
       };
@@ -161,7 +161,7 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
       return {
         phrase: (
           <>
-            removed {name(String(meta.name))} from {target(entry)}
+            removed {strong(String(meta.name))} from {target(entry)}
           </>
         ),
       };
@@ -169,7 +169,7 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
       return {
         phrase: (
           <>
-            created {String(meta.kind)} channel {name(`#${String(meta.name)}`)}
+            created {String(meta.kind)} channel {strong(`#${String(meta.name)}`)}
           </>
         ),
       };
@@ -178,19 +178,19 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
       return {
         phrase: (
           <>
-            renamed channel {name(`#${String(oldName)}`)} → {name(`#${String(newName)}`)}
+            renamed channel {strong(`#${String(oldName)}`)} → {strong(`#${String(newName)}`)}
           </>
         ),
       };
     }
     case "channel.delete":
-      return { phrase: <>deleted channel {name(`#${String(meta.name)}`)}</> };
+      return { phrase: <>deleted channel {strong(`#${String(meta.name)}`)}</> };
     case "guild.update": {
       const [oldName, newName] = (meta.name ?? []) as [unknown, unknown];
       return {
         phrase: (
           <>
-            renamed the guild {name(String(oldName))} → {name(String(newName))}
+            renamed the guild {strong(String(oldName))} → {strong(String(newName))}
           </>
         ),
       };
@@ -199,7 +199,7 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
       return { phrase: <>transferred ownership to {target(entry)}</> };
     case "invite.create":
       return {
-        phrase: <>created invite {name(String(meta.code))}</>,
+        phrase: <>created invite {strong(String(meta.code))}</>,
         detail: meta.expiresAt ? (
           <>expires {new Date(String(meta.expiresAt)).toLocaleString()}</>
         ) : (
@@ -207,7 +207,7 @@ function describeEntry(entry: AuditEntry): { phrase: ReactNode; detail?: ReactNo
         ),
       };
     case "invite.revoke":
-      return { phrase: <>revoked invite {name(String(meta.code))}</> };
+      return { phrase: <>revoked invite {strong(String(meta.code))}</> };
     case "report.resolve":
       return { phrase: <>resolved a report</> };
     default:
@@ -222,7 +222,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
     <li className="flex flex-col gap-0.5 py-2">
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 text-sm">
-          {name(actor)} {phrase}
+          {strong(actor)} {phrase}
         </span>
         <span
           className="ml-auto shrink-0 text-xs text-muted-foreground"

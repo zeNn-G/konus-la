@@ -136,12 +136,15 @@ export const guildRouter = {
     .handler(async ({ input, context }) => {
       const updated = await renameGuild(input.guildId, input.name);
       if (!updated) throw new ORPCError("NOT_FOUND", { message: "Guild not found." });
-      await recordAuditEntry({
-        guildId: input.guildId,
-        actorId: context.user.id,
-        action: "guild.update",
-        metadata: { name: [updated.previousName, updated.name] },
-      });
+      // A rename to the current name changed nothing — no entry (a no-op isn't an action).
+      if (updated.previousName !== updated.name) {
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "guild.update",
+          metadata: { name: [updated.previousName, updated.name] },
+        });
+      }
       await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
         type: "guild.updated",
         guildId: input.guildId,

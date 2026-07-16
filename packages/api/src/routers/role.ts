@@ -192,7 +192,9 @@ export const roleRouter = {
         ...(input.color !== undefined && { color: input.color }),
         ...(input.permissions !== undefined && { permissions: input.permissions }),
       });
-      // Only fields that actually changed land in the diff, as `[old, new]` pairs.
+      // Only fields that actually changed land in the diff, as `[old, new]` pairs — and a
+      // no-op update (every field re-submitted unchanged) leaves no entry at all, matching
+      // the idempotent assign/unassign treatment.
       const changed: Record<string, [unknown, unknown]> = {};
       if (input.name !== undefined && input.name !== role.name) {
         changed.name = [role.name, input.name];
@@ -203,12 +205,14 @@ export const roleRouter = {
       if (input.permissions !== undefined && input.permissions !== role.permissions) {
         changed.permissions = [role.permissions, input.permissions];
       }
-      await recordAuditEntry({
-        guildId: input.guildId,
-        actorId: context.user.id,
-        action: "role.update",
-        metadata: { roleId: role.id, name: input.name ?? role.name, changed },
-      });
+      if (Object.keys(changed).length > 0) {
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "role.update",
+          metadata: { roleId: role.id, name: input.name ?? role.name, changed },
+        });
+      }
       await publishRoleChanged(input.guildId);
       return { ok: true } as const;
     }),

@@ -132,6 +132,25 @@ describe("channel + invite instrumentation", () => {
     });
   });
 
+  test("a rename to the same name changes nothing and is not logged", async () => {
+    const channel = await call(
+      appRouter.channel.create,
+      { guildId, name: "static", kind: "text" },
+      asUser(CHAN_OWNER),
+    );
+    const before = (await listLog(guildId, CHAN_OWNER)).entries.length;
+
+    await call(
+      appRouter.channel.update,
+      { guildId, channelId: channel.id, name: "static" },
+      asUser(CHAN_OWNER),
+    );
+    await call(appRouter.guild.update, { guildId, name: "Chan Lab" }, asUser(CHAN_OWNER));
+
+    const { entries } = await listLog(guildId, CHAN_OWNER);
+    expect(entries).toHaveLength(before);
+  });
+
   test("invite create / revoke are logged with code; expiry is an ISO string or null", async () => {
     const eternal = await call(appRouter.guild.invite.create, { guildId }, asUser(CHAN_OWNER));
     const expiring = await call(
@@ -227,6 +246,20 @@ describe("role instrumentation", () => {
     // Assignment entries join the target's display info.
     const assign = entries.find((entry) => entry.action === "role.assign");
     expect(assign?.targetUser).toMatchObject({ id: TARGET, username: "target" });
+  });
+
+  test("an update that changes no field is not logged", async () => {
+    const role = await call(appRouter.role.create, { guildId, name: "statics" }, asUser(ROLE_OWNER));
+    const before = (await listLog(guildId, ROLE_OWNER)).entries.length;
+
+    await call(
+      appRouter.role.update,
+      { guildId, roleId: role.id, name: "statics", permissions: 0 },
+      asUser(ROLE_OWNER),
+    );
+
+    const { entries } = await listLog(guildId, ROLE_OWNER);
+    expect(entries).toHaveLength(before);
   });
 });
 

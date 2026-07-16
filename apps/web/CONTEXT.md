@@ -54,7 +54,9 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     **Guild settings** is a permission-gated modal
     (`components/guild-settings/` — sections appear per the spec #48 visibility table with no locked
     placeholders: Members ⇐ kick ∨ ban ∨ manage-roles, Roles ⇐ `MANAGE_ROLES`, Bans ⇐ `BAN_MEMBERS`,
-    Invites ⇐ `MANAGE_INVITES`, Danger zone owner-only; `visibleSettingsSections` is the one gate list,
+    Invites ⇐ `MANAGE_INVITES`, Audit log ⇐ `VIEW_AUDIT_LOG` (read-only forensic list, `staleTime: 0`
+    so it's fresh on every open, ULID-cursor "Load older" paging, metadata rendered inline via
+    `describeEntry`), Danger zone owner-only; `visibleSettingsSections` is the one gate list,
     shared with the sidebar's dialog entry; the modal closes itself when a live role edit or ownership
     transfer strips every section, and sections mount lazily so a gated section's queries never fire for
     a viewer who can't see it), not a route. **Members** (`members-section.tsx`) shows

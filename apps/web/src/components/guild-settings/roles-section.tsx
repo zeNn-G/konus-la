@@ -1,5 +1,4 @@
 import type { AppRouterClient } from "@konus-la/api/routers/index";
-import { PERMISSIONS } from "@konus-la/api/permissions";
 import { Button } from "@konus-la/ui/components/button";
 import { Checkbox } from "@konus-la/ui/components/checkbox";
 import { Input } from "@konus-la/ui/components/input";
@@ -11,88 +10,12 @@ import { ChevronDownIcon, ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-rea
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { PERMISSION_GROUPS } from "@/components/guild-settings/permission-groups";
 import { RoleDot } from "@/components/guild-settings/role-dot";
 import { orpc, queryClient } from "@/utils/orpc";
 
 type GuildView = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>;
 type GuildRole = GuildView["roles"][number];
-
-/**
- * The editor's toggle catalog: every bit, grouped with a one-line hint (prototype #48).
- * Exported as the one bit → label source; the audit view renders permission diffs from it.
- */
-export const PERMISSION_GROUPS: {
-  label: string;
-  permissions: { bit: number; label: string; hint: string }[];
-}[] = [
-  {
-    label: "General",
-    permissions: [
-      {
-        bit: PERMISSIONS.ADMINISTRATOR,
-        label: "Administrator",
-        hint: "Bypasses every permission check (not hierarchy).",
-      },
-      { bit: PERMISSIONS.MANAGE_GUILD, label: "Manage guild", hint: "Rename the guild." },
-      {
-        bit: PERMISSIONS.MANAGE_ROLES,
-        label: "Manage roles",
-        hint: "Create, edit, and assign roles below their highest role.",
-      },
-      {
-        bit: PERMISSIONS.MANAGE_CHANNELS,
-        label: "Manage channels",
-        hint: "Create, rename, and delete channels.",
-      },
-      {
-        bit: PERMISSIONS.MANAGE_INVITES,
-        label: "Manage invites",
-        hint: "Create and revoke invites.",
-      },
-      {
-        bit: PERMISSIONS.VIEW_AUDIT_LOG,
-        label: "View audit log",
-        hint: "Read the guild audit log.",
-      },
-    ],
-  },
-  {
-    label: "Members",
-    permissions: [
-      {
-        bit: PERMISSIONS.KICK_MEMBERS,
-        label: "Kick members",
-        hint: "Remove lower-ranked members.",
-      },
-      {
-        bit: PERMISSIONS.BAN_MEMBERS,
-        label: "Ban members",
-        hint: "Ban and unban lower-ranked members.",
-      },
-      { bit: PERMISSIONS.MUTE_MEMBERS, label: "Mute members", hint: "Server-mute in voice." },
-      {
-        bit: PERMISSIONS.MOVE_MEMBERS,
-        label: "Move members",
-        hint: "Disconnect members from voice.",
-      },
-    ],
-  },
-  {
-    label: "Messages",
-    permissions: [
-      {
-        bit: PERMISSIONS.MANAGE_MESSAGES,
-        label: "Manage messages",
-        hint: "Delete other members' messages.",
-      },
-      {
-        bit: PERMISSIONS.MANAGE_REPORTS,
-        label: "Manage reports",
-        hint: "See and resolve the report inbox.",
-      },
-    ],
-  },
-];
 
 /** Preset swatches for the role color picker; null = default text color. */
 const ROLE_COLORS = [

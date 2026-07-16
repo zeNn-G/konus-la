@@ -94,13 +94,16 @@ export const channelRouter = {
       try {
         const updated = await renameChannel(input);
         if (!updated) throw new ORPCError("NOT_FOUND", { message: "Channel not found." });
-        await recordAuditEntry({
-          guildId: input.guildId,
-          actorId: context.user.id,
-          action: "channel.update",
-          targetChannelId: updated.id,
-          metadata: { name: [updated.previousName, updated.name] },
-        });
+        // A rename to the current name changed nothing — no entry (a no-op isn't an action).
+        if (updated.previousName !== updated.name) {
+          await recordAuditEntry({
+            guildId: input.guildId,
+            actorId: context.user.id,
+            action: "channel.update",
+            targetChannelId: updated.id,
+            metadata: { name: [updated.previousName, updated.name] },
+          });
+        }
         await publishTo(await listGuildMemberUserIds(input.guildId), {
           type: "channel.updated",
           guildId: input.guildId,
