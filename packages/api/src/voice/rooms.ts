@@ -1,4 +1,4 @@
-import { listGuildMemberUserIds, listUserGuilds } from "@konus-la/db";
+import { isMemberServerMuted, listGuildMemberUserIds, listUserGuilds } from "@konus-la/db";
 import type { types } from "mediasoup";
 
 import type { RealtimeEvent } from "../realtime/events";
@@ -84,6 +84,12 @@ interface Seat {
   seatSessionId: string;
   selfMute: boolean;
   selfDeaf: boolean;
+  /**
+   * Mirror of the membership's persistent server-mute flag (spec §Server-mute) — seeded
+   * from the DB on seating, flipped live by `setServerMute`. While true, the peer's audio
+   * producers are held server-side paused; the client cannot resume them.
+   */
+  serverMuted: boolean;
   /** Null while in grace: the seat outlives its socket, media never does. */
   peer: Peer | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
@@ -434,6 +440,11 @@ export async function joinVoice(input: {
   }
   assertRoomStillLive(room);
 
+  // The persistent server-mute applies before any media can flow (spec §Server-mute):
+  // read it while the caller still holds their old seat. Never carried across a switch —
+  // the flag is per-guild membership, and the target room may sit in another guild.
+  const serverMuted = await isMemberServerMuted(guildId, userId);
+
   // Seated elsewhere: implicit unseat — immediate peerLeft, no grace. Flags carry over so
   // a muted user doesn't flash unmuted in the sidebar across a switch.
   let carriedMute = false;
@@ -461,6 +472,7 @@ export async function joinVoice(input: {
     seatSessionId: crypto.randomUUID(),
     selfMute: carriedMute,
     selfDeaf: carriedDeaf,
+    serverMuted,
     peer: newPeer(connectionId),
     graceTimer: null,
   };
@@ -473,6 +485,7 @@ export async function joinVoice(input: {
     userId,
     selfMute: seat.selfMute,
     selfDeaf: seat.selfDeaf,
+    serverMuted: seat.serverMuted,
   });
   await replayProducersTo(room, userId);
   return { seatSessionId: seat.seatSessionId };
@@ -522,11 +535,17 @@ export async function leaveVoice(userId: string): Promise<void> {
  * Unlike deletion, the channel survives for everyone else, so this rides the ordinary leave
  * path and publishes `voice.peerLeft` — callers run it AFTER the membership row drops, so
  * the guild-wide fan-out reaches only the remaining members. A grace seat (peer already
- * gone) is covered too. Idempotent — no seat, or a seat elsewhere, is a no-op.
+ * gone) is covered too. Idempotent — no seat, or a seat elsewhere, is a no-op; returns
+ * the evicted seat's channel so mod.disconnectVoice can audit it, null on the no-op.
  */
-export async function evictMemberFromGuildVoice(userId: string, guildId: string): Promise<void> {
-  if (seatOf(userId)?.room.guildId !== guildId) return;
+export async function evictMemberFromGuildVoice(
+  userId: string,
+  guildId: string,
+): Promise<string | null> {
+  const current = seatOf(userId);
+  if (!current || current.room.guildId !== guildId) return null;
   await leaveVoice(userId);
+  return current.room.channelId;
 }
 
 /** Flip the self-mute flag and broadcast it. Returns false when the user has no seat. */
@@ -542,6 +561,40 @@ export async function setSelfMute(userId: string, muted: boolean): Promise<boole
     selfMute: muted,
   });
   return true;
+}
+
+/**
+ * A moderator flipped `userId`'s persistent server-mute in `guildId` (spec §Server-mute):
+ * apply the voice half and broadcast. The DB flag is the caller's job (mod.serverMute) —
+ * this only mirrors it onto the live seat, if any. Always publishes guild-wide, seated or
+ * not: `channelId` tells clients whether to patch occupancy or invalidate the roster.
+ */
+export async function setServerMute(
+  guildId: string,
+  userId: string,
+  serverMuted: boolean,
+): Promise<void> {
+  const current = seatOf(userId);
+  const seated = current && current.room.guildId === guildId ? current : null;
+  if (seated) {
+    seated.seat.serverMuted = serverMuted;
+    const peer = seated.seat.peer;
+    if (peer) {
+      for (const { producer } of peer.producers.values()) {
+        if (producer.kind !== "audio" || producer.closed) continue;
+        // Best-effort per producer (setSelfDeaf precedent): one closing under the loop
+        // must not abort the flag flip or its broadcast.
+        await (serverMuted ? producer.pause() : producer.resume()).catch(() => {});
+      }
+    }
+  }
+  await publishGuildWide(guildId, {
+    type: "voice.serverMuteSet",
+    guildId,
+    channelId: seated?.room.channelId ?? null,
+    userId,
+    serverMuted,
+  });
 }
 
 /**
@@ -643,6 +696,7 @@ export async function voiceSnapshotFor(
         userId: seat.userId,
         selfMute: seat.selfMute,
         selfDeaf: seat.selfDeaf,
+        serverMuted: seat.serverMuted,
       })),
       speakingUserIds: [...room.speakingUserIds],
     });
