@@ -8,13 +8,14 @@ import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { displayName } from "@/lib/display-name";
 import { relativeTime } from "@/lib/relative-time";
 import { orpc } from "@/utils/orpc";
 
 type ReportRow = Awaited<ReturnType<AppRouterClient["report"]["list"]>>[number];
 
-function displayName(user: { username: string | null; displayName: string | null } | null) {
-  return user?.displayName || user?.username || "a deleted account";
+function nameOf(user: { username: string | null; displayName: string | null } | null) {
+  return displayName(user) ?? "a deleted account";
 }
 
 function ReportItem({ guildId, report }: { guildId: string; report: ReportRow }) {
@@ -38,7 +39,7 @@ function ReportItem({ guildId, report }: { guildId: string; report: ReportRow })
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-baseline gap-2">
           <span className="min-w-0 truncate text-sm font-medium">
-            {displayName(report.messageAuthor)}
+            {nameOf(report.messageAuthor)}
           </span>
           <span
             className="ml-auto shrink-0 text-xs text-muted-foreground"
@@ -52,12 +53,12 @@ function ReportItem({ guildId, report }: { guildId: string; report: ReportRow })
           {report.messageContent}
         </p>
         <p className="text-xs text-muted-foreground">
-          Reported by <span className="font-medium">{displayName(report.reporter)}</span> —{" "}
+          Reported by <span className="font-medium">{nameOf(report.reporter)}</span> —{" "}
           {report.reason}
         </p>
         {resolved && (
           <p className="text-xs text-muted-foreground">
-            Resolved by <span className="font-medium">{displayName(report.resolvedBy)}</span>
+            Resolved by <span className="font-medium">{nameOf(report.resolvedBy)}</span>
             {report.resolvedAt && ` · ${relativeTime(report.resolvedAt)}`}
           </p>
         )}

@@ -232,7 +232,7 @@ function MessageItemRow({
         </div>
       )}
 
-      {/* The reason field starts blank on every open. */}
+      {/* Both dialogs mount on open so their reason fields start blank every time. */}
       {reportOpen && (
         <ReportMessageDialog
           message={message}
@@ -241,7 +241,6 @@ function MessageItemRow({
         />
       )}
 
-      {/* The reason field starts blank on every open. */}
       {modDeleteOpen && (
         <ModDeleteDialog
           message={message}

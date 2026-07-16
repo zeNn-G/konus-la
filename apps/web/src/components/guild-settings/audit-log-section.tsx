@@ -31,6 +31,7 @@ import type { ReactNode } from "react";
 
 import { PERMISSION_GROUPS } from "@/components/guild-settings/permission-groups";
 import { RoleDot } from "@/components/guild-settings/role-dot";
+import { displayName } from "@/lib/display-name";
 import { relativeTime } from "@/lib/relative-time";
 import { orpc } from "@/utils/orpc";
 
@@ -75,10 +76,6 @@ function styleFor(action: string): ActionStyle {
   return (
     (ACTION_STYLE as Record<string, ActionStyle | undefined>)[action] ?? { icon: ScrollTextIcon }
   );
-}
-
-function displayName(user: { username: string | null; displayName: string | null } | null) {
-  return user?.displayName || user?.username || null;
 }
 
 const strong = (value: ReactNode) => <span className="font-medium">{value}</span>;

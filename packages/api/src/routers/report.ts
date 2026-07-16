@@ -35,6 +35,8 @@ export const reportRouter = {
    * message's guild — DM messages are never reportable (FORBIDDEN, like every DM-moderation
    * path). Snapshots the author and content at report time, so the report survives the
    * message's hard deletion. Unknown messages answer the same plain FORBIDDEN (no-peek).
+   * The limiter sits BEFORE the checks (they're message-keyed, in-handler): refused
+   * attempts spend budget too, which only ever throttles someone probing the gate.
    */
   create: protectedProcedure
     .input(z.object({ messageId: z.string(), reason: z.string().trim().min(1).max(500) }))
