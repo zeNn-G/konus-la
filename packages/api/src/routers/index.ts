@@ -9,6 +9,7 @@ import { guildRouter } from "./guild";
 import { modRouter } from "./mod";
 import { profileRouter } from "./profile";
 import { realtimeRouter } from "./realtime";
+import { reportRouter } from "./report";
 import { roleRouter } from "./role";
 import { signupCodeRouter } from "./signup-code";
 import { userRouter } from "./user";
@@ -27,6 +28,7 @@ export const appRouter = {
   channel: channelRouter,
   chat: chatRouter,
   mod: modRouter,
+  report: reportRouter,
   typing: typingRouter,
   dm: dmRouter,
   realtime: realtimeRouter,

@@ -159,6 +159,7 @@ function ChannelView() {
                 guild.data?.viewer.permissions ?? 0,
                 PERMISSIONS.MANAGE_MESSAGES,
               )}
+              canReport
               memberUsernames={memberUsernames}
               authorColors={authorColors}
               onReply={setReplyTo}

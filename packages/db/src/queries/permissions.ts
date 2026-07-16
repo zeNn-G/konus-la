@@ -1,4 +1,4 @@
-import { and, eq, inArray, max, or } from "drizzle-orm";
+import { and, eq, inArray, max, or, sql } from "drizzle-orm";
 
 import { db } from "../index";
 import { guild, guildMembership, guildRole, memberRole } from "../schema/guild";
@@ -50,6 +50,48 @@ export async function getEffectivePermissions(guildId: string, userId: string): 
       ),
     );
   return rows.reduce((mask, row) => mask | row.permissions, 0);
+}
+
+/**
+ * The members whose effective mask intersects `bits`, plus the owner ALWAYS — the
+ * permission-derived recipient set for events like `report.changed`, computed fresh at
+ * publish time (Phase 6 spec). Raw integers only: callers OR the `ADMINISTRATOR` bit into
+ * `bits` themselves — bit meaning lives in `@konus-la/api/permissions`, not here.
+ *
+ * When the `@everyone` row itself carries an intersecting bit, every member qualifies —
+ * answered without walking assignments.
+ */
+export async function listUsersWithPermission(guildId: string, bits: number): Promise<string[]> {
+  const [guildRow] = await db
+    .select({ ownerId: guild.ownerId })
+    .from(guild)
+    .where(eq(guild.id, guildId))
+    .limit(1);
+  if (!guildRow) return [];
+
+  const [defaultRole] = await db
+    .select({ permissions: guildRole.permissions })
+    .from(guildRole)
+    .where(and(eq(guildRole.guildId, guildId), eq(guildRole.isDefault, true)))
+    .limit(1);
+  if (((defaultRole?.permissions ?? 0) & bits) !== 0) {
+    const members = await db
+      .select({ userId: guildMembership.userId })
+      .from(guildMembership)
+      .where(eq(guildMembership.guildId, guildId));
+    return members.map((row) => row.userId);
+  }
+
+  const holders = await db
+    .selectDistinct({ userId: memberRole.userId })
+    .from(memberRole)
+    .innerJoin(guildRole, eq(memberRole.roleId, guildRole.id))
+    .where(
+      and(eq(memberRole.guildId, guildId), sql`(${guildRole.permissions} & ${bits}) != 0`),
+    );
+  const userIds = new Set(holders.map((row) => row.userId));
+  userIds.add(guildRow.ownerId);
+  return [...userIds];
 }
 
 /**

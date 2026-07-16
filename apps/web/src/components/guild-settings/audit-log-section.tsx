@@ -31,6 +31,7 @@ import type { ReactNode } from "react";
 
 import { PERMISSION_GROUPS } from "@/components/guild-settings/permission-groups";
 import { RoleDot } from "@/components/guild-settings/role-dot";
+import { relativeTime } from "@/lib/relative-time";
 import { orpc } from "@/utils/orpc";
 
 type AuditPage = Awaited<ReturnType<AppRouterClient["auditLog"]["list"]>>;
@@ -38,25 +39,6 @@ type AuditEntry = AuditPage["entries"][number];
 
 const auditLogInput = (guildId: string) => (pageParam: string | undefined) =>
   pageParam ? { guildId, before: pageParam } : { guildId };
-
-const relativeFormat = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-const TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["year", 31_536_000],
-  ["month", 2_592_000],
-  ["week", 604_800],
-  ["day", 86_400],
-  ["hour", 3_600],
-  ["minute", 60],
-];
-
-function relativeTime(date: Date): string {
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  for (const [unit, span] of TIME_UNITS) {
-    if (Math.abs(seconds) >= span) return relativeFormat.format(Math.round(seconds / span), unit);
-  }
-  return "just now";
-}
 
 type ActionStyle = { icon: LucideIcon; destructive?: boolean };
 

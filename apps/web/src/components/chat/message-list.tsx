@@ -55,6 +55,8 @@ type Props = {
   selfUserId: string;
   /** Viewer holds MANAGE_MESSAGES — offers the mod delete on others' messages. Always false in DMs. */
   canModerate: boolean;
+  /** Guild channels only — offers Report on others' messages. Always false in DMs (never reportable). */
+  canReport: boolean;
   memberUsernames: ReadonlySet<string>;
   /** userId → role tint (highest colored role) for author names — guild channels only. */
   authorColors?: ReadonlyMap<string, string>;
@@ -78,6 +80,7 @@ export function MessageList({
   channelName,
   selfUserId,
   canModerate,
+  canReport,
   memberUsernames,
   authorColors,
   onReply,
@@ -197,6 +200,7 @@ export function MessageList({
                   grouped={grouped}
                   selfUserId={selfUserId}
                   canModerate={canModerate}
+                  canReport={canReport}
                   memberUsernames={memberUsernames}
                   authorColor={authorColors?.get(message.author.id)}
                   onReply={onReply}

@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
   BanIcon,
+  FlagIcon,
   ScrollTextIcon,
   ShieldIcon,
   TicketIcon,
@@ -21,10 +22,11 @@ import { BansSection } from "@/components/guild-settings/bans-section";
 import { DangerSection } from "@/components/guild-settings/danger-section";
 import { InvitesSection } from "@/components/guild-settings/invites-section";
 import { MembersSection } from "@/components/guild-settings/members-section";
+import { ReportsSection } from "@/components/guild-settings/reports-section";
 import { RolesSection } from "@/components/guild-settings/roles-section";
 import { orpc } from "@/utils/orpc";
 
-type SectionId = "members" | "roles" | "bans" | "invites" | "audit" | "danger";
+type SectionId = "members" | "roles" | "bans" | "invites" | "reports" | "audit" | "danger";
 
 type Viewer = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>["viewer"];
 
@@ -68,6 +70,12 @@ const SECTIONS: {
     visible: (viewer) => hasPermission(viewer.permissions, PERMISSIONS.MANAGE_INVITES),
   },
   {
+    id: "reports",
+    label: "Reports",
+    icon: FlagIcon,
+    visible: (viewer) => hasPermission(viewer.permissions, PERMISSIONS.MANAGE_REPORTS),
+  },
+  {
     id: "audit",
     label: "Audit log",
     icon: ScrollTextIcon,
@@ -105,6 +113,14 @@ export function GuildSettingsDialog({
   const guild = useQuery(orpc.guild.get.queryOptions({ input: { guildId } }));
 
   const sections = visibleSettingsSections(guild.data?.viewer);
+  // The inbox badge on the Reports nav item. Gated like the section itself, so the query
+  // never fires FORBIDDEN for a viewer without MANAGE_REPORTS; `report.changed`
+  // invalidation keeps it live while the dialog is open (a peer's resolve drops it).
+  const unresolvedReports = useQuery({
+    ...orpc.report.unresolvedCount.queryOptions({ input: { guildId } }),
+    enabled: open && sections.some((s) => s.id === "reports"),
+  });
+  const reportBadge = unresolvedReports.data?.count ?? 0;
   // A remote role edit or ownership transfer can strip every gate under an open modal —
   // close rather than strand the viewer on sections whose queries would now be FORBIDDEN.
   const lostAccess = open && guild.data !== undefined && sections.length === 0;
@@ -135,6 +151,11 @@ export function GuildSettingsDialog({
     >
       <s.icon className="size-4 shrink-0 opacity-70" />
       {s.label}
+      {s.id === "reports" && reportBadge > 0 && (
+        <span className="ml-auto rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white">
+          {reportBadge}
+        </span>
+      )}
     </button>
   );
 
@@ -168,6 +189,7 @@ export function GuildSettingsDialog({
           {section === "roles" && <RolesSection guildId={guildId} />}
           {section === "bans" && <BansSection guildId={guildId} />}
           {section === "invites" && <InvitesSection guildId={guildId} />}
+          {section === "reports" && <ReportsSection guildId={guildId} />}
           {section === "audit" && <AuditLogSection guildId={guildId} />}
           {section === "danger" && (
             <DangerSection guildId={guildId} onClose={() => onOpenChange(false)} />
