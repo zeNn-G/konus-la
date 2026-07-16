@@ -18,6 +18,7 @@ import {
   listGuildRoles,
   listInvites,
   listUserGuilds,
+  recordAuditEntry,
   renameGuild,
   transferOwnership,
   unbanMember,
@@ -132,9 +133,18 @@ export const guildRouter = {
   update: protectedProcedure
     .input(z.object({ guildId: z.string(), name: z.string().trim().min(1).max(100) }))
     .use(requireGuildPermission(PERMISSIONS.MANAGE_GUILD))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const updated = await renameGuild(input.guildId, input.name);
       if (!updated) throw new ORPCError("NOT_FOUND", { message: "Guild not found." });
+      // A rename to the current name changed nothing — no entry (a no-op isn't an action).
+      if (updated.previousName !== updated.name) {
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "guild.update",
+          metadata: { name: [updated.previousName, updated.name] },
+        });
+      }
       await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
         type: "guild.updated",
         guildId: input.guildId,
@@ -159,6 +169,12 @@ export const guildRouter = {
           message: "The new owner must already be a member of the guild.",
         });
       }
+      await recordAuditEntry({
+        guildId: input.guildId,
+        actorId: context.user.id,
+        action: "guild.transferOwnership",
+        targetUserId: input.newOwnerUserId,
+      });
       // Every member re-reads guild.get: the new owner gains the settings entry, the old
       // owner's open settings modal closes, and the roster crown moves.
       await publishTo(new Set(await listGuildMemberUserIds(input.guildId)), {
@@ -208,6 +224,16 @@ export const guildRouter = {
           createdByUserId: context.user.id,
           expiresAt,
         });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "invite.create",
+          metadata: {
+            inviteId: invite.id,
+            code: invite.code,
+            expiresAt: invite.expiresAt ? invite.expiresAt.toISOString() : null,
+          },
+        });
         return { id: invite.id, code: invite.code, expiresAt: invite.expiresAt };
       }),
 
@@ -244,9 +270,15 @@ export const guildRouter = {
     revoke: protectedProcedure
       .input(z.object({ guildId: z.string(), inviteId: z.string() }))
       .use(requireGuildPermission(PERMISSIONS.MANAGE_INVITES))
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
         const removed = await deleteInvite(input.inviteId, input.guildId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "Invite not found." });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "invite.revoke",
+          metadata: { inviteId: removed.id, code: removed.code },
+        });
         return { ok: true } as const;
       }),
   },
@@ -264,6 +296,12 @@ export const guildRouter = {
         await assertActorOutranks(input.guildId, context.user.id, input.userId);
         const removed = await kickMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "member.kick",
+          targetUserId: input.userId,
+        });
         // Row first, then the seat — the peerLeft fan-out reads the roster at publish time
         // and must reach the remaining members, not the kicked one.
         await evictMemberFromGuildVoice(input.userId, input.guildId);
@@ -289,6 +327,13 @@ export const guildRouter = {
           reason: input.reason ?? null,
           bannedByUserId: context.user.id,
         });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "member.ban",
+          targetUserId: input.userId,
+          metadata: { reason: input.reason ?? null },
+        });
         // Row first, then the seat (see kick) — this also catches a target sitting out the
         // offline grace window: the seat exists with no peer, and must still go.
         await evictMemberFromGuildVoice(input.userId, input.guildId);
@@ -300,9 +345,15 @@ export const guildRouter = {
     unban: protectedProcedure
       .input(z.object({ guildId: z.string(), userId: z.string() }))
       .use(requireGuildPermission(PERMISSIONS.BAN_MEMBERS))
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
         const removed = await unbanMember(input.guildId, input.userId);
         if (!removed) throw new ORPCError("NOT_FOUND", { message: "That user isn't banned." });
+        await recordAuditEntry({
+          guildId: input.guildId,
+          actorId: context.user.id,
+          action: "member.unban",
+          targetUserId: input.userId,
+        });
         return { ok: true } as const;
       }),
 

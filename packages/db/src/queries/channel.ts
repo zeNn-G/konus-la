@@ -28,14 +28,26 @@ export async function createChannel(input: {
   return created;
 }
 
-/** Rename a channel, scoped to its guild. Returns the updated row, or undefined if not found. */
+/**
+ * Rename a channel, scoped to its guild. Returns the updated row plus the pre-rename name
+ * (the audit entry's `[old, new]` pair), or undefined if not found.
+ */
 export async function renameChannel(input: { channelId: string; guildId: string; name: string }) {
-  const [updated] = await db
-    .update(channel)
-    .set({ name: input.name })
-    .where(and(eq(channel.id, input.channelId), eq(channel.guildId, input.guildId)))
-    .returning();
-  return updated;
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ name: channel.name })
+      .from(channel)
+      .where(and(eq(channel.id, input.channelId), eq(channel.guildId, input.guildId)))
+      .limit(1);
+    if (!existing) return undefined;
+    const [updated] = await tx
+      .update(channel)
+      .set({ name: input.name })
+      .where(and(eq(channel.id, input.channelId), eq(channel.guildId, input.guildId)))
+      .returning();
+    if (!updated) return undefined;
+    return { ...updated, previousName: existing.name };
+  });
 }
 
 /**

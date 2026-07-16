@@ -6,9 +6,17 @@ import { Skeleton } from "@konus-la/ui/components/skeleton";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { BanIcon, ShieldIcon, TicketIcon, TriangleAlertIcon, UsersIcon } from "lucide-react";
+import {
+  BanIcon,
+  ScrollTextIcon,
+  ShieldIcon,
+  TicketIcon,
+  TriangleAlertIcon,
+  UsersIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AuditLogSection } from "@/components/guild-settings/audit-log-section";
 import { BansSection } from "@/components/guild-settings/bans-section";
 import { DangerSection } from "@/components/guild-settings/danger-section";
 import { InvitesSection } from "@/components/guild-settings/invites-section";
@@ -16,7 +24,7 @@ import { MembersSection } from "@/components/guild-settings/members-section";
 import { RolesSection } from "@/components/guild-settings/roles-section";
 import { orpc } from "@/utils/orpc";
 
-type SectionId = "members" | "roles" | "bans" | "invites" | "danger";
+type SectionId = "members" | "roles" | "bans" | "invites" | "audit" | "danger";
 
 type Viewer = Awaited<ReturnType<AppRouterClient["guild"]["get"]>>["viewer"];
 
@@ -58,6 +66,12 @@ const SECTIONS: {
     label: "Invites",
     icon: TicketIcon,
     visible: (viewer) => hasPermission(viewer.permissions, PERMISSIONS.MANAGE_INVITES),
+  },
+  {
+    id: "audit",
+    label: "Audit log",
+    icon: ScrollTextIcon,
+    visible: (viewer) => hasPermission(viewer.permissions, PERMISSIONS.VIEW_AUDIT_LOG),
   },
   {
     id: "danger",
@@ -154,6 +168,7 @@ export function GuildSettingsDialog({
           {section === "roles" && <RolesSection guildId={guildId} />}
           {section === "bans" && <BansSection guildId={guildId} />}
           {section === "invites" && <InvitesSection guildId={guildId} />}
+          {section === "audit" && <AuditLogSection guildId={guildId} />}
           {section === "danger" && (
             <DangerSection guildId={guildId} onClose={() => onOpenChange(false)} />
           )}

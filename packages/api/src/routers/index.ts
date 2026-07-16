@@ -1,6 +1,7 @@
 import type { RouterClient } from "@orpc/server";
 
 import { publicProcedure } from "../index";
+import { auditLogRouter } from "./audit-log";
 import { channelRouter } from "./channel";
 import { chatRouter, typingRouter } from "./chat";
 import { dmRouter } from "./dm";
@@ -21,6 +22,7 @@ export const appRouter = {
   user: userRouter,
   guild: guildRouter,
   role: roleRouter,
+  auditLog: auditLogRouter,
   channel: channelRouter,
   chat: chatRouter,
   typing: typingRouter,
