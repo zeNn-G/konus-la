@@ -239,6 +239,15 @@ Guards live on the **layouts**, not individual pages — so a page like `profile
   `router.invalidate()` to re-run the layout guard and refresh context.
 - Sign in / up / out use Better Auth's `onSuccess` / `onError` callbacks to navigate + toast — no manual
   cache work. The signup code is sent as the `x-signup-code` request header.
+- `lib/session-watchdog.ts` — the **zombie-tab fix** (phase-6 spec §Instance-ban sign-in & session-death
+  UX): the /ws upgrade requires a live session, so a dead one turns reconnects into a forever-retry.
+  Attached to the shared socket in `lib/ws.ts`, the watchdog re-checks the session on every socket
+  drop (`close` AND `error` — partysocket's connect-timeout path fires no close) and hard-navigates to
+  `/login` ONLY on a definitive "gone" (`getSession` → null data, null error) — a failed check (network
+  down, server restarting) counts as transient, so connection loss with a valid session never logs
+  anyone out. Drops during an in-flight check collapse into it, and navigating latches the watchdog.
+  Every tab has its own socket + watchdog, so all of a dead session's tabs recover, and there is
+  deliberately NO cause banner on arrival — the sign-in attempt is where the explanation lives.
 
 ## Forms
 
