@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import {
   DeviceManager,
@@ -6,6 +6,7 @@ import {
   type DeviceNotice,
   type EnumeratedDevice,
   effectiveMicDeviceId,
+  parseOutputVolume,
   useDeviceStore,
 } from "./devices";
 
@@ -72,6 +73,7 @@ beforeEach(() => {
     sinkId: "",
     outputSupported: false,
     pickerOpen: false,
+    outputVolume: 1,
   });
   fake = new FakeDeps();
   manager = new DeviceManager(fake.deps());
@@ -233,6 +235,47 @@ describe("preference setters", () => {
 
     manager.setSpeakerPreference("out-gone");
     expect(useDeviceStore.getState().sinkId).toBe("");
+  });
+});
+
+describe("master output volume (#78)", () => {
+  /** Node has no localStorage — a Map-backed stand-in observes the persistence writes. */
+  const stored = new Map<string, string>();
+
+  beforeEach(() => {
+    stored.clear();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
+    };
+  });
+
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  test("setOutputVolume updates the store and persists under voice:output-volume", () => {
+    useDeviceStore.getState().setOutputVolume(0.4);
+
+    expect(useDeviceStore.getState().outputVolume).toBe(0.4);
+    expect(stored.get("voice:output-volume")).toBe("0.4");
+  });
+
+  test("out-of-range values clamp to 0..1", () => {
+    useDeviceStore.getState().setOutputVolume(1.7);
+    expect(useDeviceStore.getState().outputVolume).toBe(1);
+
+    useDeviceStore.getState().setOutputVolume(-0.3);
+    expect(useDeviceStore.getState().outputVolume).toBe(0);
+  });
+
+  test("hydration parsing: absent or garbage → default 1, valid values clamped", () => {
+    expect(parseOutputVolume(null)).toBe(1);
+    expect(parseOutputVolume("not-a-number")).toBe(1);
+    expect(parseOutputVolume("0.55")).toBe(0.55);
+    expect(parseOutputVolume("3")).toBe(1);
+    expect(parseOutputVolume("-1")).toBe(0);
   });
 });
 

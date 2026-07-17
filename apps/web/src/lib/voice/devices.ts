@@ -23,6 +23,7 @@ export type DeviceNotice =
 
 const MIC_STORAGE_KEY = "voice:mic-device";
 const SPEAKER_STORAGE_KEY = "voice:speaker-device";
+const OUTPUT_VOLUME_STORAGE_KEY = "voice:output-volume";
 
 function loadPreference(key: string): string | null {
   try {
@@ -41,6 +42,13 @@ function persistPreference(key: string, deviceId: string | null): void {
   }
 }
 
+/** Persisted master volume (0–1, default 1); absent or garbage falls back to 1 (#78). */
+export function parseOutputVolume(raw: string | null): number {
+  const parsed = raw === null ? Number.NaN : Number(raw);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(1, Math.max(0, parsed));
+}
+
 export interface DeviceStoreState {
   /** Persisted selections; null = system default. Never overwritten by a fallback. */
   micId: string | null;
@@ -55,6 +63,13 @@ export interface DeviceStoreState {
   /** The deck DevicePicker's open state — the fallback toast's Change action opens it. */
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
+  /**
+   * Master output volume 0..1 governing ALL app audio (#78): the voice bridge multiplies
+   * it into every element volume, the effects engine drives its master gain from it.
+   * Persisted like the device selections — no cross-tab sync, drift is harmless.
+   */
+  outputVolume: number;
+  setOutputVolume: (volume: number) => void;
 }
 
 export const useDeviceStore = create<DeviceStoreState>()((set) => ({
@@ -66,6 +81,12 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   outputSupported: false,
   pickerOpen: false,
   setPickerOpen: (open) => set({ pickerOpen: open }),
+  outputVolume: parseOutputVolume(loadPreference(OUTPUT_VOLUME_STORAGE_KEY)),
+  setOutputVolume: (volume) => {
+    const clamped = Math.min(1, Math.max(0, volume));
+    persistPreference(OUTPUT_VOLUME_STORAGE_KEY, String(clamped));
+    set({ outputVolume: clamped });
+  },
 }));
 
 /**

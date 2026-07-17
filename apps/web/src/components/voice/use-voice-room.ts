@@ -3,11 +3,13 @@ import { getRouteApi } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { playSoundCue } from "@/lib/sound-effects";
 import { useVoiceOccupancy } from "@/lib/voice/occupancy";
 import { voiceSession } from "@/lib/voice/session";
 import { useVoiceStore, type ScreensharePreset } from "@/lib/voice/store";
 import {
   deriveRoomTiles,
+  muteDeafCue,
   nextFocus,
   toggleDeafenIntent,
   toggleMuteIntent,
@@ -211,6 +213,10 @@ export function useVoiceControls(): VoiceControls {
   const [sharePending, setSharePending] = useState(false);
 
   const apply = (next: MuteDeafState) => {
+    // One click, one cue (#79): the intent transition decides which sound plays even
+    // when it moves both flags (deafen forces mute) — the session setters stay silent.
+    const cue = muteDeafCue({ selfMute, selfDeaf }, next);
+    if (cue) playSoundCue(cue);
     if (next.selfMute !== selfMute) void voiceSession.setSelfMute(next.selfMute);
     if (next.selfDeaf !== selfDeaf) void voiceSession.setSelfDeaf(next.selfDeaf);
   };

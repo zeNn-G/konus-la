@@ -6,6 +6,7 @@ import {
   deriveMiniStage,
   deriveRoomTiles,
   deriveStageLayout,
+  muteDeafCue,
   nextFocus,
   toggleDeafenIntent,
   toggleMuteIntent,
@@ -422,5 +423,22 @@ describe("mute/deafen intents (prototype semantics)", () => {
       selfMute: true,
       selfDeaf: false,
     });
+  });
+});
+
+describe("muteDeafCue (#79) - one cue per click", () => {
+  test("plain mute toggles map to the mute pair", () => {
+    expect(muteDeafCue({ selfMute: false, selfDeaf: false }, { selfMute: true, selfDeaf: false })).toBe("mute-on");
+    expect(muteDeafCue({ selfMute: true, selfDeaf: false }, { selfMute: false, selfDeaf: false })).toBe("mute-off");
+  });
+
+  test("a deafen transition outranks the mute it forces or releases", () => {
+    expect(muteDeafCue({ selfMute: false, selfDeaf: false }, { selfMute: true, selfDeaf: true })).toBe("deafen-on");
+    expect(muteDeafCue({ selfMute: true, selfDeaf: true }, { selfMute: true, selfDeaf: false })).toBe("deafen-off");
+    expect(muteDeafCue({ selfMute: true, selfDeaf: true }, { selfMute: false, selfDeaf: false })).toBe("deafen-off");
+  });
+
+  test("no transition, no cue", () => {
+    expect(muteDeafCue({ selfMute: true, selfDeaf: false }, { selfMute: true, selfDeaf: false })).toBeNull();
   });
 });

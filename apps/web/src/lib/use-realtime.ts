@@ -6,12 +6,14 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { invalidateDmConversation } from "@/lib/dm";
+import { peerSoundCue, playSoundCue } from "@/lib/sound-effects";
 import {
   reduceVoiceOccupancy,
   VOICE_OCCUPANCY_KEY,
   type VoiceOccupancyMap,
 } from "@/lib/voice/occupancy";
 import { voiceSession } from "@/lib/voice/session";
+import { useVoiceStore } from "@/lib/voice/store";
 import { getWs } from "@/lib/ws";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -346,9 +348,18 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData(guildEvictedKey(event.guildId), true);
       break;
     }
-    case "voice.snapshot":
     case "voice.peerJoined":
-    case "voice.peerLeft":
+    case "voice.peerLeft": {
+      // Cue when someone enters/exits the room THIS user sits in (#79); the guild-wide
+      // occupancy reduction is the same as the other tier-1 events below.
+      const cue = peerSoundCue(event, selfUserId, useVoiceStore.getState().channelId);
+      if (cue) playSoundCue(cue);
+      client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
+        reduceVoiceOccupancy(old, event),
+      );
+      break;
+    }
+    case "voice.snapshot":
     case "voice.peerMutedSelf":
     case "voice.peerDeafenedSelf":
     case "voice.activeSpeakers": {
