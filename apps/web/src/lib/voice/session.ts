@@ -118,9 +118,8 @@ export interface VoiceSessionDeps {
   isDocumentVisible: () => boolean;
   onVisibilityChange: (listener: () => void) => () => void;
   /**
-   * Voice UX cues (#79): the session owns exactly the self join/leave pair — every seated
-   * exit funnels through it, wherever it started. Mute/deafen cues live at the intent
-   * level (`muteDeafCue`) because one click can move both flags.
+   * Voice UX cues (#79): the session owns the self join/leave pair — every seated exit
+   * funnels through it. Mute/deafen cues live at the intent level (`muteDeafCue`).
    */
   playCue: (cue: VoiceUxSoundCue) => void;
 }

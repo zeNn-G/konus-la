@@ -213,8 +213,6 @@ export function useVoiceControls(): VoiceControls {
   const [sharePending, setSharePending] = useState(false);
 
   const apply = (next: MuteDeafState) => {
-    // One click, one cue (#79): the intent transition decides which sound plays even
-    // when it moves both flags (deafen forces mute) — the session setters stay silent.
     const cue = muteDeafCue({ selfMute, selfDeaf }, next);
     if (cue) playSoundCue(cue);
     if (next.selfMute !== selfMute) void voiceSession.setSelfMute(next.selfMute);

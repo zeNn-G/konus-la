@@ -348,21 +348,17 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData(guildEvictedKey(event.guildId), true);
       break;
     }
-    case "voice.peerJoined":
-    case "voice.peerLeft": {
-      // Cue when someone enters/exits the room THIS user sits in (#79); the guild-wide
-      // occupancy reduction is the same as the other tier-1 events below.
-      const cue = peerSoundCue(event, selfUserId, useVoiceStore.getState().channelId);
-      if (cue) playSoundCue(cue);
-      client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
-        reduceVoiceOccupancy(old, event),
-      );
-      break;
-    }
     case "voice.snapshot":
+    case "voice.peerJoined":
+    case "voice.peerLeft":
     case "voice.peerMutedSelf":
     case "voice.peerDeafenedSelf":
     case "voice.activeSpeakers": {
+      // Cue when someone enters/exits the room THIS user sits in (#79).
+      if (event.type === "voice.peerJoined" || event.type === "voice.peerLeft") {
+        const cue = peerSoundCue(event, selfUserId, useVoiceStore.getState());
+        if (cue) playSoundCue(cue);
+      }
       // Tier 1: guild-wide occupancy — pure reducer over one client-only key.
       client.setQueryData<VoiceOccupancyMap>(VOICE_OCCUPANCY_KEY, (old) =>
         reduceVoiceOccupancy(old, event),

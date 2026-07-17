@@ -171,6 +171,18 @@ describe("activation (autoplay policy)", () => {
     expect(source.connected).toBe(fake.context.gains[0]);
   });
 
+  test("resume success + element play failure keeps activation re-armed", async () => {
+    await started();
+    fake.element.playError = new DOMException("blocked", "NotAllowedError") as unknown as Error;
+
+    await engine.activate();
+    expect(engine.isActive()).toBe(false);
+
+    fake.element.playError = null;
+    await engine.activate();
+    expect(engine.isActive()).toBe(true);
+  });
+
   test("NotAllowedError from resume or element play is swallowed", async () => {
     await started();
     fake.context.resumeError = new DOMException("blocked", "NotAllowedError") as unknown as Error;
@@ -231,16 +243,27 @@ describe("master volume and sink routing", () => {
 describe("peerSoundCue — peer join/leave of the CURRENT room only", () => {
   const joined = { type: "voice.peerJoined", channelId: "vc-1", userId: "peer-1" } as const;
   const left = { type: "voice.peerLeft", channelId: "vc-1", userId: "peer-1" } as const;
+  const seated = { status: "connected", channelId: "vc-1" } as const;
 
   test("a peer joining or leaving the seated room maps to its cue", () => {
-    expect(peerSoundCue(joined, "self", "vc-1")).toBe("peer-join");
-    expect(peerSoundCue(left, "self", "vc-1")).toBe("peer-leave");
+    expect(peerSoundCue(joined, "self", seated)).toBe("peer-join");
+    expect(peerSoundCue(left, "self", seated)).toBe("peer-leave");
+  });
+
+  test("reconnecting still counts as seated (the seat survives in grace)", () => {
+    expect(peerSoundCue(joined, "self", { status: "reconnecting", channelId: "vc-1" })).toBe(
+      "peer-join",
+    );
   });
 
   test("another room, not seated, or the own echo → no cue", () => {
-    expect(peerSoundCue(joined, "self", "vc-2")).toBeNull();
-    expect(peerSoundCue(joined, "self", null)).toBeNull();
-    expect(peerSoundCue({ ...joined, userId: "self" }, "self", "vc-1")).toBeNull();
+    expect(peerSoundCue(joined, "self", { status: "connected", channelId: "vc-2" })).toBeNull();
+    expect(peerSoundCue(joined, "self", { status: "idle", channelId: null })).toBeNull();
+    expect(peerSoundCue({ ...joined, userId: "self" }, "self", seated)).toBeNull();
+  });
+
+  test("mid-ceremony (joining) is not seated yet — no cue for a room never entered", () => {
+    expect(peerSoundCue(joined, "self", { status: "joining", channelId: "vc-1" })).toBeNull();
   });
 });
 

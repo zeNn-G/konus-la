@@ -18,9 +18,8 @@ export function VoiceAudioBridge() {
   const volumes = useVoiceStore((state) => state.volumes);
   // Effective output device (#25): "" = system default; unsupported browsers stay "".
   const sinkId = useDeviceStore((state) => state.sinkId);
-  // Master output volume (#78): multiplied into every element here — the per-peer store
-  // values stay raw, and voice stays element-volume only (no Web Audio graph, which would
-  // regress Firefox output selection).
+  // Master output volume (#78): multiplied into every element here, so the per-peer
+  // store values stay raw.
   const outputVolume = useDeviceStore((state) => state.outputVolume);
 
   return (

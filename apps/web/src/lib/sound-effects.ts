@@ -13,7 +13,7 @@
  */
 
 // Imported from source so Vite emits hashed URLs; ?no-inline pins the sub-4KB blips to
-// real files too (the fetch+decode preload wants URLs, and the acceptance asks for them).
+// real files too — the fetch+decode preload wants URLs, not data: URIs.
 import deafenOffUrl from "@/assets/sounds/deafen-off.mp3?no-inline";
 import deafenOnUrl from "@/assets/sounds/deafen-on.mp3?no-inline";
 import muteOffUrl from "@/assets/sounds/mute-off.mp3?no-inline";
@@ -45,9 +45,15 @@ export type SoundCue =
 export function peerSoundCue(
   event: { type: "voice.peerJoined" | "voice.peerLeft"; channelId: string; userId: string },
   selfUserId: string,
-  seatedChannelId: string | null,
+  voice: {
+    status: "idle" | "joining" | "connected" | "reconnecting";
+    channelId: string | null;
+  },
 ): SoundCue | null {
-  if (seatedChannelId === null || event.channelId !== seatedChannelId) return null;
+  // Mid-ceremony ("joining") is not seated yet — a room the join may never enter must
+  // stay silent; a reconnecting seat survives in grace and still counts.
+  if (voice.status !== "connected" && voice.status !== "reconnecting") return null;
+  if (voice.channelId === null || event.channelId !== voice.channelId) return null;
   if (event.userId === selfUserId) return null;
   return event.type === "voice.peerJoined" ? "peer-join" : "peer-leave";
 }
@@ -87,13 +93,14 @@ export interface SoundEngineDeps {
   fetchBuffer(url: string): Promise<ArrayBuffer>;
   cueUrls: Record<SoundCue, string>;
   /** The `konusLa.sound-prefs` overrides-only map — absent cue = enabled. */
-  loadSoundPrefs(): Record<string, boolean>;
+  loadSoundPrefs(): Partial<Record<SoundCue, boolean>>;
 }
 
 export class SoundEngine {
   private context: AudioContextLike | null = null;
   private masterGain: GainNodeLike | null = null;
   private element: SinkElementLike | null = null;
+  private elementStarted = false;
   private buffers = new Map<SoundCue, unknown>();
 
   constructor(private deps: SoundEngineDeps) {}
@@ -128,6 +135,7 @@ export class SoundEngine {
     }
     try {
       await this.element.play();
+      this.elementStarted = true;
     } catch {
       // Same policy as the context resume.
     }
@@ -136,7 +144,7 @@ export class SoundEngine {
   play(cue: SoundCue): void {
     if (!this.context || !this.masterGain) return;
     if (this.context.state !== "running") return;
-    // Consulted fresh per play, so the toggles UI (#77) needs no engine wiring at all.
+    // Consulted fresh on every play — the #77 toggles only ever write the map.
     if (this.deps.loadSoundPrefs()[cue] === false) return;
     const buffer = this.buffers.get(cue);
     if (buffer === undefined) return;
@@ -157,9 +165,12 @@ export class SoundEngine {
     void this.element?.setSinkId?.(sinkId).catch(() => {});
   }
 
-  /** True once a gesture has successfully resumed the context — plays are audible now. */
+  /**
+   * True once a gesture resumed the context AND started the hidden element — only then
+   * are plays audible, so activation stays armed until both halves have landed.
+   */
   isActive(): boolean {
-    return this.context?.state === "running";
+    return this.context?.state === "running" && this.elementStarted;
   }
 }
 
@@ -179,10 +190,10 @@ const CUE_URLS: Record<SoundCue, string> = {
   "peer-leave": peerLeaveUrl,
 };
 
-function loadSoundPrefs(): Record<string, boolean> {
+function loadSoundPrefs(): Partial<Record<SoundCue, boolean>> {
   try {
     const raw = localStorage.getItem(SOUND_PREFS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return raw ? (JSON.parse(raw) as Partial<Record<SoundCue, boolean>>) : {};
   } catch {
     return {};
   }

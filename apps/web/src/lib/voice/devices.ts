@@ -42,11 +42,14 @@ function persistPreference(key: string, deviceId: string | null): void {
   }
 }
 
+function clamp01(volume: number): number {
+  return Math.min(1, Math.max(0, volume));
+}
+
 /** Persisted master volume (0–1, default 1); absent or garbage falls back to 1 (#78). */
 export function parseOutputVolume(raw: string | null): number {
   const parsed = raw === null ? Number.NaN : Number(raw);
-  if (!Number.isFinite(parsed)) return 1;
-  return Math.min(1, Math.max(0, parsed));
+  return Number.isFinite(parsed) ? clamp01(parsed) : 1;
 }
 
 export interface DeviceStoreState {
@@ -83,7 +86,7 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   setPickerOpen: (open) => set({ pickerOpen: open }),
   outputVolume: parseOutputVolume(loadPreference(OUTPUT_VOLUME_STORAGE_KEY)),
   setOutputVolume: (volume) => {
-    const clamped = Math.min(1, Math.max(0, volume));
+    const clamped = clamp01(volume);
     persistPreference(OUTPUT_VOLUME_STORAGE_KEY, String(clamped));
     set({ outputVolume: clamped });
   },
