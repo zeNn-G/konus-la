@@ -4,6 +4,8 @@ import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { useEffect, type CSSProperties } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+// PROTOTYPE — THROWAWAY (wayfinder ticket #77).
+import { UserSettingsPrototype } from "@/components/user-settings-prototype/user-settings-prototype";
 import { VoiceAudioBridge } from "@/components/voice-audio-bridge";
 import { requireSession } from "@/lib/auth-guard";
 import { useSidebarZone } from "@/lib/sidebar-zone";
@@ -33,6 +35,7 @@ function AppLayout() {
 
   return (
     <TooltipProvider>
+      <UserSettingsPrototype />
       <VoiceAudioBridge />
       <SidebarProvider
         // Desktop panel is pinned open; the trigger/sheet only exist on mobile.

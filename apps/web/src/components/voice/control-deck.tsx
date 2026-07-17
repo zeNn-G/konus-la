@@ -13,6 +13,11 @@ import {
 import { useDeviceStore } from "@/lib/voice/devices";
 import { useVoiceStore } from "@/lib/voice/store";
 
+// PROTOTYPE — THROWAWAY (wayfinder ticket #77): in variant A the gear opens the
+// user-settings dialog at Voice (devices move there); B/C keep the popover.
+import { usePrototypeStore } from "@/components/user-settings-prototype/store";
+import { useSettingsVariant } from "@/components/user-settings-prototype/use-variant";
+
 import { ControlToggleButton, DECK_SIZE, MicButton, ShareButton } from "./control-buttons";
 import { DevicePicker } from "./device-picker";
 import { useVoiceChannelName, useVoiceControls } from "./use-voice-room";
@@ -31,6 +36,9 @@ export function ControlDeck() {
   const channelName = useVoiceChannelName(guildId, channelId);
   const pickerOpen = useDeviceStore((s) => s.pickerOpen);
   const setPickerOpen = useDeviceStore((s) => s.setPickerOpen);
+  // PROTOTYPE (ticket #77)
+  const settingsVariant = useSettingsVariant();
+  const openSettings = usePrototypeStore((s) => s.openAt);
 
   if (status === "idle") return null;
 
@@ -49,24 +57,38 @@ export function ControlDeck() {
           {statusLine}
           {channelName && ` · ${channelName}`}
         </span>
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Voice settings"
-                title="Voice settings"
-                className="text-muted-foreground"
-              />
-            }
+        {settingsVariant === "a" ? (
+          // PROTOTYPE variant A: devices moved into the user-settings dialog.
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Voice settings"
+            title="Voice settings"
+            className="text-muted-foreground"
+            onClick={() => openSettings("voice")}
           >
             <Settings2Icon className="size-3.5" />
-          </PopoverTrigger>
-          <PopoverContent side="top" align="end" sideOffset={8}>
-            <DevicePicker />
-          </PopoverContent>
-        </Popover>
+          </Button>
+        ) : (
+          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Voice settings"
+                  title="Voice settings"
+                  className="text-muted-foreground"
+                />
+              }
+            >
+              <Settings2Icon className="size-3.5" />
+            </PopoverTrigger>
+            <PopoverContent side="top" align="end" sideOffset={8}>
+              <DevicePicker />
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       <div className="flex items-center gap-0.5 px-1">

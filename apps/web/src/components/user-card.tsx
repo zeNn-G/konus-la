@@ -6,6 +6,10 @@ import { GavelIcon, KeyRoundIcon, LogOutIcon } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { voiceSession } from "@/lib/voice/session";
 
+// PROTOTYPE — THROWAWAY (wayfinder ticket #77): variant-gated trigger swap below.
+import { usePrototypeStore } from "@/components/user-settings-prototype/store";
+import { useSettingsVariant } from "@/components/user-settings-prototype/use-variant";
+
 // Read the session the (app) layout already resolved into route context.
 const appRoute = getRouteApi("/(app)");
 
@@ -14,20 +18,41 @@ export function UserCard() {
   const { session } = appRoute.useRouteContext();
   const username = session.user.username ?? session.user.email;
 
+  // PROTOTYPE — with a variant active the chip opens the settings dialog instead of
+  // linking to /profile; A moves admin links + sign-out into the dialog, C moves only
+  // the admin links, B keeps the footer row as-is.
+  const variant = useSettingsVariant();
+  const openSettings = usePrototypeStore((s) => s.openAt);
+  const chipContent = (
+    <>
+      <Avatar seed={username} src={session.user.image} className="size-7 shrink-0" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-xs font-medium">{session.user.name}</span>
+        <span className="truncate text-xs text-muted-foreground">@{username}</span>
+      </span>
+    </>
+  );
+  const chipClass = "flex min-w-0 flex-1 items-center gap-2 p-1 hover:bg-sidebar-accent";
+  const showAdminIcons = session.user.role === "admin" && variant !== "a" && variant !== "c";
+  const showSignOut = variant !== "a";
+
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <Link
-        to="/profile"
-        className="flex min-w-0 flex-1 items-center gap-2 p-1 hover:bg-sidebar-accent"
-      >
-        <Avatar seed={username} src={session.user.image} className="size-7 shrink-0" />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-xs font-medium">{session.user.name}</span>
-          <span className="truncate text-xs text-muted-foreground">@{username}</span>
-        </span>
-      </Link>
+      {variant === null ? (
+        <Link to="/profile" className={chipClass}>
+          {chipContent}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={() => openSettings("profile")}
+          className={`${chipClass} text-left`}
+        >
+          {chipContent}
+        </button>
+      )}
 
-      {session.user.role === "admin" && (
+      {showAdminIcons && (
         <>
           <Button
             size="icon-sm"
@@ -50,6 +75,7 @@ export function UserCard() {
         </>
       )}
 
+      {showSignOut && (
       <Button
         size="icon-sm"
         variant="ghost"
@@ -69,6 +95,7 @@ export function UserCard() {
       >
         <LogOutIcon className="size-4" />
       </Button>
+      )}
     </div>
   );
 }
