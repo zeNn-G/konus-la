@@ -102,8 +102,8 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 ### Clients & notifications
 
 - **v1 client:** web SPA only. PWA install (manifest + service worker shell) is the immediate next step after v1 — no code rewrite. Tauri / Electron later if desired.
-- **Notifications:** in-app (toast + sound + tab-title flicker) + browser Notifications API for backgrounded tabs. **No Web Push / service-worker push in v1.**
-- Per-channel mute preference (All / Mentions only / Muted) stored in localStorage. Defaults: Mentions-only for guild channels, All for DMs.
+- **Notifications** (amended in Phase 7 — see the [phase-7 spec](docs/specs/phase-7-notifications.md)): browser Notifications API + sound when the tab is away, sound only when focused on another channel, silent when viewing; static `(n)` tab-title counter (no flicker). Guild messages ping strictly on @mentions; any DM message pings. **No Web Push / service-worker push in v1.**
+- Per-channel mute preference (guild: All / Mentions-only / Muted; DM: All / Muted) stored in localStorage. Defaults: Mentions-only for guild channels, All for DMs.
 
 ### Frontend state
 
@@ -219,9 +219,13 @@ See the [phase-6 spec](docs/specs/phase-6-roles-and-moderation.md) and [ADR 0008
 
 ### Phase 7 — Notifications & in-app polish
 
-- Browser Notifications API integration; sound + tab-title flicker.
-- Per-channel mute pref in localStorage; default Mentions-only.
-- Master output volume slider; voice settings page.
+See the [phase-7 spec](docs/specs/phase-7-notifications.md). Client-only — no schema, no new events, no server-side preference storage.
+
+- Notification dispatcher: browser Notifications API + ping sound on eligible messages (any DM message; guild messages strictly on @mention), judged at event arrival — away (`!document.hasFocus()`) = OS toast + sound, focused elsewhere = sound only, viewing = silent. Static `(n) konus-la` tab title derived from the mention/unread query caches. App-level desktop-notifications pref defaults off; permission requested only on a user gesture.
+- Per-channel notification prefs (guild: All / Mentions-only / Muted; DM: All / Muted) as a localStorage overrides map (`konusLa.notification-prefs`), set via sidebar right-click context menu; muted rows dim; cross-tab `storage` sync.
+- **User-settings dialog** (Discord-style, guild-settings shell): Profile / Voice / Notifications sections + admin group (invite codes, instance bans) + sign-out, triggered solely by the UserCard chip — replaces the `/profile` route, the `/admin/*` routes, and the ControlDeck device popover.
+- **Master output volume** (0–1, localStorage) scaling all app audio — voice via `element.volume` multiplier, effects via a master GainNode; **mic input volume** slider + AGC / noise-suppression / echo-cancellation toggles via a persistent Web Audio mic chain feeding the producer.
+- **Sound-effects system:** CC0 (Kenney) MP3 assets, Vite-hashed, preloaded into Web Audio buffers behind one shared AudioContext; notification ping + voice UX sounds (self join/leave, mute/deafen, peer join/leave), individually toggleable.
 
 ### Phase 8 — Deployment
 
@@ -263,7 +267,7 @@ After each phase:
 - **Phase 4:** open DM with anyone on the instance; create a 3-person group DM; same chat behaviors as guild channels.
 - **Phase 5:** three browser tabs join the same voice channel; each can publish mic, toggle cam, share screen; mute / deafen / leave all behave. Test across LAN and across NAT (use TCP fallback by blocking UDP). Verify audio quality with all three audio constraints. Verify channel switch tears down cleanly.
 - **Phase 6:** roles are creatable / colorable / reorderable / assignable and the member list regroups + retints live in a second browser; a member with a single permission bit sees exactly the settings sections it grants; equal-rank moderation attempts are rejected; server-mute locks the target's mic silently and survives rejoin + server restart; reports flow into the gated inbox and survive message deletion; every privileged mutation is visible in the audit log; instance-ban kicks all sessions within seconds and re-login shows the banned message.
-- **Phase 7:** background-tab notifications fire on DM / mention; sounds play; per-channel mute hides them.
+- **Phase 7:** an away tab gets OS toast + sound on DM / mention, a focused tab on another channel gets sound only, viewing gets silence; per-channel mute silences every open tab and dims the row while the unread badge survives; the tab title counts mentions + unread DM convos; the user-settings dialog owns profile, devices, master output + mic input volume, processing and sound toggles, and the admin surfaces — `/profile` and `/admin/*` routes are gone.
 - **Phase 8:** fresh VPS → `docker compose up` → app reachable on HTTPS, voice works for users on different networks.
 
 Cross-cutting checks throughout:
