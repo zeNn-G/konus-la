@@ -26,6 +26,9 @@ B splits — voice sounds under Voice, notification ping toggle under Notificati
 devices baked into Voice (the ControlDeck gear now opens the dialog, popover gone
 in B). Voice lays out Discord-style: input/output device dropdowns side by side with
 an input/output volume slider under each (output volume IS the master volume), voice
-sounds below. `proto-09`/`proto-10` capture the refined take.
+sounds below. Profile: form left, live preview card right. **Admin surfaces baked in
+as dialog sections** (Invite codes, Instance bans — `proto-11`/`proto-12`): this
+redraws the map's "admin stays on their routes" out-of-scope line; the map must be
+amended when this resolves. `proto-09`–`proto-12` capture the refined take.
 
 _(awaiting confirmation on the refined B before the ticket closes)_

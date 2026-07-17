@@ -6,10 +6,10 @@
 import { Dialog, DialogContent, DialogTitle } from "@konus-la/ui/components/dialog";
 import { Separator } from "@konus-la/ui/components/separator";
 import { cn } from "@konus-la/ui/lib/utils";
-import { Link } from "@tanstack/react-router";
 import { BellIcon, GavelIcon, KeyRoundIcon, LogOutIcon, UserIcon, Volume2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { AdminBansSection, AdminCodesSection } from "./admin-sections";
 import {
   DeviceVolumeGrid,
   NotificationDefaultFields,
@@ -24,6 +24,12 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof UserIcon }[] 
   { id: "profile", label: "Profile", icon: UserIcon },
   { id: "voice", label: "Voice", icon: Volume2Icon },
   { id: "notifications", label: "Notifications", icon: BellIcon },
+];
+
+/** Admin surfaces baked in as sections (second reaction) — admin viewers only. */
+const ADMIN_SECTIONS: { id: SettingsSection; label: string; icon: typeof UserIcon }[] = [
+  { id: "codes", label: "Invite codes", icon: KeyRoundIcon },
+  { id: "bans", label: "Instance bans", icon: GavelIcon },
 ];
 
 /** Voice-UX sounds only — the notification ping is toggled in Notifications here. */
@@ -79,20 +85,7 @@ export function VariantBModal({
                 <div className="px-2 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                   Admin
                 </div>
-                <Link
-                  to="/admin/codes"
-                  onClick={close}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
-                >
-                  <KeyRoundIcon className="size-4 shrink-0 opacity-70" /> Invite codes
-                </Link>
-                <Link
-                  to="/admin/bans"
-                  onClick={close}
-                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
-                >
-                  <GavelIcon className="size-4 shrink-0 opacity-70" /> Instance bans
-                </Link>
+                {ADMIN_SECTIONS.map((s) => navButton(s, false))}
               </>
             )}
             <Separator className="my-1" />
@@ -109,11 +102,12 @@ export function VariantBModal({
         {/* pr clears the dialog's X button. */}
         <div className="flex gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 pr-12 sm:hidden">
           {SECTIONS.map((s) => navButton(s, true))}
+          {user.isAdmin && ADMIN_SECTIONS.map((s) => navButton(s, true))}
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
           <h2 className="mb-4 text-sm font-medium">
-            {SECTIONS.find((s) => s.id === section)?.label}
+            {[...SECTIONS, ...ADMIN_SECTIONS].find((s) => s.id === section)?.label}
           </h2>
           {section === "profile" && <ProfileFields {...user} />}
           {section === "voice" && (
@@ -129,6 +123,8 @@ export function VariantBModal({
               <NotificationSoundField />
             </div>
           )}
+          {section === "codes" && user.isAdmin && <AdminCodesSection />}
+          {section === "bans" && user.isAdmin && <AdminBansSection />}
         </div>
       </DialogContent>
     </Dialog>

@@ -4,7 +4,7 @@
 
 import { create } from "zustand";
 
-export type SettingsSection = "profile" | "voice" | "notifications";
+export type SettingsSection = "profile" | "voice" | "notifications" | "codes" | "bans";
 
 export type SoundKey =
   | "notificationPing"
