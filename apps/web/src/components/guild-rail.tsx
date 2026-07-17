@@ -26,7 +26,7 @@ export function GuildRail() {
 
   return (
     // Fixed w-16 (not the sidebar CSS vars): the mobile sheet portals to <body>, where
-    // provider-level vars don't cascade. Must match RAIL_WIDTH in (app)/route.tsx.
+    // provider-level vars don't cascade.
     <Sidebar collapsible="none" className="w-16 shrink-0 border-r border-sidebar-border">
       <SidebarHeader className="items-center gap-3 pt-4">
         <Tooltip>

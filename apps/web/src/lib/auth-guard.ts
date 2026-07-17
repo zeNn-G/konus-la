@@ -26,15 +26,3 @@ export async function requireSession(queryClient: QueryClient) {
   }
   return data;
 }
-
-/**
- * beforeLoad guard: require the Instance Owner (global `admin` role) or bounce home.
- * Reads the same cached session as `requireSession` — one fetch covers both guards.
- */
-export async function requireAdmin(queryClient: QueryClient) {
-  const data = await requireSession(queryClient);
-  if (data.user.role !== "admin") {
-    throw redirect({ to: "/" });
-  }
-  return data;
-}
