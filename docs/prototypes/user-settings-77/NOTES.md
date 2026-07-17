@@ -31,4 +31,6 @@ as dialog sections** (Invite codes, Instance bans — `proto-11`/`proto-12`): th
 redraws the map's "admin stays on their routes" out-of-scope line; the map must be
 amended when this resolves. `proto-09`–`proto-12` capture the refined take.
 
-_(awaiting confirmation on the refined B before the ticket closes)_
+**Confirmed 2026-07-17** — resolution recorded on
+[#77](https://github.com/zeNn-G/konus-la/issues/77) (closed); map #74 amended
+(decision indexed, admin-in-dialog scope redrawn). Spec lands via #80.
