@@ -134,30 +134,34 @@ export function ProfileFields({
   const setDisplayName = usePrototypeStore((s) => s.setDisplayName);
 
   return (
-    <div className="flex max-w-md flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <Avatar seed={username} src={image} className="size-12" />
+    <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-[minmax(0,1fr)_260px]">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="proto-display-name">Display name</Label>
+          <Input
+            id="proto-display-name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="proto-username">Username</Label>
+          <Input id="proto-username" value={username} disabled />
+          <p className="text-xs text-muted-foreground">Usernames are permanent.</p>
+        </div>
         <div>
-          <div className="font-medium">{displayName}</div>
-          <div className="text-muted-foreground">@{username}</div>
+          <Button onClick={() => toast.success("Prototype — nothing was saved.")}>Save</Button>
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="proto-display-name">Display name</Label>
-        <Input
-          id="proto-display-name"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="proto-username">Username</Label>
-        <Input id="proto-username" value={username} disabled />
-        <p className="text-xs text-muted-foreground">Usernames are permanent.</p>
-      </div>
-      <div>
-        <Button onClick={() => toast.success("Prototype — nothing was saved.")}>Save</Button>
-      </div>
+
+      {/* Live preview fills what was dead space — edits to the name reflect instantly. */}
+      <FieldGroup title="Preview">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar p-5">
+          <Avatar seed={username} src={image} className="size-16" />
+          <div className="max-w-full truncate text-sm font-medium">{displayName}</div>
+          <div className="text-xs text-muted-foreground">@{username}</div>
+        </div>
+      </FieldGroup>
     </div>
   );
 }
