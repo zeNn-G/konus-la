@@ -19,8 +19,8 @@ export function UserCard() {
   const username = session.user.username ?? session.user.email;
 
   // PROTOTYPE — with a variant active the chip opens the settings dialog instead of
-  // linking to /profile; A moves admin links + sign-out into the dialog, C moves only
-  // the admin links, B keeps the footer row as-is.
+  // linking to /profile; A and B (post-reaction) move admin links + sign-out into the
+  // dialog, C moves only the admin links.
   const variant = useSettingsVariant();
   const openSettings = usePrototypeStore((s) => s.openAt);
   const chipContent = (
@@ -33,8 +33,8 @@ export function UserCard() {
     </>
   );
   const chipClass = "flex min-w-0 flex-1 items-center gap-2 p-1 hover:bg-sidebar-accent";
-  const showAdminIcons = session.user.role === "admin" && variant !== "a" && variant !== "c";
-  const showSignOut = variant !== "a";
+  const showAdminIcons = session.user.role === "admin" && variant === null;
+  const showSignOut = variant === null || variant === "c";
 
   return (
     <div className="flex min-w-0 items-center gap-1">

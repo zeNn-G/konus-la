@@ -13,8 +13,9 @@ import {
 import { useDeviceStore } from "@/lib/voice/devices";
 import { useVoiceStore } from "@/lib/voice/store";
 
-// PROTOTYPE — THROWAWAY (wayfinder ticket #77): in variant A the gear opens the
-// user-settings dialog at Voice (devices move there); B/C keep the popover.
+// PROTOTYPE — THROWAWAY (wayfinder ticket #77): in variants A and B (post-reaction)
+// the gear opens the user-settings dialog at Voice (devices move there); C keeps
+// the popover.
 import { usePrototypeStore } from "@/components/user-settings-prototype/store";
 import { useSettingsVariant } from "@/components/user-settings-prototype/use-variant";
 
@@ -57,7 +58,7 @@ export function ControlDeck() {
           {statusLine}
           {channelName && ` · ${channelName}`}
         </span>
-        {settingsVariant === "a" ? (
+        {settingsVariant === "a" || settingsVariant === "b" ? (
           // PROTOTYPE variant A: devices moved into the user-settings dialog.
           <Button
             size="icon-xs"

@@ -20,5 +20,10 @@ B splits — voice sounds under Voice, notification ping toggle under Notificati
 
 ## Verdict
 
-_(pending — fill in which variant won, and any cross-variant steals, then fold the
-decision into the spec and delete this branch)_
+**First reaction (2026-07-17): variant B wins, refined** — bigger shell
+(`sm:max-w-5xl`, `min(90vh,760px)`, 220px rail), the UserCard unified into the dialog
+(Admin group + Sign out at the rail bottom; the footer keeps only the chip), and A's
+device pickers baked into Voice (the ControlDeck gear now opens the dialog, popover
+gone in B). `proto-09`/`proto-10` capture the refined take.
+
+_(awaiting confirmation on the refined B before the ticket closes)_

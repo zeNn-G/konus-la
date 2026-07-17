@@ -1,14 +1,17 @@
-// PROTOTYPE — THROWAWAY (wayfinder ticket #77). Variant B: a compact modal that
-// mirrors GuildSettingsDialog exactly (same shell, rail, mobile chip row). Devices
-// STAY in the ControlDeck popover — the dialog owns only volume, sounds, and
-// notification prefs; the sidebar footer keeps its admin shortcuts and sign-out.
+// PROTOTYPE — THROWAWAY (wayfinder ticket #77). Variant B after first reaction:
+// GuildSettingsDialog shell grown to 5xl, the UserCard unified into it (admin
+// shortcuts + sign-out live at the rail bottom, A-style), and A's device pickers
+// baked into Voice — the ControlDeck gear opens this dialog instead of the popover.
 
 import { Dialog, DialogContent, DialogTitle } from "@konus-la/ui/components/dialog";
 import { Separator } from "@konus-la/ui/components/separator";
 import { cn } from "@konus-la/ui/lib/utils";
-import { BellIcon, UserIcon, Volume2Icon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BellIcon, GavelIcon, KeyRoundIcon, LogOutIcon, UserIcon, Volume2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import {
+  DeviceFields,
   MasterVolumeField,
   NotificationDefaultFields,
   NotificationPermissionField,
@@ -61,15 +64,47 @@ export function VariantBModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="top-0 left-0 flex h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:top-1/2 sm:left-1/2 sm:h-[min(85vh,640px)] sm:max-w-3xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:flex-row">
+      <DialogContent className="top-0 left-0 flex h-dvh w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:top-1/2 sm:left-1/2 sm:h-[min(90vh,760px)] sm:max-w-5xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:flex-row">
         <DialogTitle className="sr-only">User settings</DialogTitle>
 
-        <div className="hidden w-[190px] shrink-0 flex-col gap-0.5 border-r border-sidebar-border bg-sidebar p-2 sm:flex">
+        <div className="hidden w-[220px] shrink-0 flex-col gap-0.5 border-r border-sidebar-border bg-sidebar p-2 sm:flex">
           <div className="px-2 py-1.5 text-sm font-medium">
             <span className="block truncate">@{user.username}</span>
           </div>
           <Separator className="my-1" />
           {SECTIONS.map((s) => navButton(s, false))}
+          <div className="mt-auto flex flex-col gap-0.5">
+            {user.isAdmin && (
+              <>
+                <Separator className="my-1" />
+                <div className="px-2 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  Admin
+                </div>
+                <Link
+                  to="/admin/codes"
+                  onClick={close}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
+                >
+                  <KeyRoundIcon className="size-4 shrink-0 opacity-70" /> Invite codes
+                </Link>
+                <Link
+                  to="/admin/bans"
+                  onClick={close}
+                  className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-sidebar-accent"
+                >
+                  <GavelIcon className="size-4 shrink-0 opacity-70" /> Instance bans
+                </Link>
+              </>
+            )}
+            <Separator className="my-1" />
+            <button
+              type="button"
+              onClick={() => toast("Prototype — sign-out lives here in variant B.")}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-sidebar-accent"
+            >
+              <LogOutIcon className="size-4 shrink-0 opacity-70" /> Sign out
+            </button>
+          </div>
         </div>
 
         {/* pr clears the dialog's X button. */}
@@ -84,12 +119,9 @@ export function VariantBModal({
           {section === "profile" && <ProfileFields {...user} />}
           {section === "voice" && (
             <div className="flex flex-col gap-6">
+              <DeviceFields />
               <MasterVolumeField />
               <SoundFields title="Voice sounds" only={[...VOICE_SOUNDS]} />
-              <p className="text-xs text-muted-foreground">
-                Input and output devices are picked on the voice control deck (gear icon),
-                like today.
-              </p>
             </div>
           )}
           {section === "notifications" && (
