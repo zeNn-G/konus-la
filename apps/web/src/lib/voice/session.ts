@@ -1,12 +1,14 @@
 import type { RealtimeEvent } from "@konus-la/api";
 import { Device } from "mediasoup-client";
 
+import { playSoundCue, type SoundCue } from "@/lib/sound-effects";
 import { getWs } from "@/lib/ws";
 
 import {
   createRealDeviceDeps,
   DeviceManager,
   effectiveMicDeviceId,
+  useDeviceStore,
 } from "./devices";
 import {
   CAM_MAX_BITRATE,
@@ -115,7 +117,14 @@ export interface VoiceSessionDeps {
   getScreenCapture: (preset: ScreensharePreset) => Promise<ScreenCapture>;
   isDocumentVisible: () => boolean;
   onVisibilityChange: (listener: () => void) => () => void;
+  /**
+   * Voice UX cues (#79): the session owns the self join/leave pair — every seated exit
+   * funnels through it. Mute/deafen cues live at the intent level (`muteDeafCue`).
+   */
+  playCue: (cue: VoiceUxSoundCue) => void;
 }
+
+export type VoiceUxSoundCue = Extract<SoundCue, "self-join" | "self-leave">;
 
 /** The realtime events the dispatcher routes to the session (own-user producer events filtered). */
 export type VoiceSessionEvent = Extract<
@@ -308,6 +317,8 @@ export class VoiceSession {
     });
     try {
       await this.ceremony(target.channelId);
+      // Fresh join and channel switch alike — a recovery rejoin never lands here.
+      this.deps.playCue("self-join");
     } catch (error) {
       if (error instanceof StaleSessionError) return;
       this.handleSignalingFailure(error);
@@ -1006,6 +1017,11 @@ export class VoiceSession {
   // --- teardown ------------------------------------------------------------------------------
 
   private toIdle(notice: string | null): void {
+    // "Self leave/disconnect" covers every seated exit — explicit leave, seat steal,
+    // moderator disconnect, channel/guild deletion, exhausted reconnect. A join that
+    // never connected (status "joining") went silent in and goes silent out.
+    const status = this.store().status;
+    const wasSeated = status === "connected" || status === "reconnecting";
     this.teardownMedia();
     this.patch({
       status: "idle",
@@ -1014,6 +1030,7 @@ export class VoiceSession {
       seatSessionId: null,
       notice,
     });
+    if (wasSeated) this.deps.playCue("self-leave");
   }
 
   /** Invalidate every in-flight continuation and drop the media half. Status is the caller's. */
@@ -1066,6 +1083,7 @@ function createRealDeps(): VoiceSessionDeps {
       document.addEventListener("visibilitychange", listener);
       return () => document.removeEventListener("visibilitychange", listener);
     },
+    playCue: playSoundCue,
   };
 }
 
@@ -1086,4 +1104,5 @@ export const deviceManager = new DeviceManager({
 if (import.meta.env.DEV) {
   (globalThis as Record<string, unknown>).__voiceSession = voiceSession;
   (globalThis as Record<string, unknown>).__voiceStore = useVoiceStore;
+  (globalThis as Record<string, unknown>).__deviceStore = useDeviceStore;
 }

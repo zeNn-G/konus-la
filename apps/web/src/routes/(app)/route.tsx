@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { VoiceAudioBridge } from "@/components/voice-audio-bridge";
 import { requireSession } from "@/lib/auth-guard";
 import { useSidebarZone } from "@/lib/sidebar-zone";
+import { initSoundEffects } from "@/lib/sound-effects";
 import { useRealtime } from "@/lib/use-realtime";
 import { deviceManager } from "@/lib/voice/session";
 
@@ -29,6 +30,8 @@ function AppLayout() {
   // authenticated shell, like the audio bridge. Idempotent across remounts.
   useEffect(() => {
     void deviceManager.start();
+    // Sound effects (#79): preload buffers and arm the first-gesture activation.
+    initSoundEffects();
   }, []);
 
   return (

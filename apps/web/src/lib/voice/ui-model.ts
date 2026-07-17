@@ -1,3 +1,5 @@
+import type { SoundCue } from "@/lib/sound-effects";
+
 import type { VoiceRoomOccupancy } from "./occupancy";
 import type { ProducerSource, RemotePeerMedia } from "./store";
 
@@ -217,4 +219,16 @@ export function toggleMuteIntent(state: MuteDeafState): MuteDeafState {
 export function toggleDeafenIntent(state: MuteDeafState): MuteDeafState {
   if (state.selfDeaf) return { selfMute: state.selfMute, selfDeaf: false };
   return { selfMute: true, selfDeaf: true };
+}
+
+/**
+ * The one cue a mute/deafen click plays (#79). Cues live at the intent level, not the
+ * session setters, because one click can move both flags (deafen forces mute, unmute
+ * un-deafens) — and one action must never stack two sounds. A deafen transition outranks
+ * the mute it drags along.
+ */
+export function muteDeafCue(prev: MuteDeafState, next: MuteDeafState): SoundCue | null {
+  if (prev.selfDeaf !== next.selfDeaf) return next.selfDeaf ? "deafen-on" : "deafen-off";
+  if (prev.selfMute !== next.selfMute) return next.selfMute ? "mute-on" : "mute-off";
+  return null;
 }

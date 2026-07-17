@@ -18,6 +18,9 @@ export function VoiceAudioBridge() {
   const volumes = useVoiceStore((state) => state.volumes);
   // Effective output device (#25): "" = system default; unsupported browsers stay "".
   const sinkId = useDeviceStore((state) => state.sinkId);
+  // Master output volume (#78): multiplied into every element here, so the per-peer
+  // store values stay raw.
+  const outputVolume = useDeviceStore((state) => state.outputVolume);
 
   return (
     <>
@@ -28,7 +31,7 @@ export function VoiceAudioBridge() {
             <AudioSink
               key={`${userId}:${source}`}
               track={remote.track}
-              volume={volumes[userId] ?? 1}
+              volume={outputVolume * (volumes[userId] ?? 1)}
               sinkId={sinkId}
             />
           ) : null;

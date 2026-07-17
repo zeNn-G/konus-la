@@ -199,6 +199,7 @@ class Harness {
   visible = true;
   visibilityListeners = new Set<() => void>();
   socketCloseListeners = new Set<() => void>();
+  cues: string[] = [];
 
   session: VoiceSession;
 
@@ -306,6 +307,9 @@ class Harness {
       onVisibilityChange: (listener) => {
         this.visibilityListeners.add(listener);
         return () => this.visibilityListeners.delete(listener);
+      },
+      playCue: (cue) => {
+        this.cues.push(cue);
       },
     };
   }
@@ -1074,5 +1078,50 @@ describe("recovery", () => {
     expect(useVoiceStore.getState().status).toBe("idle");
     await vi.advanceTimersByTimeAsync(120_000);
     expect(harness.callsOf("join")).toHaveLength(1);
+  });
+});
+
+describe("voice UX sound cues (#79)", () => {
+  test("a successful join plays self-join once", async () => {
+    await joined();
+    expect(harness.cues).toEqual(["self-join"]);
+  });
+
+  test("a channel switch plays self-join again, never self-leave", async () => {
+    await joined();
+    await harness.session.join({ channelId: "vc-2", guildId: "g-1" });
+    expect(harness.cues).toEqual(["self-join", "self-join"]);
+  });
+
+  test("leave plays self-leave", async () => {
+    await joined();
+    await harness.session.leave();
+    expect(harness.cues).toEqual(["self-join", "self-leave"]);
+  });
+
+  test("a seat steal (sessionReplaced) plays self-leave", async () => {
+    await joined();
+    harness.session.handleRealtimeEvent({
+      type: "voice.sessionReplaced",
+      channelId: "vc-1",
+      replacedSeatSessionId: "seat-1",
+    });
+    expect(harness.cues).toEqual(["self-join", "self-leave"]);
+  });
+
+  test("a failed fresh join plays nothing - it never connected", async () => {
+    harness.failNext("join", new FakeRpcError("NOT_FOUND"));
+    await joined();
+    expect(useVoiceStore.getState().status).toBe("idle");
+    expect(harness.cues).toEqual([]);
+  });
+
+  test("mute/deafen setters stay silent — those cues belong to the intent layer", async () => {
+    await joined();
+    await harness.session.setSelfMute(true);
+    await harness.session.setSelfDeaf(true);
+    await harness.session.setSelfDeaf(false);
+    await harness.session.setSelfMute(false);
+    expect(harness.cues).toEqual(["self-join"]);
   });
 });
