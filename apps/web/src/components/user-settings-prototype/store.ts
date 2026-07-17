@@ -46,6 +46,8 @@ interface PrototypeState {
 
   masterVolume: number;
   setMasterVolume: (v: number) => void;
+  micVolume: number;
+  setMicVolume: (v: number) => void;
   soundsEnabled: boolean;
   setSoundsEnabled: (on: boolean) => void;
   soundVolume: number;
@@ -77,6 +79,8 @@ export const usePrototypeStore = create<PrototypeState>()((set) => ({
 
   masterVolume: 80,
   setMasterVolume: (masterVolume) => set({ masterVolume }),
+  micVolume: 100,
+  setMicVolume: (micVolume) => set({ micVolume }),
   soundsEnabled: true,
   setSoundsEnabled: (soundsEnabled) => set({ soundsEnabled }),
   soundVolume: 60,

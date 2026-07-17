@@ -6,6 +6,14 @@ import { Avatar } from "@konus-la/ui/components/avatar";
 import { Button } from "@konus-la/ui/components/button";
 import { Input } from "@konus-la/ui/components/input";
 import { Label } from "@konus-la/ui/components/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@konus-la/ui/components/select";
 import { Slider } from "@konus-la/ui/components/slider";
 import { cn } from "@konus-la/ui/lib/utils";
 import { CheckIcon, PlayIcon, Volume2Icon } from "lucide-react";
@@ -182,14 +190,14 @@ function DeviceList({
 }
 
 /** Input/output pickers — the DevicePicker's lists, re-homed (fake devices). */
-export function DeviceFields() {
+export function DeviceFields({ sideBySide = false }: { sideBySide?: boolean }) {
   const micChoice = usePrototypeStore((s) => s.micChoice);
   const speakerChoice = usePrototypeStore((s) => s.speakerChoice);
   const setMicChoice = usePrototypeStore((s) => s.setMicChoice);
   const setSpeakerChoice = usePrototypeStore((s) => s.setSpeakerChoice);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={sideBySide ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : "flex flex-col gap-4"}>
       <DeviceList
         title="Input device"
         fakes={FAKE_INPUTS}
@@ -202,6 +210,76 @@ export function DeviceFields() {
         selected={speakerChoice}
         onSelect={setSpeakerChoice}
       />
+    </div>
+  );
+}
+
+/** Discord-style Voice Settings grid: device dropdowns side by side, a volume slider
+ * under each. Output volume doubles as the master output volume. */
+export function DeviceVolumeGrid() {
+  const micChoice = usePrototypeStore((s) => s.micChoice);
+  const speakerChoice = usePrototypeStore((s) => s.speakerChoice);
+  const setMicChoice = usePrototypeStore((s) => s.setMicChoice);
+  const setSpeakerChoice = usePrototypeStore((s) => s.setSpeakerChoice);
+  const micVolume = usePrototypeStore((s) => s.micVolume);
+  const setMicVolume = usePrototypeStore((s) => s.setMicVolume);
+  const masterVolume = usePrototypeStore((s) => s.masterVolume);
+  const setMasterVolume = usePrototypeStore((s) => s.setMasterVolume);
+
+  const column = (
+    deviceTitle: string,
+    fakes: string[],
+    selected: string | null,
+    onSelect: (id: string | null) => void,
+    volumeTitle: string,
+    volume: number,
+    onVolume: (v: number) => void,
+  ) => {
+    const items = [
+      { value: "__default", label: "System default" },
+      ...fakes.map((label) => ({ value: label, label })),
+    ];
+    return (
+      <div className="flex min-w-0 flex-col gap-3">
+        <FieldGroup title={deviceTitle}>
+          <Select
+            items={items}
+            value={selected ?? "__default"}
+            onValueChange={(value) => onSelect(value === "__default" ? null : (value as string))}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {items.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </FieldGroup>
+        <FieldGroup title={volumeTitle}>
+          <div className="flex items-center gap-3 py-1">
+            <Slider
+              value={[volume]}
+              onValueChange={(v) => onVolume(Array.isArray(v) ? (v[0] ?? 0) : v)}
+            />
+            <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {volume}%
+            </span>
+          </div>
+        </FieldGroup>
+      </div>
+    );
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+      {column("Input device", FAKE_INPUTS, micChoice, setMicChoice, "Input volume", micVolume, setMicVolume)}
+      {column("Output device", FAKE_OUTPUTS, speakerChoice, setSpeakerChoice, "Output volume", masterVolume, setMasterVolume)}
     </div>
   );
 }

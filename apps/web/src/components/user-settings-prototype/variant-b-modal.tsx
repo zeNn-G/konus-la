@@ -11,8 +11,7 @@ import { BellIcon, GavelIcon, KeyRoundIcon, LogOutIcon, UserIcon, Volume2Icon } 
 import { toast } from "sonner";
 
 import {
-  DeviceFields,
-  MasterVolumeField,
+  DeviceVolumeGrid,
   NotificationDefaultFields,
   NotificationPermissionField,
   NotificationSoundField,
@@ -119,8 +118,7 @@ export function VariantBModal({
           {section === "profile" && <ProfileFields {...user} />}
           {section === "voice" && (
             <div className="flex flex-col gap-6">
-              <DeviceFields />
-              <MasterVolumeField />
+              <DeviceVolumeGrid />
               <SoundFields title="Voice sounds" only={[...VOICE_SOUNDS]} />
             </div>
           )}
