@@ -14,12 +14,12 @@ import { voiceSession } from "@/lib/voice/session";
 
 const appRoute = getRouteApi("/(app)");
 
-const SECTIONS: { id: UserSettingsSection; label: string; icon: LucideIcon }[] = [
-  { id: "profile", label: "Profile", icon: UserIcon },
-];
+type NavSection = { id: UserSettingsSection; label: string; icon: LucideIcon };
+
+const SECTIONS: NavSection[] = [{ id: "profile", label: "Profile", icon: UserIcon }];
 
 /** Instance-admin surfaces — `role === "admin"` only. */
-const ADMIN_SECTIONS: { id: UserSettingsSection; label: string; icon: LucideIcon }[] = [
+const ADMIN_SECTIONS: NavSection[] = [
   { id: "codes", label: "Invite codes", icon: KeyRoundIcon },
   { id: "bans", label: "Instance bans", icon: GavelIcon },
 ];
@@ -54,7 +54,7 @@ export function UserSettingsDialog() {
   // snap to Profile rather than render an empty pane.
   const section = sections.some((s) => s.id === stored) ? stored : "profile";
 
-  const navButton = (s: (typeof SECTIONS)[number], mobile: boolean) => (
+  const navButton = (s: NavSection, mobile: boolean) => (
     <button
       key={s.id}
       type="button"
