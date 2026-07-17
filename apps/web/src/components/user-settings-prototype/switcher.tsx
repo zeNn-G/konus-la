@@ -4,6 +4,7 @@
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { useEffect } from "react";
 
+import { usePrototypeStore } from "./store";
 import { SETTINGS_VARIANTS, useSetSettingsVariant, useSettingsVariant } from "./use-variant";
 
 export function UserSettingsPrototypeSwitcher() {
@@ -14,6 +15,9 @@ export function UserSettingsPrototypeSwitcher() {
   const cycle = (delta: number) => {
     const next =
       SETTINGS_VARIANTS[(index + delta + SETTINGS_VARIANTS.length) % SETTINGS_VARIANTS.length];
+    // Close before the swap — unmounting an open Base UI dialog mid-exit strands its
+    // overlay in the DOM, which then swallows every click.
+    usePrototypeStore.getState().close();
     setVariant(next.key);
   };
 
@@ -62,7 +66,10 @@ export function UserSettingsPrototypeSwitcher() {
         type="button"
         aria-label="Exit prototype"
         className="ml-1 rounded-full p-1 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-50"
-        onClick={() => setVariant(null)}
+        onClick={() => {
+          usePrototypeStore.getState().close();
+          setVariant(null);
+        }}
       >
         <XIcon className="size-4" />
       </button>

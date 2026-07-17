@@ -54,11 +54,19 @@ export function VariantCScroll({
   const onScroll = () => {
     const container = scrollRef.current;
     if (!container) return;
-    const top = container.getBoundingClientRect().top + 56; // clears the sticky tab row
+    const threshold = container.getBoundingClientRect().top + 56; // clears the sticky tab row
+    // Nearest section wins — the last section may never reach the top, so a plain
+    // "scrolled past" rule can never hand it the highlight.
     let current: SettingsSection = "profile";
+    let best = Number.POSITIVE_INFINITY;
     for (const s of SECTIONS) {
       const el = sectionRefs.current[s.id];
-      if (el && el.getBoundingClientRect().top <= top + 1) current = s.id;
+      if (!el) continue;
+      const distance = Math.abs(el.getBoundingClientRect().top - threshold);
+      if (distance < best) {
+        best = distance;
+        current = s.id;
+      }
     }
     setActive(current);
   };

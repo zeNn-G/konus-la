@@ -71,7 +71,7 @@ export function VariantATakeover({
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent
         showCloseButton={false}
-        className="top-0 left-0 flex h-dvh w-full max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 p-0"
+        className="top-0 left-0 flex h-dvh w-full max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">User settings</DialogTitle>
 
