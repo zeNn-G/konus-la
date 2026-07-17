@@ -29,7 +29,7 @@ export function AdminCodesSection() {
   };
 
   return (
-    <div className="flex max-w-xl flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <p className="text-xs text-muted-foreground">Mint invite codes for new members.</p>
       <div>
         <Button onClick={mint}>Mint code</Button>
@@ -86,7 +86,7 @@ export function AdminBansSection() {
   const canBan = who.trim().length > 0 && reason.trim().length > 0;
 
   return (
-    <div className="flex max-w-xl flex-col gap-6">
+    <div className="grid grid-cols-1 items-start gap-x-8 gap-y-6 sm:grid-cols-2">
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
