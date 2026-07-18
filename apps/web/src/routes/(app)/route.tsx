@@ -10,6 +10,7 @@ import { requireSession } from "@/lib/auth-guard";
 import { maybeShowNotificationNudge } from "@/lib/desktop-notifications";
 import { registerNotificationNavigate } from "@/lib/notification-dispatcher";
 import { initSoundEffects } from "@/lib/sound-effects";
+import { useTabTitle } from "@/lib/tab-title";
 import { useRealtime } from "@/lib/use-realtime";
 import { deviceManager } from "@/lib/voice/session";
 
@@ -26,6 +27,8 @@ function AppLayout() {
   const { session } = Route.useRouteContext();
   const navigate = useNavigate();
   useRealtime(session.user.id);
+  // Tab-title counter (#75): derived from the same caches the realtime dispatcher patches.
+  useTabTitle();
 
   // Device watcher (#25): `devicechange` fallback/replug handling lives for the whole
   // authenticated shell, like the audio bridge. Idempotent across remounts.

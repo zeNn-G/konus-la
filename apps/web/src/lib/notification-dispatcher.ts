@@ -10,6 +10,7 @@ import {
   type NotificationChannelKind,
   type NotificationPref,
 } from "@/lib/notification-prefs";
+import { listCacheRows } from "@/lib/query-cache";
 import { playSoundCue } from "@/lib/sound-effects";
 import type { ChannelListItem, DmListItem } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
@@ -101,10 +102,7 @@ function findInListCaches<T extends { id: string }>(
   queryKey: QueryKey,
   id: string,
 ): T | undefined {
-  return client
-    .getQueriesData<T[]>({ queryKey })
-    .flatMap(([, rows]) => rows ?? [])
-    .find((row) => row.id === id);
+  return listCacheRows<T>(client, queryKey).find((row) => row.id === id);
 }
 
 /** Channel/guild/group names come from the caches the sidebar already keeps warm. */
