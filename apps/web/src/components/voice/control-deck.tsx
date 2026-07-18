@@ -1,5 +1,4 @@
 import { Button } from "@konus-la/ui/components/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@konus-la/ui/components/popover";
 import { cn } from "@konus-la/ui/lib/utils";
 import {
   HeadphoneOffIcon,
@@ -10,18 +9,17 @@ import {
   VideoOffIcon,
 } from "lucide-react";
 
-import { useDeviceStore } from "@/lib/voice/devices";
+import { useUserSettings } from "@/lib/user-settings";
 import { useVoiceStore } from "@/lib/voice/store";
 
 import { ControlToggleButton, DECK_SIZE, MicButton, ShareButton } from "./control-buttons";
-import { DevicePicker } from "./device-picker";
 import { useVoiceChannelName, useVoiceControls } from "./use-voice-room";
 
 /**
  * Sidebar-footer control deck (decision #10 variant B), above the UserCard. Visible the
- * whole time a session exists — in the room and while browsing text. The settings button
- * opens the DevicePicker; its popover is store-controlled so the device-fallback toast's
- * **Change** action can open it from anywhere (#25).
+ * whole time a session exists — in the room and while browsing text. The gear opens the
+ * user-settings dialog at Voice (#85), the same section the device-fallback toast's
+ * **Change** action lands on (#25).
  */
 export function ControlDeck() {
   const status = useVoiceStore((s) => s.status);
@@ -29,8 +27,7 @@ export function ControlDeck() {
   const channelId = useVoiceStore((s) => s.channelId);
   const controls = useVoiceControls();
   const channelName = useVoiceChannelName(guildId, channelId);
-  const pickerOpen = useDeviceStore((s) => s.pickerOpen);
-  const setPickerOpen = useDeviceStore((s) => s.setPickerOpen);
+  const openSettingsAt = useUserSettings((s) => s.openAt);
 
   if (status === "idle") return null;
 
@@ -49,24 +46,16 @@ export function ControlDeck() {
           {statusLine}
           {channelName && ` · ${channelName}`}
         </span>
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Voice settings"
-                title="Voice settings"
-                className="text-muted-foreground"
-              />
-            }
-          >
-            <Settings2Icon className="size-3.5" />
-          </PopoverTrigger>
-          <PopoverContent side="top" align="end" sideOffset={8}>
-            <DevicePicker />
-          </PopoverContent>
-        </Popover>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label="Voice settings"
+          title="Voice settings"
+          className="text-muted-foreground"
+          onClick={() => openSettingsAt("voice")}
+        >
+          <Settings2Icon className="size-3.5" />
+        </Button>
       </div>
 
       <div className="flex items-center gap-0.5 px-1">

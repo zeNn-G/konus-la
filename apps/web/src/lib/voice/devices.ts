@@ -1,12 +1,15 @@
 import { toast } from "sonner";
 import { create } from "zustand";
 
+import { useUserSettings } from "@/lib/user-settings";
+
 /**
  * Device selection & `devicechange` UX (phase-5 spec §UX #17): selections are persisted
  * preferences, presence is what the browser currently enumerates, and the two never
  * overwrite each other — unplugging the chosen device falls back to the system default
  * while the preference stays put, so a replug switches right back. Both directions are
- * announced (toast), with a **Change** action that opens the deck's DevicePicker.
+ * announced (toast), with a **Change** action that opens the user-settings dialog at
+ * Voice (#85), where the device dropdowns live.
  *
  * Output (speaker) selection exists only where `setSinkId` does — Safari opts out
  * wholesale: no output section in the picker, no output toasts, sink always default.
@@ -63,9 +66,6 @@ export interface DeviceStoreState {
   sinkId: string;
   /** Whether output selection exists at all on this browser. */
   outputSupported: boolean;
-  /** The deck DevicePicker's open state — the fallback toast's Change action opens it. */
-  pickerOpen: boolean;
-  setPickerOpen: (open: boolean) => void;
   /**
    * Master output volume 0..1 governing ALL app audio (#78): the voice bridge multiplies
    * it into every element volume, the effects engine drives its master gain from it.
@@ -82,8 +82,6 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   outputs: [],
   sinkId: "",
   outputSupported: false,
-  pickerOpen: false,
-  setPickerOpen: (open) => set({ pickerOpen: open }),
   outputVolume: parseOutputVolume(loadPreference(OUTPUT_VOLUME_STORAGE_KEY)),
   setOutputVolume: (volume) => {
     const clamped = clamp01(volume);
@@ -268,7 +266,7 @@ export function createRealDeviceDeps(): Omit<
         toast(message, {
           action: {
             label: "Change",
-            onClick: () => useDeviceStore.getState().setPickerOpen(true),
+            onClick: () => useUserSettings.getState().openAt("voice"),
           },
         });
       } else {
