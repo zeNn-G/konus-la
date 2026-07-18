@@ -3,6 +3,12 @@ import { describe, expect, test } from "vitest";
 import type { NotificationPref } from "./notification-prefs";
 import { formatTabTitle, tabTitleCount } from "./tab-title";
 
+/**
+ * The 7.7 tab-title counter's pure core (#75): `(n) konus-la` formatting and the
+ * derivation of `n` from the sidebar-badge rows — Σ mentionsCount over unmuted guild
+ * channels + 1 per unread unmuted DM conversation.
+ */
+
 function prefsState(prefs?: Partial<Record<string, NotificationPref>>) {
   return { prefs: prefs ?? {}, defaults: {} };
 }
@@ -10,12 +16,6 @@ function prefsState(prefs?: Partial<Record<string, NotificationPref>>) {
 function guildChannel(id: string, mentionsCount: number, unread = mentionsCount > 0) {
   return { id, mentionsCount, unread };
 }
-
-/**
- * The 7.7 tab-title counter's pure core (#75): `(n) konus-la` formatting and the
- * derivation of `n` from the sidebar-badge rows — Σ mentionsCount over unmuted guild
- * channels + 1 per unread unmuted DM conversation.
- */
 
 describe("tabTitleCount — guild channels", () => {
   test("sums mentionsCount across channels", () => {
@@ -67,6 +67,19 @@ describe("tabTitleCount — DM conversations", () => {
     expect(
       tabTitleCount([], [{ id: "dm-1", unread: true }], prefsState({ "dm-1": "muted" })),
     ).toBe(0);
+  });
+
+  test("a dm kind-default of Muted silences unoverridden conversations", () => {
+    expect(
+      tabTitleCount(
+        [],
+        [
+          { id: "dm-1", unread: true },
+          { id: "dm-2", unread: true },
+        ],
+        { prefs: { "dm-2": "all" }, defaults: { dm: "muted" as const } },
+      ),
+    ).toBe(1);
   });
 
   test("guild mentions and unread DMs add up", () => {

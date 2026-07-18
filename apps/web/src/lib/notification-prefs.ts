@@ -112,9 +112,12 @@ export const useNotificationPrefs = create<NotificationPrefsState>()((set) => ({
     }),
 }));
 
+/** The read-only slice resolvers take — the store state or a test-built stand-in. */
+export type NotificationPrefsSnapshot = Pick<NotificationPrefsState, "prefs" | "defaults">;
+
 /** Override → configured kind default → built-in, per the #76 read contract. */
 export function resolvePref(
-  state: Pick<NotificationPrefsState, "prefs" | "defaults">,
+  state: NotificationPrefsSnapshot,
   channelId: string,
   kind: NotificationChannelKind,
 ): NotificationPref {

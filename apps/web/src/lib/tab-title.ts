@@ -1,6 +1,11 @@
 import { useEffect } from "react";
 
-import { resolvePref, useNotificationPrefs } from "@/lib/notification-prefs";
+import {
+  resolvePref,
+  useNotificationPrefs,
+  type NotificationPrefsSnapshot,
+} from "@/lib/notification-prefs";
+import { listCacheRows } from "@/lib/query-cache";
 import { orpc, queryClient } from "@/utils/orpc";
 
 /**
@@ -12,16 +17,14 @@ import { orpc, queryClient } from "@/utils/orpc";
 
 const BASE_TITLE = "konus-la";
 
-/** The badge fields of a `channel.list` row — what the derivation actually reads. */
+/** The badge fields of a `channel.list` / `dm.list` row — what the derivation reads. */
 type GuildChannelRow = { id: string; mentionsCount: number };
 type DmRow = { id: string; unread: boolean };
-
-type PrefsSnapshot = Parameters<typeof resolvePref>[0];
 
 export function tabTitleCount(
   guildChannels: GuildChannelRow[],
   dmRows: DmRow[],
-  prefs: PrefsSnapshot,
+  prefs: NotificationPrefsSnapshot,
 ): number {
   // Mute silences the contribution; the sidebar's unread bold / mention badge stays
   // (#76 — mute is about interruptions, not information).
@@ -37,25 +40,25 @@ export function tabTitleCount(
   return guildMentions + unreadDms;
 }
 
+export function formatTabTitle(count: number): string {
+  return count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
+}
+
 /**
  * Mount ONCE in the authenticated layout. Recomputes on every query-cache or prefs
- * notification — the realtime dispatcher's `message.created` / `readState.updated`
- * patches and the mark-read mutations all land in the same list caches, so resets
- * (including cross-tab reads) come for free. The write is guarded on the formatted
- * string, so the title element only changes when `n` does — static, never alternating.
+ * notification; the title is static — it only ever changes when `n` does, never
+ * alternating.
  */
 export function useTabTitle(): void {
   useEffect(() => {
     let last: string | null = null;
     const apply = () => {
-      const guildChannels = queryClient
-        .getQueriesData<GuildChannelRow[]>({ queryKey: orpc.channel.list.key() })
-        .flatMap(([, rows]) => rows ?? []);
-      const dmRows = queryClient
-        .getQueriesData<DmRow[]>({ queryKey: orpc.dm.list.key() })
-        .flatMap(([, rows]) => rows ?? []);
       const title = formatTabTitle(
-        tabTitleCount(guildChannels, dmRows, useNotificationPrefs.getState()),
+        tabTitleCount(
+          listCacheRows<GuildChannelRow>(queryClient, orpc.channel.list.key()),
+          listCacheRows<DmRow>(queryClient, orpc.dm.list.key()),
+          useNotificationPrefs.getState(),
+        ),
       );
       if (title === last) return;
       last = title;
@@ -70,8 +73,4 @@ export function useTabTitle(): void {
       document.title = BASE_TITLE;
     };
   }, []);
-}
-
-export function formatTabTitle(count: number): string {
-  return count > 0 ? `(${count}) ${BASE_TITLE}` : BASE_TITLE;
 }
