@@ -4,8 +4,10 @@ import { cn } from "@konus-la/ui/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
+import { ChannelNotificationMenu } from "@/components/channel-notification-menu";
 import { PresenceAvatar } from "@/components/presence-avatar";
 import { dmDisplayName, dmOtherParticipant } from "@/lib/dm";
+import { resolvePref, useNotificationPrefs } from "@/lib/notification-prefs";
 import type { DmListItem } from "@/lib/use-realtime";
 import { usePresence } from "@/lib/use-realtime";
 import { orpc } from "@/utils/orpc";
@@ -18,6 +20,8 @@ import { orpc } from "@/utils/orpc";
 export function DmList({ selfUserId, className }: { selfUserId: string; className?: string }) {
   const dms = useQuery(orpc.dm.list.queryOptions());
   const presence = usePresence();
+  const notificationPrefs = useNotificationPrefs((s) => s.prefs);
+  const notificationDefaults = useNotificationPrefs((s) => s.defaults);
 
   const rows = [...(dms.data ?? [])].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 
@@ -36,15 +40,27 @@ export function DmList({ selfUserId, className }: { selfUserId: string; classNam
         </p>
       )}
       {rows.map((row) => (
-        <Link
+        <ChannelNotificationMenu
           key={row.id}
-          to="/dms/$channelId"
-          params={{ channelId: row.id }}
-          className={cn(
-            "flex items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-            row.unread && "font-semibold text-foreground",
-          )}
-          activeProps={{ className: "bg-muted text-foreground" }}
+          channelId={row.id}
+          kind="dm"
+          render={
+            <Link
+              to="/dms/$channelId"
+              params={{ channelId: row.id }}
+              className={cn(
+                "flex items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                row.unread && "font-semibold text-foreground",
+                // Mute dims the row; unread bold and the mention badge stay (#76).
+                resolvePref(
+                  { prefs: notificationPrefs, defaults: notificationDefaults },
+                  row.id,
+                  "dm",
+                ) === "muted" && "opacity-50",
+              )}
+              activeProps={{ className: "bg-muted text-foreground" }}
+            />
+          }
         >
           <DmRowAvatar row={row} selfUserId={selfUserId} presence={presence} />
           <span className="truncate">{dmDisplayName(row, selfUserId)}</span>
@@ -53,7 +69,7 @@ export function DmList({ selfUserId, className }: { selfUserId: string; classNam
               {row.mentionsCount}
             </span>
           )}
-        </Link>
+        </ChannelNotificationMenu>
       ))}
     </nav>
   );
@@ -81,7 +97,11 @@ function DmRowAvatar({
   const [first, second] = faces;
   if (!second) {
     return (
-      <Avatar seed={first?.username ?? row.id} src={first?.image ?? null} className="size-6 shrink-0" />
+      <Avatar
+        seed={first?.username ?? row.id}
+        src={first?.image ?? null}
+        className="size-6 shrink-0"
+      />
     );
   }
   return (

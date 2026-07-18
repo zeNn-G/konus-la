@@ -2,11 +2,12 @@ import { Dialog, DialogContent, DialogTitle } from "@konus-la/ui/components/dial
 import { Separator } from "@konus-la/ui/components/separator";
 import { cn } from "@konus-la/ui/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { GavelIcon, KeyRoundIcon, LogOutIcon, MicIcon, UserIcon } from "lucide-react";
+import { BellIcon, GavelIcon, KeyRoundIcon, LogOutIcon, MicIcon, UserIcon } from "lucide-react";
 import { getRouteApi } from "@tanstack/react-router";
 
 import { BansSection } from "@/components/user-settings/bans-section";
 import { CodesSection } from "@/components/user-settings/codes-section";
+import { NotificationsSection } from "@/components/user-settings/notifications-section";
 import { ProfileSection } from "@/components/user-settings/profile-section";
 import { VoiceSection } from "@/components/user-settings/voice-section";
 import { authClient } from "@/lib/auth-client";
@@ -20,6 +21,7 @@ type NavSection = { id: UserSettingsSection; label: string; icon: LucideIcon };
 const SECTIONS: NavSection[] = [
   { id: "profile", label: "Profile", icon: UserIcon },
   { id: "voice", label: "Voice", icon: MicIcon },
+  { id: "notifications", label: "Notifications", icon: BellIcon },
 ];
 
 /** Instance-admin surfaces — `role === "admin"` only. */
@@ -126,6 +128,7 @@ export function UserSettingsDialog() {
           </h2>
           {section === "profile" && <ProfileSection />}
           {section === "voice" && <VoiceSection />}
+          {section === "notifications" && <NotificationsSection />}
           {section === "codes" && isAdmin && <CodesSection />}
           {section === "bans" && isAdmin && <BansSection />}
         </div>

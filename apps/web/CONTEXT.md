@@ -222,6 +222,19 @@ TanStack Query invalidation of `guild.list`.
   video-only share, and the sharer never monitors their own share audio locally); camera denial
   toasts, screenshare rejection reverts silently, and a failed mic-button retry after a listen-only
   join toasts the permissions hint.
+- **Notification prefs (`lib/notification-prefs.ts` + `components/channel-notification-menu.tsx`, #76/#87)** —
+  two overrides-only localStorage maps: per-channel `konusLa.notification-prefs` and the configurable kind
+  defaults `konusLa.notification-defaults` (built-ins: guild Mentions-only, DM All). The synchronous
+  `resolveChannelPref(channelId, kind)` resolves override → configured kind default → built-in; the CALLER
+  supplies the kind (the store keeps no channel-type lookup), and setting a channel back to its resolved
+  default deletes its entry. Control surface: right-click radio on sidebar rows only
+  (`ChannelNotificationMenu` — guild text rows All / Mentions only / Muted, DM rows All / Muted; voice rows
+  carry no menu — nothing pings from them). Muted rows dim but keep unread bold + the mention badge (mute is
+  about interruptions, not information). The dialog's **Notifications section**
+  (`components/user-settings/notifications-section.tsx`) owns the kind-default selects and the
+  notification-ping sound toggle (`konusLa.sound-prefs`); per-channel overrides never appear there. Cross-tab:
+  a `storage` listener re-hydrates whichever map changed, so muting in one tab dims (and will silence) every
+  tab.
 - **Chat components** (`components/chat/`): `message-list` (infinite scroll upward; the shadcn
   `message-scroller` primitive owns the scroll contract — open at the newest message, auto-follow at the
   live edge, position preserved when older pages prepend, jump-to-bottom button; still no virtualization —
