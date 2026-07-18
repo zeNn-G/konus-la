@@ -34,7 +34,7 @@ interface DesktopNotificationsState {
   setEnabled: (enabled: boolean) => void;
 }
 
-/** No cross-tab sync — per-tab drift on an OS-toast opt-in is harmless (#75). */
+/** No cross-tab sync (per the phase-7 key table — matches the device prefs). */
 export const useDesktopNotifications = create<DesktopNotificationsState>()((set) => ({
   enabled: loadFlag(DESKTOP_NOTIFICATIONS_STORAGE_KEY),
   setEnabled: (enabled) => {
@@ -102,9 +102,8 @@ export function maybeShowNotificationNudge(): void {
     return;
   }
   nudgeShownThisSession = true;
-  // The caller is the (app) layout's mount effect, which fires BEFORE the root
-  // Toaster's subscription effect (child effects run first) — sonner drops toasts
-  // published to zero subscribers, so escape the mount commit.
+  // Deferred a tick: fired from a mount effect, the root Toaster hasn't subscribed
+  // yet and sonner drops subscriber-less toasts.
   setTimeout(showNudgeToast, 0);
 }
 
@@ -112,13 +111,13 @@ function showNudgeToast(): void {
   toast("Enable desktop notifications?", {
     description: "Get an OS notification for DMs and @mentions while you're away.",
     duration: Number.POSITIVE_INFINITY,
+    // Any way out — Enable, Not now, or a swipe-away — counts as dismissed for good.
+    onDismiss: () => markNudgeDismissed(),
     action: {
       label: "Enable",
       onClick: () => {
         markNudgeDismissed();
-        void enableDesktopNotifications().then((enabled) => {
-          if (enabled) toast.success("Desktop notifications enabled.");
-        });
+        void enableDesktopNotifications();
       },
     },
     cancel: {

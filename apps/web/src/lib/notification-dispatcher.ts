@@ -1,6 +1,6 @@
 import type { RealtimeEvent } from "@konus-la/api";
 import { avatarDataUri } from "@konus-la/ui/lib/avatar-uri";
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 import { getActiveChannelId } from "@/lib/active-channel";
 import { getNotificationPermission, useDesktopNotifications } from "@/lib/desktop-notifications";
@@ -95,25 +95,35 @@ export function registerNotificationNavigate(navigate: NavigateToChannel): () =>
   };
 }
 
+/** One keyed row out of a (possibly partial-key-matched) family of list caches. */
+function findInListCaches<T extends { id: string }>(
+  client: QueryClient,
+  queryKey: QueryKey,
+  id: string,
+): T | undefined {
+  return client
+    .getQueriesData<T[]>({ queryKey })
+    .flatMap(([, rows]) => rows ?? [])
+    .find((row) => row.id === id);
+}
+
 /** Channel/guild/group names come from the caches the sidebar already keeps warm. */
 function lookupToastNames(client: QueryClient, selfUserId: string, event: MessageCreatedEvent) {
   if (event.guildId !== null) {
-    const channelName =
-      client
-        .getQueriesData<ChannelListItem[]>({ queryKey: orpc.channel.list.key() })
-        .flatMap(([, rows]) => rows ?? [])
-        .find((row) => row.id === event.message.channelId)?.name ?? null;
-    const guildName =
-      client
-        .getQueriesData<Array<{ id: string; name: string }>>({ queryKey: orpc.guild.list.key() })
-        .flatMap(([, rows]) => rows ?? [])
-        .find((row) => row.id === event.guildId)?.name ?? null;
-    return { channelName, guildName, groupName: null };
+    return {
+      channelName:
+        findInListCaches<ChannelListItem>(client, orpc.channel.list.key(), event.message.channelId)
+          ?.name ?? null,
+      guildName:
+        findInListCaches<{ id: string; name: string }>(
+          client,
+          orpc.guild.list.key(),
+          event.guildId,
+        )?.name ?? null,
+      groupName: null,
+    };
   }
-  const row = client
-    .getQueriesData<DmListItem[]>({ queryKey: orpc.dm.list.key() })
-    .flatMap(([, rows]) => rows ?? [])
-    .find((r) => r.id === event.message.channelId);
+  const row = findInListCaches<DmListItem>(client, orpc.dm.list.key(), event.message.channelId);
   return {
     channelName: null,
     guildName: null,
@@ -137,8 +147,6 @@ function showToast(client: QueryClient, selfUserId: string, event: MessageCreate
       icon: author.image ?? avatarDataUri(author.username),
       tag: message.channelId,
       renotify: false,
-      // lib.dom's NotificationOptions omits `renotify` even though every engine that
-      // stacks toasts honors it.
     } as NotificationOptions);
     notification.onclick = () => {
       window.focus();
