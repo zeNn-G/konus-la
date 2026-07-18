@@ -13,7 +13,12 @@ import { Switch } from "@konus-la/ui/components/switch";
 import { PlayIcon } from "lucide-react";
 import { useEffect } from "react";
 
-import { previewSoundCue, useSoundPrefs, type SoundCue } from "@/lib/sound-effects";
+import {
+  isSoundCueEnabled,
+  previewSoundCue,
+  useSoundPrefs,
+  type SoundCue,
+} from "@/lib/sound-effects";
 import { useDeviceStore, type DeviceInfo } from "@/lib/voice/devices";
 import { deviceManager } from "@/lib/voice/session";
 
@@ -42,7 +47,6 @@ export function VoiceSection() {
   return (
     <div className="flex max-w-2xl flex-col gap-8">
       <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 sm:grid-cols-2">
-        {/* Input column — 7.4 adds the input volume slider and processing toggles here. */}
         <div className="flex flex-col gap-4">
           <DeviceSelect
             label="Input device"
@@ -186,7 +190,7 @@ function VoiceSounds() {
             </Button>
             <Switch
               aria-label={`${row.label} sound`}
-              checked={prefs[row.cue] !== false}
+              checked={isSoundCueEnabled(prefs, row.cue)}
               onCheckedChange={(checked) => setCueEnabled(row.cue, checked)}
             />
           </div>

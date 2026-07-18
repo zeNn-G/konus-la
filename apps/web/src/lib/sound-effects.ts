@@ -149,7 +149,7 @@ export class SoundEngine {
     // Consulted fresh on every play — the #77 toggles only ever write the map. A preview
     // bypasses the gate (hearing a disabled cue before re-enabling it is the point) but
     // never the activation gating above.
-    if (!opts?.ignorePrefs && this.deps.loadSoundPrefs()[cue] === false) return;
+    if (!opts?.ignorePrefs && !isSoundCueEnabled(this.deps.loadSoundPrefs(), cue)) return;
     const buffer = this.buffers.get(cue);
     if (buffer === undefined) return;
     const source = this.context.createBufferSource();
@@ -203,6 +203,14 @@ function loadSoundPrefs(): Partial<Record<SoundCue, boolean>> {
   }
 }
 
+/** The overrides map is absence-biased: only an explicit `false` disables a cue (#77). */
+export function isSoundCueEnabled(
+  prefs: Partial<Record<SoundCue, boolean>>,
+  cue: SoundCue,
+): boolean {
+  return prefs[cue] !== false;
+}
+
 /** Next overrides map after a toggle — back-to-default (enabled) deletes the entry (#77). */
 export function withSoundPrefOverride(
   prefs: Partial<Record<SoundCue, boolean>>,
@@ -222,9 +230,10 @@ interface SoundPrefsState {
 }
 
 /**
- * The #77 toggles' store: hydrates once, every write goes map → localStorage → notify.
- * The engine keeps reading localStorage fresh per play, so both halves stay consistent
- * without a subscription. No cross-tab sync (matches the device prefs).
+ * The #77 toggles' store: hydrates once from `konusLa.sound-prefs`, every write goes
+ * map → localStorage → notify. The store is the runtime truth — the engine's real deps
+ * read it per play — so a failed persist never desyncs the toggles from what plays.
+ * No cross-tab sync (matches the device prefs).
  */
 export const useSoundPrefs = create<SoundPrefsState>()((set) => ({
   prefs: loadSoundPrefs(),
@@ -247,7 +256,7 @@ function createRealDeps(): SoundEngineDeps {
     createElement: () => document.createElement("audio"),
     fetchBuffer: async (url) => (await fetch(url)).arrayBuffer(),
     cueUrls: CUE_URLS,
-    loadSoundPrefs,
+    loadSoundPrefs: () => useSoundPrefs.getState().prefs,
   };
 }
 
