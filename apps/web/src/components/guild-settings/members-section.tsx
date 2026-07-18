@@ -60,7 +60,7 @@ export function MembersSection({ guildId }: { guildId: string }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Manage roles, remove, or ban members. You can’t target yourself.
+        Manage roles, remove, or ban members. You can’t kick or ban yourself.
       </p>
       <ul className="flex flex-col divide-y divide-foreground/10">
         {members.map((m) => {
@@ -152,7 +152,8 @@ export function MembersSection({ guildId }: { guildId: string }) {
 }
 
 /** One assignment pill. No hierarchy-aware greying (spec #47): the × shows with the
- *  permission and a hierarchy miss surfaces as the server's FORBIDDEN toast. */
+ *  permission and a role-hierarchy miss (the role at or above the viewer's highest)
+ *  surfaces as the server's FORBIDDEN toast. */
 function RoleChip({ role, onRemove }: { role: GuildRole; onRemove?: () => void }) {
   return (
     <span className="flex items-center gap-1 rounded-full border border-foreground/10 bg-muted/50 py-0.5 pr-1 pl-1.5 text-xs">

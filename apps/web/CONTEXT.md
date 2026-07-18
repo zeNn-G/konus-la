@@ -73,8 +73,9 @@ Routes are organised into pathless groups under `src/routes/` (group names don't
     transfer strips every section, and sections mount lazily so a gated section's queries never fire for
     a viewer who can't see it), not a route. **Members** (`members-section.tsx`) shows
     per-member role chips — × unassigns; a "+" popover offers the strictly-below, not-yet-held roles
-    (the charter rule the server enforces; target-side hierarchy is NOT pre-checked — a miss surfaces
-    as the server's FORBIDDEN toast, per spec #47) — with the Owner marker beside the chips, and
+    (the charter rule the server enforces; hierarchy binds the ROLE only, so any member may be the
+    target — self and the owner included — and a role-side miss surfaces as the server's FORBIDDEN
+    toast, per spec #47) — with the Owner marker beside the chips, and
     Kick / Ban buttons per the viewer's corresponding permission (never on self or the owner).
     **Roles** (`roles-section.tsx`) is the
     master–detail editor from prototype #48 variant A: fixed role list (hover ▲▼ reorder) beside an

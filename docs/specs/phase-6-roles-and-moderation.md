@@ -98,10 +98,12 @@ are unaffected (their resolved mask is already all bits).
 
 Higher `position` = higher rank; `@everyone` pinned at 0 (can't be renamed, repositioned,
 deleted, or assigned; its bits ARE editable, gated `MANAGE_ROLES`). Acting on a member
-(kick / ban / server-mute / voice-disconnect / role-assign / role-unassign) requires the
-actor's highest role **strictly above** the target's. `MANAGE_ROLES` manages and assigns
-only **strictly-below** roles. `ADMINISTRATOR` bypasses permission checks but **not**
-hierarchy. Owner bypasses everything; the owner can never be targeted.
+(kick / ban / server-mute / voice-disconnect) requires the actor's highest role
+**strictly above** the target's. `MANAGE_ROLES` manages and assigns only
+**strictly-below** roles — assignment binds the ROLE, never the target (Discord verbatim):
+any member may receive or lose a strictly-below role, the actor themselves and the owner
+included. `ADMINISTRATOR` bypasses permission checks but **not** hierarchy. Owner bypasses
+everything; the owner can never be targeted by the member-targeted acts above.
 
 **Helpers — handler-level functions in `packages/db`, not middleware** (target ids arrive
 under varying input names):
@@ -131,7 +133,7 @@ roomy for real moderation). No limiter on reads, per convention.
 | `role.update` | `{ guildId, roleId, name?, color?, permissions? }` | role strictly below | @everyone: only `permissions` editable; escalation guard on toggled bits |
 | `role.delete` | `{ guildId, roleId }` | role strictly below | Not @everyone; `memberRole` rows cascade |
 | `role.reorder` | `{ guildId, roleId, direction: 'up' \| 'down' }` | **both** swapped roles strictly below | Adjacent swap (▲▼ UX); @everyone immovable |
-| `role.assign` | `{ guildId, userId, roleId }` | role strictly below **and** `actorOutranksMember` | Target must be a member |
+| `role.assign` | `{ guildId, userId, roleId }` | role strictly below | Target must be a member — any member, self and the owner included |
 | `role.unassign` | `{ guildId, userId, roleId }` | same as assign | |
 
 **New `mod` router:**

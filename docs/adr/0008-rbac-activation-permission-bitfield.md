@@ -24,9 +24,11 @@ was never implemented and is superseded outright.
 Load-bearing rules:
 
 - **Hierarchy is Discord's, verbatim:** higher `position` outranks; `@everyone` pinned at
-  0, unassignable and undeletable but with editable bits; member-targeted actions require
-  strictly higher rank; `MANAGE_ROLES` touches only strictly-below roles; `ADMINISTRATOR`
-  bypasses permission checks but never hierarchy.
+  0, unassignable and undeletable but with editable bits; member-targeted actions (kick /
+  ban / server-mute / voice-disconnect) require strictly higher rank; `MANAGE_ROLES`
+  touches only strictly-below roles — assignment binds the role, never the target, so any
+  member (self and the owner included) may receive or lose a strictly-below role;
+  `ADMINISTRATOR` bypasses permission checks but never hierarchy.
 - **Ownership stays `guild.ownerId` only** (unchanged from ADR 0004): the owner bypasses
   everything, and transfer/delete remain owner-only, never delegable via bits.
 - **`@everyone` defaults to `permissions: 0`** for new and existing guilds — every gated

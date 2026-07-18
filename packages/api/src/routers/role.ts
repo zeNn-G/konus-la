@@ -17,7 +17,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
-import { assertActorOutranks, protectedProcedure, requireGuildPermission } from "../index";
+import { protectedProcedure, requireGuildPermission } from "../index";
 import { ALL_PERMISSIONS, hasPermission, PERMISSIONS } from "../permissions";
 import { modActionLimiter, perUserRatelimit } from "../ratelimit";
 import { publishTo } from "../realtime/publishers";
@@ -87,10 +87,10 @@ async function loadRoleForMutation(
 
 /**
  * The shared assign/unassign preamble: the role checks of `loadRoleForMutation` (exists,
- * not `@everyone`, strictly below the actor), then the target checks — must be a member
- * (NOT_FOUND, the kick precedent), must be outranked by the actor (plain FORBIDDEN, which
- * makes equal rank, self-target, and the owner-as-target all fail identically).
- * Returns the loaded role (the audit entry names it).
+ * not `@everyone`, strictly below the actor), then the target must be a member (NOT_FOUND,
+ * the kick precedent). Hierarchy binds the ROLE, never the target (Discord semantics) —
+ * any member may receive or lose a strictly-below role, the actor themselves and the
+ * owner included. Returns the loaded role (the audit entry names it).
  */
 async function assertCanManageAssignment(
   input: { guildId: string; userId: string; roleId: string },
@@ -101,7 +101,6 @@ async function assertCanManageAssignment(
   if (!(await isGuildMember(input.guildId, input.userId))) {
     throw new ORPCError("NOT_FOUND", { message: "That user isn't a member." });
   }
-  await assertActorOutranks(input.guildId, actorId, input.userId);
   return role;
 }
 
@@ -281,10 +280,9 @@ export const roleRouter = {
     }),
 
   /**
-   * Grant a role to a member. Both charter hierarchy rules apply: the role must sit
-   * strictly below the actor's highest AND the actor must outrank the target (equal rank,
-   * self-target, and the owner-as-target all fail it). Idempotent — re-granting a held
-   * role succeeds without a second fan-out.
+   * Grant a role to a member. Hierarchy binds the role — it must sit strictly below the
+   * actor's highest — but never the target: any member qualifies, self and the owner
+   * included. Idempotent — re-granting a held role succeeds without a second fan-out.
    */
   assign: protectedProcedure
     .input(z.object({ guildId: z.string(), userId: z.string(), roleId: z.string() }))
