@@ -12,6 +12,7 @@ import { TypingLine } from "@/components/chat/typing-line";
 import { GroupHeaderMenu } from "@/components/dm/group-header-menu";
 import { GroupMembersPopover } from "@/components/dm/group-members-popover";
 import { PresenceAvatar } from "@/components/presence-avatar";
+import { useActiveChannel } from "@/lib/active-channel";
 import { dmDisplayName } from "@/lib/dm";
 import type { ChatMessage, DmListItem, HistoryCache } from "@/lib/use-realtime";
 import { dmEvictedKey, historyInfiniteKey, typingQueryKey, usePresence } from "@/lib/use-realtime";
@@ -88,6 +89,9 @@ function DmChannelView() {
   }, [newestMessageId, channelId, selfUserId]);
 
   useEffect(() => setReplyTo(null), [channelId]);
+
+  // Channel-in-view signal for the notification dispatcher (#75).
+  useActiveChannel(channelId);
 
   const participants = dm.data?.participants;
   const memberUsernames = useMemo(

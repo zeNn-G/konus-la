@@ -1,5 +1,4 @@
-import { Avatar as DicebearAvatar } from "@dicebear/core";
-import lorelei from "@dicebear/styles/lorelei.json" with { type: "json" };
+import { avatarDataUri } from "@konus-la/ui/lib/avatar-uri";
 import { cn } from "@konus-la/ui/lib/utils";
 import { useMemo } from "react";
 
@@ -19,10 +18,7 @@ type AvatarProps = {
  * and everyone gets a stable generated avatar keyed by their username.
  */
 function Avatar({ seed, src, alt, size = 128, className }: AvatarProps) {
-  const generated = useMemo(
-    () => new DicebearAvatar(lorelei, { seed, size }).toDataUri(),
-    [seed, size],
-  );
+  const generated = useMemo(() => avatarDataUri(seed, size), [seed, size]);
 
   return (
     <img
