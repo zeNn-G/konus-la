@@ -63,6 +63,11 @@ async function rolesOf(guildId: string, as = OWNER) {
   return view.roles;
 }
 
+async function memberRoleIds(guildId: string, userId: string, as = OWNER2) {
+  const view = await call(appRouter.guild.get, { guildId }, asUser(as));
+  return view.members.find((m) => m.userId === userId)?.roleIds ?? [];
+}
+
 beforeAll(async () => {
   await seedTestUser({ id: OWNER, username: "alice" });
   await seedTestUser({ id: OWNER2, username: "alice2" });
@@ -503,25 +508,32 @@ describe("role.assign", () => {
     );
   });
 
-  test("an equal-rank target → FORBIDDEN", async () => {
-    await expectCode(
-      call(appRouter.role.assign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER)),
-      "FORBIDDEN",
-    );
+  test("an equal-rank target succeeds — hierarchy binds the role, not the target", async () => {
+    await call(appRouter.role.assign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER));
+    expect(await memberRoleIds(guildId, PEER)).toContain(pagesId);
   });
 
-  test("self-target → FORBIDDEN", async () => {
-    await expectCode(
-      call(appRouter.role.assign, { guildId, userId: MANAGER, roleId: pagesId }, asUser(MANAGER)),
-      "FORBIDDEN",
+  test("self-target succeeds for a strictly-below role", async () => {
+    await call(
+      appRouter.role.assign,
+      { guildId, userId: MANAGER, roleId: pagesId },
+      asUser(MANAGER),
     );
+    expect(await memberRoleIds(guildId, MANAGER)).toContain(pagesId);
   });
 
-  test("the owner as target → FORBIDDEN", async () => {
-    await expectCode(
-      call(appRouter.role.assign, { guildId, userId: OWNER2, roleId: pagesId }, asUser(MANAGER)),
-      "FORBIDDEN",
+  test("the owner as target succeeds", async () => {
+    await call(appRouter.role.assign, { guildId, userId: OWNER2, roleId: pagesId }, asUser(MANAGER));
+    expect(await memberRoleIds(guildId, OWNER2)).toContain(pagesId);
+  });
+
+  test("the owner assigns a role to themselves", async () => {
+    await call(
+      appRouter.role.assign,
+      { guildId, userId: OWNER2, roleId: knightsId },
+      asUser(OWNER2),
     );
+    expect(await memberRoleIds(guildId, OWNER2)).toContain(knightsId);
   });
 
   test("a target who isn't a member → NOT_FOUND", async () => {
@@ -632,23 +644,41 @@ describe("role.unassign", () => {
     );
   });
 
-  test("an equal-rank target → FORBIDDEN, even for a strictly-below role", async () => {
+  test("an equal-rank target succeeds — hierarchy binds the role, not the target", async () => {
     await seedTestMemberRole(guildId, PEER, pagesId);
-    await expectCode(
-      call(appRouter.role.unassign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER)),
-      "FORBIDDEN",
-    );
+    await call(appRouter.role.unassign, { guildId, userId: PEER, roleId: pagesId }, asUser(MANAGER));
+    expect(await memberRoleIds(guildId, PEER)).not.toContain(pagesId);
   });
 
-  test("self-target → FORBIDDEN", async () => {
+  test("self-target succeeds for a strictly-below role", async () => {
+    await seedTestMemberRole(guildId, MANAGER, pagesId);
+    await call(
+      appRouter.role.unassign,
+      { guildId, userId: MANAGER, roleId: pagesId },
+      asUser(MANAGER),
+    );
+    expect(await memberRoleIds(guildId, MANAGER)).not.toContain(pagesId);
+  });
+
+  test("a member can't shed their own highest role — the role rule still binds", async () => {
     await expectCode(
       call(
         appRouter.role.unassign,
-        { guildId, userId: MANAGER, roleId: pagesId },
+        { guildId, userId: MANAGER, roleId: captainsId },
         asUser(MANAGER),
       ),
       "FORBIDDEN",
     );
+  });
+
+  test("the owner unassigns a role from themselves", async () => {
+    await seedTestMemberRole(guildId, OWNER2, pagesId);
+    await call(
+      appRouter.role.unassign,
+      { guildId, userId: OWNER2, roleId: pagesId },
+      asUser(OWNER2),
+    );
+    expect(await memberRoleIds(guildId, OWNER2)).not.toContain(pagesId);
   });
 
   test("a target who isn't a member → NOT_FOUND", async () => {
