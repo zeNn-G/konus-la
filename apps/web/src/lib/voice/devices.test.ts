@@ -72,7 +72,6 @@ beforeEach(() => {
     outputs: [],
     sinkId: "",
     outputSupported: false,
-    pickerOpen: false,
     outputVolume: 1,
   });
   fake = new FakeDeps();

@@ -14,6 +14,8 @@
 
 // Imported from source so Vite emits hashed URLs; ?no-inline pins the sub-4KB blips to
 // real files too — the fetch+decode preload wants URLs, not data: URIs.
+import { create } from "zustand";
+
 import deafenOffUrl from "@/assets/sounds/deafen-off.mp3?no-inline";
 import deafenOnUrl from "@/assets/sounds/deafen-on.mp3?no-inline";
 import muteOffUrl from "@/assets/sounds/mute-off.mp3?no-inline";
@@ -141,11 +143,13 @@ export class SoundEngine {
     }
   }
 
-  play(cue: SoundCue): void {
+  play(cue: SoundCue, opts?: { ignorePrefs?: boolean }): void {
     if (!this.context || !this.masterGain) return;
     if (this.context.state !== "running") return;
-    // Consulted fresh on every play — the #77 toggles only ever write the map.
-    if (this.deps.loadSoundPrefs()[cue] === false) return;
+    // Consulted fresh on every play — the #77 toggles only ever write the map. A preview
+    // bypasses the gate (hearing a disabled cue before re-enabling it is the point) but
+    // never the activation gating above.
+    if (!opts?.ignorePrefs && !isSoundCueEnabled(this.deps.loadSoundPrefs(), cue)) return;
     const buffer = this.buffers.get(cue);
     if (buffer === undefined) return;
     const source = this.context.createBufferSource();
@@ -199,13 +203,60 @@ function loadSoundPrefs(): Partial<Record<SoundCue, boolean>> {
   }
 }
 
+/** The overrides map is absence-biased: only an explicit `false` disables a cue (#77). */
+export function isSoundCueEnabled(
+  prefs: Partial<Record<SoundCue, boolean>>,
+  cue: SoundCue,
+): boolean {
+  return prefs[cue] !== false;
+}
+
+/** Next overrides map after a toggle — back-to-default (enabled) deletes the entry (#77). */
+export function withSoundPrefOverride(
+  prefs: Partial<Record<SoundCue, boolean>>,
+  cue: SoundCue,
+  enabled: boolean,
+): Partial<Record<SoundCue, boolean>> {
+  const next = { ...prefs };
+  if (enabled) delete next[cue];
+  else next[cue] = false;
+  return next;
+}
+
+interface SoundPrefsState {
+  /** The `konusLa.sound-prefs` overrides map mirrored for UI reactivity — absent = on. */
+  prefs: Partial<Record<SoundCue, boolean>>;
+  setCueEnabled: (cue: SoundCue, enabled: boolean) => void;
+}
+
+/**
+ * The #77 toggles' store: hydrates once from `konusLa.sound-prefs`, every write goes
+ * map → localStorage → notify. The store is the runtime truth — the engine's real deps
+ * read it per play — so a failed persist never desyncs the toggles from what plays.
+ * No cross-tab sync (matches the device prefs).
+ */
+export const useSoundPrefs = create<SoundPrefsState>()((set) => ({
+  prefs: loadSoundPrefs(),
+  setCueEnabled: (cue, enabled) =>
+    set((state) => {
+      const prefs = withSoundPrefOverride(state.prefs, cue, enabled);
+      try {
+        if (Object.keys(prefs).length === 0) localStorage.removeItem(SOUND_PREFS_STORAGE_KEY);
+        else localStorage.setItem(SOUND_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+      } catch {
+        // storage full/blocked — the toggle still applies for this session
+      }
+      return { prefs };
+    }),
+}));
+
 function createRealDeps(): SoundEngineDeps {
   return {
     createContext: () => new AudioContext(),
     createElement: () => document.createElement("audio"),
     fetchBuffer: async (url) => (await fetch(url)).arrayBuffer(),
     cueUrls: CUE_URLS,
-    loadSoundPrefs,
+    loadSoundPrefs: () => useSoundPrefs.getState().prefs,
   };
 }
 
@@ -214,6 +265,16 @@ let engine: SoundEngine | null = null;
 /** The one entry every cue caller uses; a no-op until `initSoundEffects` has run. */
 export function playSoundCue(cue: SoundCue): void {
   engine?.play(cue);
+}
+
+/**
+ * The #77 preview affordance: plays the cue even when its toggle is off. Always rides a
+ * click, so activating first guarantees the very first gesture's preview is audible.
+ */
+export function previewSoundCue(cue: SoundCue): void {
+  const current = engine;
+  if (!current) return;
+  void current.activate().then(() => current.play(cue, { ignorePrefs: true }));
 }
 
 /**

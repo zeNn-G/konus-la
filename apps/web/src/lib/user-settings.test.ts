@@ -25,6 +25,12 @@ describe("user-settings store", () => {
     expect(useUserSettings.getState().section).toBe("bans");
   });
 
+  test("openAt('voice') is the deck-gear / fallback-toast target (#85)", () => {
+    useUserSettings.getState().openAt("voice");
+    expect(useUserSettings.getState().open).toBe(true);
+    expect(useUserSettings.getState().section).toBe("voice");
+  });
+
   test("close dismisses; reopening lands on the section the trigger names", () => {
     useUserSettings.getState().openAt("codes");
     useUserSettings.getState().close();

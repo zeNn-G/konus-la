@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { peerSoundCue, SoundEngine, type SoundEngineDeps } from "./sound-effects";
+import {
+  peerSoundCue,
+  SoundEngine,
+  useSoundPrefs,
+  withSoundPrefOverride,
+  type SoundEngineDeps,
+} from "./sound-effects";
 
 /**
  * The effects-engine seam (#79/#78): fake Web Audio + sink element stand in for the
@@ -216,6 +222,64 @@ describe("sound-prefs gating (overrides-only, default on)", () => {
     engine.play("peer-join");
 
     expect(fake.context.sources).toHaveLength(1);
+  });
+
+  test("a preview (ignorePrefs) plays a cue overridden to false", async () => {
+    await started();
+    await engine.activate();
+    fake.prefs = { "mute-on": false };
+
+    engine.play("mute-on", { ignorePrefs: true });
+
+    expect(fake.context.sources).toHaveLength(1);
+  });
+
+  test("a preview still respects activation gating", async () => {
+    await started();
+
+    engine.play("mute-on", { ignorePrefs: true });
+
+    expect(fake.context.sources).toHaveLength(0);
+  });
+});
+
+describe("sound-prefs overrides map (#77 toggles)", () => {
+  test("disabling a cue writes a false entry; others untouched", () => {
+    expect(withSoundPrefOverride({}, "peer-join", false)).toEqual({ "peer-join": false });
+    expect(withSoundPrefOverride({ "mute-on": false }, "peer-join", false)).toEqual({
+      "mute-on": false,
+      "peer-join": false,
+    });
+  });
+
+  test("back-to-default (enabled) removes the entry entirely, not a true entry", () => {
+    const next = withSoundPrefOverride({ "peer-join": false, "mute-on": false }, "peer-join", true);
+    expect(next).toEqual({ "mute-on": false });
+    expect("peer-join" in next).toBe(false);
+  });
+
+  test("enabling an already-absent cue stays a no-entry no-op", () => {
+    expect(withSoundPrefOverride({}, "self-join", true)).toEqual({});
+  });
+
+  test("the input map is not mutated", () => {
+    const prefs = { "mute-on": false } as const;
+    withSoundPrefOverride(prefs, "mute-on", true);
+    expect(prefs).toEqual({ "mute-on": false });
+  });
+});
+
+describe("useSoundPrefs store", () => {
+  beforeEach(() => {
+    useSoundPrefs.setState({ prefs: {} });
+  });
+
+  test("setCueEnabled(false) records the override; setCueEnabled(true) removes it", () => {
+    useSoundPrefs.getState().setCueEnabled("deafen-on", false);
+    expect(useSoundPrefs.getState().prefs).toEqual({ "deafen-on": false });
+
+    useSoundPrefs.getState().setCueEnabled("deafen-on", true);
+    expect(useSoundPrefs.getState().prefs).toEqual({});
   });
 });
 

@@ -193,14 +193,17 @@ TanStack Query invalidation of `guild.list`.
   peer shares auto-focus onto a vacant stage only, never steal, and own shares never auto-focus
   (#32). Focus advances through the pure `nextFocus`/`deriveStageLayout`; both modes render one
   keyed tile list so surfaces never remount (interest refcounts hold still) on layout switches.
-- **Device & permission UX (`lib/voice/devices.ts` + `components/voice/device-picker.tsx`, #25)** —
+- **Device & permission UX (`lib/voice/devices.ts` +
+  `components/user-settings/voice-section.tsx`, #25/#85)** —
   device *preferences* (localStorage) vs *presence* (enumerateDevices) never overwrite each other:
   the `DeviceManager` singleton (wired in `session.ts`, started once in the `(app)` shell) watches
   `devicechange`, falls back to the system default when the chosen device unplugs and switches back
   on replug — both directions toasted mid-call, the fallback toast's **Change** action opens the
-  deck picker via the store-controlled `pickerOpen`. `DevicePicker` (capsule mic chevron + deck
-  settings popover) lists inputs, and outputs only where `setSinkId` exists (Safari gets no output
-  UX at all); the chosen sink flows through the device store into `voice-audio-bridge.tsx`. Mic
+  user-settings dialog at Voice (`useUserSettings.openAt`), the same target as the deck gear and
+  the capsule chevron. The Voice section's device dropdowns list inputs, and outputs only where
+  `setSinkId` exists (Safari gets no output UX at all); it also owns the master output-volume
+  slider (#78) and the per-cue voice-sound toggles (`konusLa.sound-prefs`, previews included);
+  the chosen sink flows through the device store into `voice-audio-bridge.tsx`. Mic
   switches swap the live producer track in place (`voiceSession.switchMicTrack`, no re-produce);
   the share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
   `getDisplayMedia` — one call for both halves of a share: video always, audio only when the user
