@@ -18,6 +18,23 @@ import {
  * transitions — the store's `sinkId`/`inputs`/`outputs` are what the UI consumes.
  */
 
+/** Node has no localStorage — a Map-backed stand-in observes the persistence writes. */
+function useFakeLocalStorage(): Map<string, string> {
+  const stored = new Map<string, string>();
+  beforeEach(() => {
+    stored.clear();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
+    };
+  });
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+  return stored;
+}
+
 const MIC_DEFAULT: EnumeratedDevice = {
   deviceId: "default",
   kind: "audioinput",
@@ -244,21 +261,7 @@ describe("preference setters", () => {
 });
 
 describe("master output volume (#78)", () => {
-  /** Node has no localStorage — a Map-backed stand-in observes the persistence writes. */
-  const stored = new Map<string, string>();
-
-  beforeEach(() => {
-    stored.clear();
-    (globalThis as { localStorage?: unknown }).localStorage = {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => void stored.set(key, value),
-      removeItem: (key: string) => void stored.delete(key),
-    };
-  });
-
-  afterEach(() => {
-    delete (globalThis as { localStorage?: unknown }).localStorage;
-  });
+  const stored = useFakeLocalStorage();
 
   test("setOutputVolume updates the store and persists under voice:output-volume", () => {
     useDeviceStore.getState().setOutputVolume(0.4);
@@ -285,20 +288,7 @@ describe("master output volume (#78)", () => {
 });
 
 describe("mic input volume (#81)", () => {
-  const stored = new Map<string, string>();
-
-  beforeEach(() => {
-    stored.clear();
-    (globalThis as { localStorage?: unknown }).localStorage = {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => void stored.set(key, value),
-      removeItem: (key: string) => void stored.delete(key),
-    };
-  });
-
-  afterEach(() => {
-    delete (globalThis as { localStorage?: unknown }).localStorage;
-  });
+  const stored = useFakeLocalStorage();
 
   test("setInputVolume updates the store and persists under voice:input-volume", () => {
     useDeviceStore.getState().setInputVolume(0.35);
@@ -317,20 +307,7 @@ describe("mic input volume (#81)", () => {
 });
 
 describe("mic processing toggles (#81)", () => {
-  const stored = new Map<string, string>();
-
-  beforeEach(() => {
-    stored.clear();
-    (globalThis as { localStorage?: unknown }).localStorage = {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => void stored.set(key, value),
-      removeItem: (key: string) => void stored.delete(key),
-    };
-  });
-
-  afterEach(() => {
-    delete (globalThis as { localStorage?: unknown }).localStorage;
-  });
+  const stored = useFakeLocalStorage();
 
   test("setMicProcessing persists each flag under its voice:* key and re-captures", async () => {
     await manager.start();

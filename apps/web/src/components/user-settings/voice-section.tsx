@@ -61,23 +61,7 @@ export function VoiceSection() {
             selectedId={micId}
             onSelect={(deviceId) => void deviceManager.setMicPreference(deviceId)}
           />
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between">
-              <Label>Input volume</Label>
-              <span className="text-xs text-muted-foreground">
-                {Math.round(inputVolume * 100)}%
-              </span>
-            </div>
-            <Slider
-              aria-label="Input volume"
-              min={0}
-              max={100}
-              value={Math.round(inputVolume * 100)}
-              onValueChange={(value) =>
-                setInputVolume((Array.isArray(value) ? (value[0] ?? 0) : value) / 100)
-              }
-            />
-          </div>
+          <VolumeSlider label="Input volume" volume={inputVolume} onChange={setInputVolume} />
           <MicProcessingToggles />
         </div>
 
@@ -91,27 +75,40 @@ export function VoiceSection() {
               onSelect={(deviceId) => deviceManager.setSpeakerPreference(deviceId)}
             />
           )}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between">
-              <Label>Output volume</Label>
-              <span className="text-xs text-muted-foreground">
-                {Math.round(outputVolume * 100)}%
-              </span>
-            </div>
-            <Slider
-              aria-label="Output volume"
-              min={0}
-              max={100}
-              value={Math.round(outputVolume * 100)}
-              onValueChange={(value) =>
-                setOutputVolume((Array.isArray(value) ? (value[0] ?? 0) : value) / 100)
-              }
-            />
-          </div>
+          <VolumeSlider label="Output volume" volume={outputVolume} onChange={setOutputVolume} />
         </div>
       </div>
 
       <VoiceSounds />
+    </div>
+  );
+}
+
+/** Label + percent readout + 0–100 slider over a 0..1 store volume. */
+function VolumeSlider({
+  label,
+  volume,
+  onChange,
+}: {
+  label: string;
+  volume: number;
+  onChange: (volume: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between">
+        <Label>{label}</Label>
+        <span className="text-xs text-muted-foreground">{Math.round(volume * 100)}%</span>
+      </div>
+      <Slider
+        aria-label={label}
+        min={0}
+        max={100}
+        value={Math.round(volume * 100)}
+        onValueChange={(value) =>
+          onChange((Array.isArray(value) ? (value[0] ?? 0) : value) / 100)
+        }
+      />
     </div>
   );
 }
