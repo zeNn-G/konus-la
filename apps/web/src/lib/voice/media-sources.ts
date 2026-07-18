@@ -22,18 +22,26 @@ function onlyTrack(stream: MediaStream, kind: "audio" | "video"): MediaStreamTra
   return track;
 }
 
+/** The browser's built-in speech processing stages, each a user toggle (#81). */
+export interface MicProcessing {
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+}
+
 /**
  * Throws NotAllowedError etc. on denial — the caller degrades to listen-only.
  * `deviceId` rides as `ideal`: a stale persisted id falls back to the system default
  * instead of throwing OverconstrainedError (#25).
  */
-export async function getMicTrack(deviceId?: string): Promise<MediaStreamTrack> {
+export async function getMicTrack(
+  deviceId: string | undefined,
+  processing: MicProcessing,
+): Promise<MediaStreamTrack> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      ...processing,
     },
   });
   return onlyTrack(stream, "audio");

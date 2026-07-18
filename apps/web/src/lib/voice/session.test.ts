@@ -43,6 +43,37 @@ class FakeTrack {
   }
 }
 
+/**
+ * Stands in for the mic chain (#81): the session must treat the destination track as
+ * producer-lifetime-stable and route every re-capture through `recapture` — the chain's
+ * own graph mechanics are covered in mic-chain.test.ts.
+ */
+class FakeMicChain {
+  raw: FakeTrack | null = null;
+  readonly destination = new FakeTrack("audio");
+  disposed = false;
+  recaptures = 0;
+  constructor(private harness: Harness) {}
+  async start(): Promise<MediaStreamTrack> {
+    if (this.harness.micDenied) throw new DOMException("denied", "NotAllowedError");
+    this.raw = new FakeTrack("audio");
+    this.harness.micTracks.push(this.raw);
+    return this.destination.asTrack();
+  }
+  async recapture(): Promise<void> {
+    this.recaptures += 1;
+    if (this.harness.micDenied) return; // a failed capture keeps the current source
+    const old = this.raw;
+    this.raw = new FakeTrack("audio");
+    this.harness.micTracks.push(this.raw);
+    old?.stop();
+  }
+  dispose(): void {
+    this.disposed = true;
+    this.raw?.stop();
+  }
+}
+
 class FakeProducer implements ProducerLike {
   paused = false;
   closed = false;
@@ -190,6 +221,8 @@ class Harness {
   shareAudio = false;
   device: FakeDevice | null = null;
   devices: FakeDevice[] = [];
+  chains: FakeMicChain[] = [];
+  /** RAW captures, chain-owned — what must stop for the mic indicator to go dark. */
   micTracks: FakeTrack[] = [];
   camTracks: FakeTrack[] = [];
   screenTracks: FakeTrack[] = [];
@@ -283,11 +316,10 @@ class Harness {
         this.devices.push(this.device);
         return this.device;
       },
-      getMicTrack: async () => {
-        if (this.micDenied) throw new DOMException("denied", "NotAllowedError");
-        const track = new FakeTrack("audio");
-        this.micTracks.push(track);
-        return track.asTrack();
+      createMicChain: () => {
+        const chain = new FakeMicChain(this);
+        this.chains.push(chain);
+        return chain;
       },
       getCamTrack: async () => {
         const track = new FakeTrack("video");
@@ -457,20 +489,28 @@ describe("join ceremony", () => {
   });
 });
 
-describe("mic device switching (#25)", () => {
-  test("switchMicTrack swaps the producer track in place and stops the old capture", async () => {
+describe("mic device switching & re-capture (#25/#81)", () => {
+  test("the producer receives the chain's destination track, once", async () => {
     await joined();
-    const oldTrack = harness.micTracks[0]!;
+    const chain = harness.chains[0]!;
+    expect(harness.device?.sendTransport?.producers[0]?.track).toBe(chain.destination.asTrack());
+    expect(useVoiceStore.getState().localTracks.mic).toBe(chain.destination.asTrack());
+  });
+
+  test("switchMicTrack re-captures through the chain — producer track untouched, no signaling", async () => {
+    await joined();
+    const chain = harness.chains[0]!;
+    const oldRaw = harness.micTracks[0]!;
 
     await harness.session.switchMicTrack();
 
-    expect(harness.micTracks).toHaveLength(2);
-    const newTrack = harness.micTracks[1]!;
-    expect(oldTrack.stop).toHaveBeenCalled();
-    expect(newTrack.stop).not.toHaveBeenCalled();
-    expect(useVoiceStore.getState().localTracks.mic).toBe(newTrack.asTrack());
-    expect(harness.device?.sendTransport?.producers[0]?.track).toBe(newTrack.asTrack());
-    // A swap is not a re-produce — no extra signaling.
+    expect(chain.recaptures).toBe(1);
+    expect(oldRaw.stop).toHaveBeenCalled();
+    expect(harness.micTracks[1]?.stop).not.toHaveBeenCalled();
+    // The swap happens INSIDE the chain: the producer keeps the destination track,
+    // replaceTrack never enters the mic path, and there is no extra signaling.
+    expect(harness.device?.sendTransport?.producers[0]?.track).toBe(chain.destination.asTrack());
+    expect(useVoiceStore.getState().localTracks.mic).toBe(chain.destination.asTrack());
     expect(harness.callsOf("produce")).toHaveLength(1);
   });
 
@@ -495,15 +535,17 @@ describe("mic device switching (#25)", () => {
     expect(useVoiceStore.getState().micError).toBe(true);
   });
 
-  test("a failed re-capture keeps the current track playing", async () => {
+  test("a failed re-capture keeps the current raw capture alive", async () => {
     await joined();
-    const oldTrack = harness.micTracks[0]!;
+    const oldRaw = harness.micTracks[0]!;
     harness.micDenied = true;
 
     await harness.session.switchMicTrack();
 
-    expect(oldTrack.stop).not.toHaveBeenCalled();
-    expect(useVoiceStore.getState().localTracks.mic).toBe(oldTrack.asTrack());
+    expect(oldRaw.stop).not.toHaveBeenCalled();
+    expect(useVoiceStore.getState().localTracks.mic).toBe(
+      harness.chains[0]!.destination.asTrack(),
+    );
   });
 });
 
@@ -794,6 +836,8 @@ describe("leave, switch & steal", () => {
     expect(state.peers).toEqual({});
     expect(send?.closed).toBe(true);
     expect(harness.callsOf("leave")).toHaveLength(1);
+    // The chain is disposed and the RAW capture stopped — the mic indicator goes dark.
+    expect(harness.chains[0]?.disposed).toBe(true);
     expect(harness.micTracks[0]?.stop).toHaveBeenCalled();
   });
 
@@ -813,6 +857,10 @@ describe("leave, switch & steal", () => {
     expect(firstSend?.closed).toBe(true);
     expect(harness.callsOf("leave")).toHaveLength(0);
     expect(harness.callsOf("join")).toHaveLength(2);
+    // A switch is a fresh media epoch: old chain disposed, a new one built.
+    expect(harness.chains).toHaveLength(2);
+    expect(harness.chains[0]?.disposed).toBe(true);
+    expect(harness.chains[1]?.disposed).toBe(false);
   });
 
   test("joining the channel already joined is a no-op", async () => {

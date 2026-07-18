@@ -6,7 +6,9 @@ import {
   type DeviceNotice,
   type EnumeratedDevice,
   effectiveMicDeviceId,
-  parseOutputVolume,
+  micProcessing,
+  parseProcessingPref,
+  parseVolumePref,
   useDeviceStore,
 } from "./devices";
 
@@ -15,6 +17,23 @@ import {
  * keeps the persisted selection untouched, and announces the fallback/switch-back
  * transitions — the store's `sinkId`/`inputs`/`outputs` are what the UI consumes.
  */
+
+/** Node has no localStorage — a Map-backed stand-in observes the persistence writes. */
+function useFakeLocalStorage(): Map<string, string> {
+  const stored = new Map<string, string>();
+  beforeEach(() => {
+    stored.clear();
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
+    };
+  });
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+  return stored;
+}
 
 const MIC_DEFAULT: EnumeratedDevice = {
   deviceId: "default",
@@ -73,6 +92,10 @@ beforeEach(() => {
     sinkId: "",
     outputSupported: false,
     outputVolume: 1,
+    inputVolume: 1,
+    agc: true,
+    noiseSuppression: true,
+    echoCancellation: true,
   });
   fake = new FakeDeps();
   manager = new DeviceManager(fake.deps());
@@ -238,21 +261,7 @@ describe("preference setters", () => {
 });
 
 describe("master output volume (#78)", () => {
-  /** Node has no localStorage — a Map-backed stand-in observes the persistence writes. */
-  const stored = new Map<string, string>();
-
-  beforeEach(() => {
-    stored.clear();
-    (globalThis as { localStorage?: unknown }).localStorage = {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => void stored.set(key, value),
-      removeItem: (key: string) => void stored.delete(key),
-    };
-  });
-
-  afterEach(() => {
-    delete (globalThis as { localStorage?: unknown }).localStorage;
-  });
+  const stored = useFakeLocalStorage();
 
   test("setOutputVolume updates the store and persists under voice:output-volume", () => {
     useDeviceStore.getState().setOutputVolume(0.4);
@@ -270,11 +279,70 @@ describe("master output volume (#78)", () => {
   });
 
   test("hydration parsing: absent or garbage → default 1, valid values clamped", () => {
-    expect(parseOutputVolume(null)).toBe(1);
-    expect(parseOutputVolume("not-a-number")).toBe(1);
-    expect(parseOutputVolume("0.55")).toBe(0.55);
-    expect(parseOutputVolume("3")).toBe(1);
-    expect(parseOutputVolume("-1")).toBe(0);
+    expect(parseVolumePref(null)).toBe(1);
+    expect(parseVolumePref("not-a-number")).toBe(1);
+    expect(parseVolumePref("0.55")).toBe(0.55);
+    expect(parseVolumePref("3")).toBe(1);
+    expect(parseVolumePref("-1")).toBe(0);
+  });
+});
+
+describe("mic input volume (#81)", () => {
+  const stored = useFakeLocalStorage();
+
+  test("setInputVolume updates the store and persists under voice:input-volume", () => {
+    useDeviceStore.getState().setInputVolume(0.35);
+
+    expect(useDeviceStore.getState().inputVolume).toBe(0.35);
+    expect(stored.get("voice:input-volume")).toBe("0.35");
+  });
+
+  test("attenuation-only: values clamp to 0..1, gain never exceeds 1", () => {
+    useDeviceStore.getState().setInputVolume(2.5);
+    expect(useDeviceStore.getState().inputVolume).toBe(1);
+
+    useDeviceStore.getState().setInputVolume(-0.5);
+    expect(useDeviceStore.getState().inputVolume).toBe(0);
+  });
+});
+
+describe("mic processing toggles (#81)", () => {
+  const stored = useFakeLocalStorage();
+
+  test("setMicProcessing persists each flag under its voice:* key and re-captures", async () => {
+    await manager.start();
+
+    await manager.setMicProcessing("agc", false);
+    expect(useDeviceStore.getState().agc).toBe(false);
+    expect(stored.get("voice:agc")).toBe("false");
+    expect(fake.applyMicCalls).toBe(1);
+
+    await manager.setMicProcessing("noiseSuppression", false);
+    expect(stored.get("voice:noise-suppression")).toBe("false");
+
+    await manager.setMicProcessing("echoCancellation", false);
+    expect(stored.get("voice:echo-cancellation")).toBe("false");
+    expect(fake.applyMicCalls).toBe(3);
+
+    await manager.setMicProcessing("agc", true);
+    expect(useDeviceStore.getState().agc).toBe(true);
+    expect(stored.get("voice:agc")).toBe("true");
+  });
+
+  test("hydration parsing: only the literal \"false\" disables, everything else defaults on", () => {
+    expect(parseProcessingPref(null)).toBe(true);
+    expect(parseProcessingPref("false")).toBe(false);
+    expect(parseProcessingPref("true")).toBe(true);
+    expect(parseProcessingPref("garbage")).toBe(true);
+  });
+
+  test("micProcessing maps the store flags onto gUM constraint names", () => {
+    useDeviceStore.setState({ agc: false, noiseSuppression: true, echoCancellation: false });
+    expect(micProcessing()).toEqual({
+      autoGainControl: false,
+      noiseSuppression: true,
+      echoCancellation: false,
+    });
   });
 });
 

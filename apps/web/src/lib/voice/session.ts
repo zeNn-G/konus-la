@@ -4,20 +4,15 @@ import { Device } from "mediasoup-client";
 import { playSoundCue, type SoundCue } from "@/lib/sound-effects";
 import { getWs } from "@/lib/ws";
 
-import {
-  createRealDeviceDeps,
-  DeviceManager,
-  effectiveMicDeviceId,
-  useDeviceStore,
-} from "./devices";
+import { createRealDeviceDeps, DeviceManager, useDeviceStore } from "./devices";
 import {
   CAM_MAX_BITRATE,
   SCREEN_PRESETS,
   getCamTrack,
-  getMicTrack,
   getScreenCapture,
   type ScreenCapture,
 } from "./media-sources";
+import { createRealMicChain } from "./mic-chain";
 import {
   type ProducerSource,
   type ScreensharePreset,
@@ -107,12 +102,23 @@ export interface VoiceClientLike {
   setConsumersPaused(input: { consumerIds: string[]; paused: boolean }): Promise<void>;
 }
 
+/** The mic capture chain (#81) — `MicChain` satisfies this; tests fake it. */
+export interface MicChainLike {
+  /** Capture + build the graph; resolves to the persistent destination track. */
+  start(): Promise<MediaStreamTrack>;
+  /** Re-capture and swap the source node; a failure keeps the current source. */
+  recapture(): Promise<void>;
+  /** Stop the raw capture and close the chain's dedicated context. Idempotent. */
+  dispose(): void;
+}
+
 export interface VoiceSessionDeps {
   getClient: () => VoiceClientLike;
   /** Subscribe to the shared signaling socket dying; returns an unsubscribe. */
   onSocketClose: (listener: () => void) => () => void;
   createDevice: () => DeviceLike;
-  getMicTrack: () => Promise<MediaStreamTrack>;
+  /** One chain per media epoch — built in `produceMic`, disposed with the handles. */
+  createMicChain: () => MicChainLike;
   getCamTrack: () => Promise<MediaStreamTrack>;
   getScreenCapture: (preset: ScreensharePreset) => Promise<ScreenCapture>;
   isDocumentVisible: () => boolean;
@@ -206,6 +212,7 @@ export class VoiceSession {
   private started = false;
 
   private device: DeviceLike | null = null;
+  private micChain: MicChainLike | null = null;
   private sendTransport: TransportLike | null = null;
   private recvTransport: TransportLike | null = null;
   private producers = new Map<ProducerSource, ProducerLike>();
@@ -389,39 +396,17 @@ export class VoiceSession {
   }
 
   /**
-   * Device switch (picker selection or `devicechange` fallback/replug, #25): re-capture
-   * on the current effective device and swap the track into the live producer — no
-   * re-produce, no signaling. Pause state (mute) survives the swap. Without a live mic
-   * producer there is nothing to switch: the preference simply applies on the next
+   * Device switch (picker / `devicechange` fallback, #25) or processing toggle (#81):
+   * re-capture on the current effective device and prefs, swapping the source node
+   * INSIDE the chain — the producer keeps its destination track, no re-produce, no
+   * signaling. Pause state (mute) survives. The chain owns the races: a failed capture
+   * keeps the current source, a teardown mid-capture stops the late arrival. Without a
+   * live chain there is nothing to switch: the preference simply applies on the next
    * capture (retryMic / rejoin).
    */
   async switchMicTrack(): Promise<void> {
-    const producer = this.producers.get("mic");
-    if (!producer || this.store().status !== "connected") return;
-    const epoch = this.epoch;
-    let track: MediaStreamTrack;
-    try {
-      track = await this.deps.getMicTrack();
-    } catch {
-      return; // capture failed (device raced away / denied) — keep the current track
-    }
-    if (this.epoch !== epoch || this.producers.get("mic") !== producer) {
-      track.stop();
-      return;
-    }
-    const oldTrack = this.store().localTracks.mic;
-    try {
-      await producer.replaceTrack({ track });
-    } catch {
-      track.stop();
-      return;
-    }
-    if (this.epoch !== epoch) {
-      track.stop();
-      return;
-    }
-    oldTrack?.stop();
-    this.patch({ localTracks: { ...this.store().localTracks, mic: track } });
+    if (!this.micChain || this.store().status !== "connected") return;
+    await this.micChain.recapture();
   }
 
   async enableCam(): Promise<void> {
@@ -685,19 +670,27 @@ export class VoiceSession {
     }) as never);
   }
 
-  /** Mic denial degrades to listen-only (#17): the seat is taken either way. */
+  /**
+   * Mic denial degrades to listen-only (#17): the seat is taken either way. The chain's
+   * destination track is produced ONCE — every later re-capture swaps inside the chain.
+   */
   private async produceMic(epoch: number): Promise<void> {
+    this.micChain?.dispose();
+    this.micChain = null;
+    const chain = this.deps.createMicChain();
     let track: MediaStreamTrack;
     try {
-      track = await this.deps.getMicTrack();
+      track = await chain.start();
     } catch {
+      chain.dispose();
       if (this.epoch === epoch) this.patch({ micError: true });
       return;
     }
     if (this.epoch !== epoch) {
-      track.stop();
+      chain.dispose();
       throw new StaleSessionError();
     }
+    this.micChain = chain;
     try {
       const producer = await this.sendTransport!.produce({
         track,
@@ -706,7 +699,6 @@ export class VoiceSession {
       });
       if (this.epoch !== epoch) {
         producer.close();
-        track.stop();
         throw new StaleSessionError();
       }
       // Flags persist across grace/switch — a rebound mic honors the standing mute.
@@ -715,7 +707,8 @@ export class VoiceSession {
       this.patch({ micError: false, localTracks: { ...this.store().localTracks, mic: track } });
     } catch (error) {
       if (error instanceof StaleSessionError) throw error;
-      track.stop();
+      chain.dispose();
+      if (this.micChain === chain) this.micChain = null;
       if (this.epoch === epoch) this.patch({ micError: true });
     }
   }
@@ -1054,6 +1047,9 @@ export class VoiceSession {
     this.sendTransport = null;
     this.recvTransport = null;
     this.device = null;
+    // The chain stops the RAW capture — the mic indicator must go dark on teardown.
+    this.micChain?.dispose();
+    this.micChain = null;
     this.producers.clear();
     this.consumers.clear();
     this.consumedProducerIds.clear();
@@ -1075,7 +1071,7 @@ function createRealDeps(): VoiceSessionDeps {
       return () => socket.removeEventListener("close", listener);
     },
     createDevice: () => new Device() as unknown as DeviceLike,
-    getMicTrack: () => getMicTrack(effectiveMicDeviceId()),
+    createMicChain: createRealMicChain,
     getCamTrack,
     getScreenCapture,
     isDocumentVisible: () => document.visibilityState === "visible",
