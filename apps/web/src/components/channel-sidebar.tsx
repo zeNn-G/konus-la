@@ -36,6 +36,8 @@ import {
   channelLabel,
   type ChannelKind,
 } from "@/components/channel-name-dialog";
+import { ChannelNotificationMenu } from "@/components/channel-notification-menu";
+import { resolvePref, useNotificationPrefs } from "@/lib/notification-prefs";
 import {
   GuildSettingsDialog,
   visibleSettingsSections,
@@ -65,6 +67,8 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
 
   const textChannels = channels.data?.filter((channel) => channel.kind !== "voice") ?? [];
   const voiceChannels = channels.data?.filter((channel) => channel.kind === "voice") ?? [];
+
+  const notificationPrefs = useNotificationPrefs();
 
   const navigate = useNavigate();
   /** The kind the create dialog is minting; null when closed. Each "+" sets its own. */
@@ -158,13 +162,21 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
           {textChannels.map((channel) => (
             // Named group: the shell's <Sidebar> root is itself a bare `group`, so an
             // unnamed group-hover here would reveal every row's kebab at once.
-            <div key={channel.id} className="group/channel relative">
+            <ChannelNotificationMenu
+              key={channel.id}
+              channelId={channel.id}
+              kind="guild"
+              render={<div className="group/channel relative" />}
+            >
               <Link
                 to="/guilds/$guildId/channels/$channelId"
                 params={{ guildId, channelId: channel.id }}
                 className={cn(
                   "flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
                   channel.unread && "font-semibold text-foreground",
+                  // Mute is about interruptions, not information — the row dims but
+                  // unread bold and the mention badge stay (#76).
+                  resolvePref(notificationPrefs, channel.id, "guild") === "muted" && "opacity-50",
                 )}
                 activeProps={{ className: "bg-muted text-foreground" }}
               >
@@ -212,7 +224,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-            </div>
+            </ChannelNotificationMenu>
           ))}
         </nav>
 

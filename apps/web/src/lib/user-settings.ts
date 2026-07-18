@@ -6,7 +6,7 @@ import { create } from "zustand";
  * bare `open()`.
  */
 
-export type UserSettingsSection = "profile" | "voice" | "codes" | "bans";
+export type UserSettingsSection = "profile" | "voice" | "notifications" | "codes" | "bans";
 
 interface UserSettingsState {
   open: boolean;
