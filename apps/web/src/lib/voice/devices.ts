@@ -3,6 +3,8 @@ import { create } from "zustand";
 
 import { useUserSettings } from "@/lib/user-settings";
 
+import type { MicProcessing } from "./media-sources";
+
 /**
  * Device selection & `devicechange` UX (phase-5 spec §UX #17): selections are persisted
  * preferences, presence is what the browser currently enumerates, and the two never
@@ -27,6 +29,16 @@ export type DeviceNotice =
 const MIC_STORAGE_KEY = "voice:mic-device";
 const SPEAKER_STORAGE_KEY = "voice:speaker-device";
 const OUTPUT_VOLUME_STORAGE_KEY = "voice:output-volume";
+const INPUT_VOLUME_STORAGE_KEY = "voice:input-volume";
+
+/** The browser's built-in mic processing stages (#81) — store flag → its voice:* key. */
+export type MicProcessingSetting = "agc" | "noiseSuppression" | "echoCancellation";
+
+const PROCESSING_STORAGE_KEYS: Record<MicProcessingSetting, string> = {
+  agc: "voice:agc",
+  noiseSuppression: "voice:noise-suppression",
+  echoCancellation: "voice:echo-cancellation",
+};
 
 function loadPreference(key: string): string | null {
   try {
@@ -49,10 +61,15 @@ function clamp01(volume: number): number {
   return Math.min(1, Math.max(0, volume));
 }
 
-/** Persisted master volume (0–1, default 1); absent or garbage falls back to 1 (#78). */
-export function parseOutputVolume(raw: string | null): number {
+/** Persisted volume prefs (0–1, default 1); absent or garbage falls back to 1 (#78/#81). */
+export function parseVolumePref(raw: string | null): number {
   const parsed = raw === null ? Number.NaN : Number(raw);
   return Number.isFinite(parsed) ? clamp01(parsed) : 1;
+}
+
+/** Processing toggles default ON (today's behavior) — only an explicit "false" disables. */
+export function parseProcessingPref(raw: string | null): boolean {
+  return raw !== "false";
 }
 
 export interface DeviceStoreState {
@@ -73,6 +90,16 @@ export interface DeviceStoreState {
    */
   outputVolume: number;
   setOutputVolume: (volume: number) => void;
+  /**
+   * Mic gain 0..1 (#81) — attenuation-only, applied as a live GainNode write inside the
+   * mic chain; boost would clip at the encoder, listeners have per-peer volume.
+   */
+  inputVolume: number;
+  setInputVolume: (volume: number) => void;
+  /** The three gUM processing stages (#81), all defaulting on. Flips re-capture. */
+  agc: boolean;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
 }
 
 export const useDeviceStore = create<DeviceStoreState>()((set) => ({
@@ -82,13 +109,28 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   outputs: [],
   sinkId: "",
   outputSupported: false,
-  outputVolume: parseOutputVolume(loadPreference(OUTPUT_VOLUME_STORAGE_KEY)),
+  outputVolume: parseVolumePref(loadPreference(OUTPUT_VOLUME_STORAGE_KEY)),
   setOutputVolume: (volume) => {
     const clamped = clamp01(volume);
     persistPreference(OUTPUT_VOLUME_STORAGE_KEY, String(clamped));
     set({ outputVolume: clamped });
   },
+  inputVolume: parseVolumePref(loadPreference(INPUT_VOLUME_STORAGE_KEY)),
+  setInputVolume: (volume) => {
+    const clamped = clamp01(volume);
+    persistPreference(INPUT_VOLUME_STORAGE_KEY, String(clamped));
+    set({ inputVolume: clamped });
+  },
+  agc: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.agc)),
+  noiseSuppression: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.noiseSuppression)),
+  echoCancellation: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.echoCancellation)),
 }));
+
+/** The store flags in gUM constraint terms — what mic capture should apply right now. */
+export function micProcessing(): MicProcessing {
+  const { agc, noiseSuppression, echoCancellation } = useDeviceStore.getState();
+  return { autoGainControl: agc, noiseSuppression, echoCancellation };
+}
 
 /**
  * The mic deviceId `getUserMedia` should ask for right now: the preference while it is
@@ -163,6 +205,17 @@ export class DeviceManager {
     persistPreference(MIC_STORAGE_KEY, deviceId);
     this.micPresent = hasDevice(useDeviceStore.getState().inputs, deviceId);
     useDeviceStore.setState({ micId: deviceId });
+    await this.deps.applyMicDevice();
+  }
+
+  /**
+   * Flip a processing toggle (#81): persist, then re-capture so it takes effect mid-call
+   * (the chain swaps its source node). With no live session the re-capture no-ops and the
+   * flag simply applies on the next join.
+   */
+  async setMicProcessing(setting: MicProcessingSetting, enabled: boolean): Promise<void> {
+    persistPreference(PROCESSING_STORAGE_KEYS[setting], String(enabled));
+    useDeviceStore.setState({ [setting]: enabled });
     await this.deps.applyMicDevice();
   }
 

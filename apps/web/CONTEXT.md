@@ -203,9 +203,20 @@ TanStack Query invalidation of `guild.list`.
   the capsule chevron. The Voice section's device dropdowns list inputs, and outputs only where
   `setSinkId` exists (Safari gets no output UX at all); it also owns the master output-volume
   slider (#78) and the per-cue voice-sound toggles (`konusLa.sound-prefs`, previews included);
-  the chosen sink flows through the device store into `voice-audio-bridge.tsx`. Mic
-  switches swap the live producer track in place (`voiceSession.switchMicTrack`, no re-produce);
-  the share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
+  the chosen sink flows through the device store into `voice-audio-bridge.tsx`. The mic
+  rides a persistent Web Audio chain (`lib/voice/mic-chain.ts`, #81): raw gUM track →
+  source → gain → destination on a dedicated per-call `AudioContext` (NOT the shared
+  effects context), with the producer holding the destination track for the session's
+  life. The Voice section's input column drives it: the input-volume slider is a live
+  clamped gain write (0..1, attenuation-only, works while muted — mute stays
+  `producer.pause()`), and the AGC / noise-suppression / echo-cancellation toggles
+  (all default on) re-capture through the chain's source swap — as do mic switches
+  (`voiceSession.switchMicTrack`): the producer track never changes, no re-produce, no
+  signaling. All four prefs persist in the device store (`voice:input-volume`,
+  `voice:agc`, `voice:noise-suppression`, `voice:echo-cancellation`) and apply on the
+  next join when no session is live; disposal stops the RAW track so the tab's mic
+  indicator goes dark on leave.
+  The share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
   `getDisplayMedia` — one call for both halves of a share: video always, audio only when the user
   ticks share-audio in the browser picker (the popover hints at it; absence degrades silently to a
   video-only share, and the sharer never monitors their own share audio locally); camera denial
