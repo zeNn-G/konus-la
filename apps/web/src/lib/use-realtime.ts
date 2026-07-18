@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { invalidateDmConversation } from "@/lib/dm";
+import { dispatchMessageNotification } from "@/lib/notification-dispatcher";
 import { peerSoundCue, playSoundCue } from "@/lib/sound-effects";
 import {
   reduceVoiceOccupancy,
@@ -195,6 +196,9 @@ function dispatch(client: QueryClient, selfUserId: string, event: RealtimeEvent)
       client.setQueryData<TypingEntry[]>(typingQueryKey(message.channelId), (old = []) =>
         old.filter((entry) => entry.userId !== message.author.id),
       );
+      // Ping / OS toast (#75): eligibility + delivery evaluated once, right here — a
+      // suppressed message already drove unread/mention state via the patches above.
+      dispatchMessageNotification(client, selfUserId, event);
       break;
     }
     case "message.updated": {

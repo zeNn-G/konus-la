@@ -8,7 +8,13 @@ import {
   SelectValue,
 } from "@konus-la/ui/components/select";
 import { Switch } from "@konus-la/ui/components/switch";
+import { useState } from "react";
 
+import {
+  enableDesktopNotifications,
+  getNotificationPermission,
+  useDesktopNotifications,
+} from "@/lib/desktop-notifications";
 import {
   BUILT_IN_KIND_DEFAULTS,
   DM_PREF_OPTIONS,
@@ -19,10 +25,10 @@ import {
 import { isSoundCueEnabled, useSoundPrefs } from "@/lib/sound-effects";
 
 /**
- * The dialog's Notifications section (#87 share): the configurable kind defaults and
- * the notification-ping sound toggle. Per-channel overrides live in the sidebar
- * context menus, not here (#76); the permission pill, desktop-notifications toggle,
- * and nudge are the dispatcher ticket's (7.6).
+ * The dialog's Notifications section: the desktop-notifications opt-in with its
+ * browser-permission state (7.6), the configurable kind defaults, and the
+ * notification-ping sound toggle (#87). Per-channel overrides live in the sidebar
+ * context menus, not here (#76).
  */
 export function NotificationsSection() {
   const defaults = useNotificationPrefs((s) => s.defaults);
@@ -32,6 +38,8 @@ export function NotificationsSection() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-8">
+      <DesktopNotificationsToggle />
+
       <div className="grid grid-cols-1 items-start gap-x-6 gap-y-4 sm:grid-cols-2">
         <DefaultSelect
           label="Direct messages default"
@@ -60,6 +68,57 @@ export function NotificationsSection() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+const PERMISSION_PILL: Record<NotificationPermission, string> = {
+  granted: "Allowed",
+  default: "Not requested",
+  denied: "Blocked",
+};
+
+/**
+ * The app-level opt-in (7.6): flipping it on while browser permission is `default`
+ * triggers the permission prompt on that gesture; `denied` disables the toggle with a
+ * hint. Permission has no change event — re-read it after every request.
+ */
+function DesktopNotificationsToggle() {
+  const enabled = useDesktopNotifications((s) => s.enabled);
+  const setEnabled = useDesktopNotifications((s) => s.setEnabled);
+  const [permission, setPermission] = useState(getNotificationPermission);
+
+  const blocked = permission === "denied" || permission === null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 border-b border-border/50 py-1.5">
+        <span className="flex-1 text-sm">Desktop notifications</span>
+        <span className="rounded-full border border-foreground/10 bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">
+          {permission === null ? "Unsupported" : PERMISSION_PILL[permission]}
+        </span>
+        <Switch
+          aria-label="Desktop notifications"
+          checked={enabled && permission === "granted"}
+          disabled={blocked}
+          onCheckedChange={(checked) => {
+            if (!checked) {
+              setEnabled(false);
+              return;
+            }
+            void enableDesktopNotifications().then(() =>
+              setPermission(getNotificationPermission()),
+            );
+          }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {permission === null
+          ? "Your browser doesn't support desktop notifications."
+          : permission === "denied"
+            ? "Notifications are blocked in your browser settings for this site."
+            : "OS notifications for DMs and @mentions while the tab is unfocused. Sounds work either way."}
+      </p>
     </div>
   );
 }

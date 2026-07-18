@@ -15,6 +15,7 @@ import { MembersPanel } from "@/components/members-panel";
 import { TypingLine } from "@/components/chat/typing-line";
 import { VoiceMiniStage } from "@/components/voice/voice-mini-stage";
 import { VoiceRoom } from "@/components/voice/voice-room";
+import { clearActiveChannel, setActiveChannel } from "@/lib/active-channel";
 import { roleColorOf } from "@/lib/roles";
 import type { ChannelListItem, ChatMessage, HistoryCache } from "@/lib/use-realtime";
 import { useMembersPanelPref } from "@/lib/use-members-panel";
@@ -86,6 +87,12 @@ function ChannelView() {
   useEffect(() => {
     setReplyTo(null);
     setMembersSheetOpen(false);
+  }, [channelId]);
+
+  // Channel-in-view signal for the notification dispatcher (#75).
+  useEffect(() => {
+    setActiveChannel(channelId);
+    return () => clearActiveChannel(channelId);
   }, [channelId]);
 
   const members = guild.data?.members;
