@@ -68,8 +68,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
   const textChannels = channels.data?.filter((channel) => channel.kind !== "voice") ?? [];
   const voiceChannels = channels.data?.filter((channel) => channel.kind === "voice") ?? [];
 
-  const notificationPrefs = useNotificationPrefs((s) => s.prefs);
-  const notificationDefaults = useNotificationPrefs((s) => s.defaults);
+  const notificationPrefs = useNotificationPrefs();
 
   const navigate = useNavigate();
   /** The kind the create dialog is minting; null when closed. Each "+" sets its own. */
@@ -177,11 +176,7 @@ export function ChannelSidebar({ guildId }: { guildId: string }) {
                   channel.unread && "font-semibold text-foreground",
                   // Mute is about interruptions, not information — the row dims but
                   // unread bold and the mention badge stay (#76).
-                  resolvePref(
-                    { prefs: notificationPrefs, defaults: notificationDefaults },
-                    channel.id,
-                    "guild",
-                  ) === "muted" && "opacity-50",
+                  resolvePref(notificationPrefs, channel.id, "guild") === "muted" && "opacity-50",
                 )}
                 activeProps={{ className: "bg-muted text-foreground" }}
               >

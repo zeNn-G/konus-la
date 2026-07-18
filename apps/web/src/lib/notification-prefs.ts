@@ -20,6 +20,21 @@ export const BUILT_IN_KIND_DEFAULTS: {
 
 type KindDefaults = { guild?: NotificationPref; dm?: DmNotificationPref };
 
+/**
+ * The user-facing option lists — one source for the sidebar radios and the dialog's
+ * kind-default selects, so the two surfaces can't drift.
+ */
+export const GUILD_PREF_OPTIONS: ReadonlyArray<{ value: NotificationPref; label: string }> = [
+  { value: "all", label: "All messages" },
+  { value: "mentions", label: "Mentions only" },
+  { value: "muted", label: "Muted" },
+];
+
+export const DM_PREF_OPTIONS: ReadonlyArray<{ value: DmNotificationPref; label: string }> = [
+  { value: "all", label: "All messages" },
+  { value: "muted", label: "Muted" },
+];
+
 export const NOTIFICATION_PREFS_STORAGE_KEY = "konusLa.notification-prefs";
 export const NOTIFICATION_DEFAULTS_STORAGE_KEY = "konusLa.notification-defaults";
 
@@ -90,7 +105,6 @@ export const useNotificationPrefs = create<NotificationPrefsState>()((set) => ({
       } else if (kind === "guild") {
         defaults.guild = pref;
       } else {
-        // The overloads keep "mentions" out of DM call sites; runtime just stores.
         defaults.dm = pref as DmNotificationPref;
       }
       persistMap(NOTIFICATION_DEFAULTS_STORAGE_KEY, defaults);
@@ -98,10 +112,7 @@ export const useNotificationPrefs = create<NotificationPrefsState>()((set) => ({
     }),
 }));
 
-/**
- * Override → configured kind default → built-in, per the #76 read contract. The pure
- * form is for React call sites resolving many rows off one subscribed snapshot.
- */
+/** Override → configured kind default → built-in, per the #76 read contract. */
 export function resolvePref(
   state: Pick<NotificationPrefsState, "prefs" | "defaults">,
   channelId: string,

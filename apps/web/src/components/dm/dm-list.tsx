@@ -20,8 +20,7 @@ import { orpc } from "@/utils/orpc";
 export function DmList({ selfUserId, className }: { selfUserId: string; className?: string }) {
   const dms = useQuery(orpc.dm.list.queryOptions());
   const presence = usePresence();
-  const notificationPrefs = useNotificationPrefs((s) => s.prefs);
-  const notificationDefaults = useNotificationPrefs((s) => s.defaults);
+  const notificationPrefs = useNotificationPrefs();
 
   const rows = [...(dms.data ?? [])].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 
@@ -52,11 +51,7 @@ export function DmList({ selfUserId, className }: { selfUserId: string; classNam
                 "flex items-center gap-2 rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
                 row.unread && "font-semibold text-foreground",
                 // Mute dims the row; unread bold and the mention badge stay (#76).
-                resolvePref(
-                  { prefs: notificationPrefs, defaults: notificationDefaults },
-                  row.id,
-                  "dm",
-                ) === "muted" && "opacity-50",
+                resolvePref(notificationPrefs, row.id, "dm") === "muted" && "opacity-50",
               )}
               activeProps={{ className: "bg-muted text-foreground" }}
             />

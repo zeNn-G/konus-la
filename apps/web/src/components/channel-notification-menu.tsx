@@ -10,25 +10,13 @@ import {
 import type { ReactElement, ReactNode } from "react";
 
 import {
+  DM_PREF_OPTIONS,
+  GUILD_PREF_OPTIONS,
   resolvePref,
   useNotificationPrefs,
   type NotificationChannelKind,
   type NotificationPref,
 } from "@/lib/notification-prefs";
-
-type PrefOption = { value: NotificationPref; label: string };
-
-const GUILD_OPTIONS: PrefOption[] = [
-  { value: "all", label: "All messages" },
-  { value: "mentions", label: "Mentions only" },
-  { value: "muted", label: "Muted" },
-];
-
-/** DM rows have no mention concept — their pref space is binary (#76). */
-const DM_OPTIONS: PrefOption[] = [
-  { value: "all", label: "All messages" },
-  { value: "muted", label: "Muted" },
-];
 
 type ChannelNotificationMenuProps = {
   channelId: string;
@@ -52,7 +40,7 @@ export function ChannelNotificationMenu({
 }: ChannelNotificationMenuProps) {
   const pref = useNotificationPrefs((s) => resolvePref(s, channelId, kind));
   const setChannelPref = useNotificationPrefs((s) => s.setChannelPref);
-  const options = kind === "guild" ? GUILD_OPTIONS : DM_OPTIONS;
+  const options = kind === "guild" ? GUILD_PREF_OPTIONS : DM_PREF_OPTIONS;
 
   return (
     <ContextMenu>
