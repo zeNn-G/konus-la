@@ -253,11 +253,11 @@ Adopted verbatim from the [changesets research](../research/changesets-release-f
   `workflow_call`** (`build-image` job gated on `published == 'true'`). Never rely on the
   tag event: `GITHUB_TOKEN`-pushed tags don't trigger workflows. Requires the repo
   setting *Allow GitHub Actions to create and approve pull requests*.
-- **`.github/workflows/docker-image.yml`** — `on: push: tags: [v*]` (manual-push path)
-  + `on: workflow_call`; buildx **QEMU single job** (`docker/setup-qemu-action` +
-  `docker/build-push-action`) building `linux/amd64,linux/arm64` on `ubuntu-24.04`,
-  pushing `ghcr.io/zenn-g/konus-la:X.Y.Z` + `:latest`. Native arm runners only if build
-  times hurt.
+- **`.github/workflows/docker-image.yml`** — triggers on both `push: tags: [v*]`
+  (manual-push path) and `workflow_call`; buildx **QEMU single job**
+  (`docker/setup-qemu-action` with `docker/build-push-action`) building
+  `linux/amd64,linux/arm64` on `ubuntu-24.04`, pushing `ghcr.io/zenn-g/konus-la:X.Y.Z`
+  and `:latest`. Native arm runners only if build times hurt.
 - **`.github/workflows/ci.yml`** — PR gate: oxlint + `check-types` + `bun test`,
   required via branch protection. Release/build workflows don't re-run tests; no image
   build on PRs.
