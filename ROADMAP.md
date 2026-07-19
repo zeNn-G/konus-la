@@ -120,13 +120,25 @@ A Discord-style app for a small self-hosted friends instance — multi-guild tex
 
 ### Deployment
 
-- **Single VPS, Docker Compose.**
-- Containers: `bun-server` (HTTP + WS + mediasoup + bundled SPA) and `caddy` (TLS + reverse proxy to `bun-server:3000`).
-- Mediasoup ports UDP+TCP `40000-40100` mapped host → container directly (bypass Caddy). `PUBLIC_IP` env = host's public IP, used as mediasoup `announcedIp`.
-- DB: local libSQL file in a named Docker volume. Backups = copy the file.
-- SPA served same-origin from the Bun container.
-- `restart: unless-stopped`.
-- Single `.env` at repo root, validated by `packages/env`.
+Amended in Phase 8 — see [ADR 0009](docs/adr/0009-single-image-single-port-deployment.md)
+and the [Phase 8 spec](docs/specs/phase-8-deployment.md), which supersede the earlier
+"compose stack is the deployment" plan and the `40000-40100` port range.
+
+- **One public Docker image is the product** (`ghcr.io/zenn-g/konus-la`, amd64+arm64):
+  SPA + API + WS + mediasoup on plain HTTP `:3000`. TLS is the host's concern — raw VPSs
+  use the shipped compose file (image + Caddy); Dokploy/Coolify run the bare image behind
+  their own proxy.
+- **Single-port media:** mediasoup `WebRtcServer` multiplexes all transports over one
+  UDP+TCP port (`MEDIA_PORT`, default `40000`), published host → container directly
+  (bypasses the proxy). `PUBLIC_IP` = announced address, auto-detected at boot
+  (env override).
+- **One required env var:** `APP_URL`. Secret auto-generated into the volume, auth
+  URL/CORS derived, everything else defaulted.
+- DB: local libSQL file in the `/data` volume; drizzle migrations apply on boot behind a
+  pre-migration `VACUUM INTO` snapshot (count-pruned). Backups beyond that = copy the file.
+- SPA served same-origin from the Bun process; updates are stop-and-swap.
+- Releases: changesets Version-Packages PR → `v*` tag → chained GHCR image build; first
+  release `v1.0.0`.
 
 ---
 
@@ -229,11 +241,25 @@ See the [phase-7 spec](docs/specs/phase-7-notifications.md). Client-only — no 
 
 ### Phase 8 — Deployment
 
-- Dockerfile (multi-stage: build web → copy into bun runtime image).
-- `docker-compose.yml` with `bun-server` + `caddy`.
-- Caddyfile with TLS + WS upgrade pass-through.
-- README "Self-Host" section listing required env vars and firewall opens (TCP/UDP `40000-40100`, `:443`, `:80`).
-- Smoke-test runbook.
+Spec: [phase-8-deployment.md](docs/specs/phase-8-deployment.md) ·
+[ADR 0009](docs/adr/0009-single-image-single-port-deployment.md) · wayfinder map
+[#98](https://github.com/zeNn-G/konus-la/issues/98).
+
+- Precursor PR: mediasoup `WebRtcServer` single-port media (`MEDIA_PORT`, `PUBLIC_IP`
+  rename, port-range env vars deleted).
+- In-process TS boot sequence (`boot.ts`): secret gen → IP detect → pre-migration
+  `VACUUM INTO` backup (retention 5) → drizzle `migrate()` → serve; failed migration =
+  exit 1, roll back a tag.
+- Same-origin SPA serving (static + `index.html` fallback + Vite cache contract;
+  `VITE_SERVER_URL` demoted to dev override) and a `/health` endpoint + `HEALTHCHECK`.
+- Multi-stage Dockerfile (`oven/bun` debian slim, non-root, `/data` volume, prebuilt
+  mediasoup worker guard).
+- `deploy/` compose recipe (app + Caddy + commented Watchtower) — copy 3 files, set
+  `DOMAIN`, `docker compose up -d`; firewall opens `80`, `443`, `40000/tcp+udp`.
+- Release pipeline: changesets (root-as-workspace-member) + release/image/CI workflows,
+  `workflow_call`-chained GHCR build → `v1.0.0`.
+- Docs: README "Self-Host", `docs/self-hosting/` (Dokploy, Coolify, troubleshooting),
+  smoke-test runbook (full VPS pass for v1.0.0, local-Docker pass per release).
 
 ### Post-v1 (parked / additive)
 
