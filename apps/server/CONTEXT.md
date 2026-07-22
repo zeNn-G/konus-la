@@ -12,7 +12,7 @@ Dev note: `bun --hot` only watches files inside `apps/server` — edits under `p
 
 ## Boot (`src/boot.ts`) — phase-8 spec §Boot sequence
 
-Production entry (container CMD `bun apps/server/src/boot.ts`); dev (`bun run dev`) never touches it. Runs secret → derive → IP detect → conditional backup+prune → migrate, then dynamic-imports `src/index.ts` — so every derivation lands in `process.env` **before** `@konus-la/env/server` validates it. The env-free pieces live in `src/boot/`:
+Production entry — the container runs the `bun build` bundle of it (CMD `bun apps/server/dist/boot.js`; only `mediasoup`/`@libsql/client`/`libsql` stay external as real node_modules); dev (`bun run dev`) never touches it. Runs secret → derive → IP detect → conditional backup+prune → migrate, then dynamic-imports `src/index.ts` — so every derivation lands in `process.env` **before** `@konus-la/env/server` validates it. That deferred import is load-bearing: the Dockerfile bundles with `--splitting` to keep it lazy, and the bundle must sit one directory below `apps/server` (boot's root-`package.json` lookup and `index.ts`'s `../../web/dist` both resolve by depth; `@konus-la/db/migrate` resolves `migrations/` beside the bundle, so the image copies it there). The env-free pieces live in `src/boot/`:
 
 - `secret.ts` — `BETTER_AUTH_SECRET`: env → `<data dir>/.auth-secret` → generate + persist `0600` (data dir = the directory of the `file:` `DATABASE_URL`).
 - `public-ip.ts` — `PUBLIC_IP`: env → HTTPS echo chain (ipify → amazonaws → icanhazip, ~3 s each, first well-formed IPv4) → production **boot fails** / dev `127.0.0.1`.
