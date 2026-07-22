@@ -16,15 +16,15 @@ services:
     ports:
       # WebRTC media. The host port MUST equal MEDIA_PORT (default 40000):
       # ICE candidates announce PUBLIC_IP:MEDIA_PORT, so a remapped host port
-      # is never reachable. If you change MEDIA_PORT, change both sides here
-      # and in your firewall.
+      # is never reachable. To use a different port, set MEDIA_PORT in the
+      # environment above and change both sides of both mappings here — and
+      # your firewall.
       - "40000:40000/udp"
       - "40000:40000/tcp"
     volumes:
       - konus-data:/data
     labels:
-      # Inert unless the watchtower service below is enabled; scopes
-      # auto-updates to this container only (Caddy is never touched).
+      # Inert unless the watchtower service below is enabled.
       com.centurylinklabs.watchtower.enable: "true"
 
   caddy:
