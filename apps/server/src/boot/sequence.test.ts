@@ -100,6 +100,8 @@ describe("runBoot", () => {
     expect(error).toBeInstanceOf(MigrationFailedError);
     const failure = error as MigrationFailedError;
     expect(failure.migrationTag).toBe("0000_magenta_may_parker");
+    expect(failure.pendingTags[0]).toBe("0000_magenta_may_parker");
+    expect(failure.pendingTags.length).toBeGreaterThan(1);
     expect(failure.backupPath).toMatch(/pre-migration-.+-v0\.1\.0\.db$/);
     expect(existsSync(failure.backupPath as string)).toBe(true);
     expect(importServer).not.toHaveBeenCalled();

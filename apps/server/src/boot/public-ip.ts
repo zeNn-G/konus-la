@@ -9,6 +9,8 @@ const PROVIDERS = [
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
+const PROVIDER_TIMEOUT_MS = 3000;
+
 export type PublicIp = {
   address: string;
   /** `env`, the echo provider's hostname, or `dev-fallback`. */
@@ -24,7 +26,6 @@ export async function detectPublicIp(opts: {
   publicIpEnv?: string;
   isProduction: boolean;
   fetchFn?: typeof fetch;
-  timeoutMs?: number;
 }): Promise<PublicIp> {
   if (opts.publicIpEnv) return { address: opts.publicIpEnv, source: "env" };
 
@@ -32,7 +33,7 @@ export async function detectPublicIp(opts: {
   for (const provider of PROVIDERS) {
     try {
       const response = await fetchFn(provider, {
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 3000),
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
       });
       if (!response.ok) continue;
       const address = (await response.text()).trim();

@@ -16,12 +16,19 @@ import { ensureAuthSecret } from "./secret";
 export class BootError extends Error {}
 
 export class MigrationFailedError extends Error {
+  /**
+   * Where the rolled-back batch restarts from. With one migration pending this IS the
+   * failed one; with several, the failing statement may sit in any of `pendingTags`
+   * (the batch is atomic, so all of them rolled back).
+   */
   readonly migrationTag: string;
+  readonly pendingTags: string[];
   readonly backupPath: string;
 
-  constructor(migrationTag: string, backupPath: string, cause: unknown) {
-    super(`migration ${migrationTag} failed`, { cause });
+  constructor(migrationTag: string, pendingTags: string[], backupPath: string, cause: unknown) {
+    super(`migration failed while applying ${pendingTags.join(", ")}`, { cause });
     this.migrationTag = migrationTag;
+    this.pendingTags = pendingTags;
     this.backupPath = backupPath;
   }
 }
@@ -36,7 +43,6 @@ export type BootDeps = {
   appVersion: string;
   /** Thunk for the server entry, so importing (= env validation) stays the last step. */
   importServer: () => Promise<unknown>;
-  fetchFn?: typeof fetch;
 };
 
 /**
@@ -44,7 +50,7 @@ export type BootDeps = {
  * detect → conditional backup+prune → migrate → serve. Every auto-decision logs exactly
  * one line — the smoke-test runbook greps them.
  */
-export async function runBoot({ env, log, appVersion, importServer, fetchFn }: BootDeps) {
+export async function runBoot({ env, log, appVersion, importServer }: BootDeps) {
   const isProduction = env.NODE_ENV === "production";
 
   if (!env.DATABASE_URL) throw new BootError("DATABASE_URL is required to boot");
@@ -67,7 +73,7 @@ export async function runBoot({ env, log, appVersion, importServer, fetchFn }: B
     throw new BootError("APP_URL is required for production boot");
   }
 
-  const publicIp = await detectPublicIp({ publicIpEnv: env.PUBLIC_IP, isProduction, fetchFn });
+  const publicIp = await detectPublicIp({ publicIpEnv: env.PUBLIC_IP, isProduction });
   env.PUBLIC_IP = publicIp.address;
   log.info({ source: publicIp.source, address: publicIp.address }, "public IP resolved");
 
@@ -86,9 +92,13 @@ export async function runBoot({ env, log, appVersion, importServer, fetchFn }: B
       try {
         await runMigrations(client);
       } catch (error) {
-        // The batch is atomic, so the first still-pending entry is where it stopped.
         const stillPending = await getPendingMigrations(client).catch(() => pending);
-        throw new MigrationFailedError(stillPending[0] ?? pending[0] ?? "unknown", backupPath, error);
+        throw new MigrationFailedError(
+          stillPending[0] ?? pending[0] ?? "unknown",
+          stillPending,
+          backupPath,
+          error,
+        );
       }
       for (const tag of pending) log.info({ migration: tag }, "migration applied");
     }

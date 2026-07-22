@@ -26,7 +26,12 @@ try {
 } catch (error) {
   if (error instanceof MigrationFailedError) {
     logger.fatal(
-      { migration: error.migrationTag, backupPath: error.backupPath, err: error.cause },
+      {
+        migration: error.migrationTag,
+        pending: error.pendingTags,
+        backupPath: error.backupPath,
+        err: error.cause,
+      },
       "migration failed — data untouched (the migration batch is transactional and a pre-migration snapshot sits next to the DB); roll back to the previous image tag and it boots again",
     );
   } else {

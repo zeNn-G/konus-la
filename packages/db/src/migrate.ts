@@ -77,7 +77,8 @@ export async function backupDatabase(
 /**
  * Keep the newest `retention` backups by count, delete the rest; returns what was
  * deleted. Count-based so crash-loop retries (each retry re-backs-up while a migration
- * stays pending) rotate within N instead of growing unbounded.
+ * stays pending) rotate within N instead of growing unbounded. Newest-by-name is
+ * newest-by-time only because the timestamp prefix is fixed-width (see backupDatabase).
  */
 export function pruneBackups(backupsDir: string, retention: number): string[] {
   let names: string[];
