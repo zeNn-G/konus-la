@@ -33,7 +33,7 @@
         "VITE_SERVER_URL",
         "BETTER_AUTH_URL",
         "CORS_ORIGIN",
-        "MEDIASOUP_ANNOUNCED_IP"
+        "PUBLIC_IP"
       ]
     },
     "db:push": {

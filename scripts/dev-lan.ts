@@ -50,7 +50,7 @@ const child = Bun.spawn(["bun", "run", "dev"], {
     VITE_SERVER_URL: serverUrl,
     BETTER_AUTH_URL: serverUrl,
     CORS_ORIGIN: webUrl,
-    MEDIASOUP_ANNOUNCED_IP: ip,
+    PUBLIC_IP: ip,
     // vite.config.ts binds 0.0.0.0 when this is set.
     DEV_LAN: "1",
   },

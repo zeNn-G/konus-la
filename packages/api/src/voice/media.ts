@@ -11,7 +11,7 @@ import {
   type Peer,
   type ProducerSource,
 } from "./rooms";
-import { transportListenInfos } from "./sfu";
+import { getWebRtcServer } from "./sfu";
 
 /**
  * Media signaling operations (phase-5 spec §Procedures, §Media policy) — the mediasoup
@@ -46,6 +46,14 @@ function requireRouter(room: { router: types.Router | null }): types.Router {
   return room.router;
 }
 
+function requireWebRtcServer(): types.WebRtcServer {
+  // Created with the worker at boot, so a live router implies it; null/closed only in
+  // the same worker-death sliver requireRouter guards.
+  const server = getWebRtcServer();
+  if (!server || server.closed) throw new VoiceUnavailableError();
+  return server;
+}
+
 export function getRouterRtpCapabilities(
   userId: string,
   connectionId: string,
@@ -69,8 +77,10 @@ export async function createTransport(
   if (direction === "send" ? peer.sendTransport : peer.recvTransport) {
     throw new VoiceInvalidStateError(`The ${direction} transport is already created.`);
   }
+  // All transports multiplex over the WebRtcServer's single UDP+TCP port pair
+  // (ADR 0009); preferUdp orders the server's candidates so browsers dial UDP first.
   const transport = await router.createWebRtcTransport({
-    listenInfos: transportListenInfos(),
+    webRtcServer: requireWebRtcServer(),
     preferUdp: true,
     appData: { userId },
   });

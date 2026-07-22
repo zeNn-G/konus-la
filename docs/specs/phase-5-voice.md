@@ -343,6 +343,10 @@ device-settings popover, above the UserCard) is visible in BOTH states.
 
 ## Env & config
 
+> **Superseded by Phase 8** ([ADR 0009](../adr/0009-single-image-single-port-deployment.md)):
+> `MEDIASOUP_ANNOUNCED_IP` is now `PUBLIC_IP`, and the port-range pair is gone — all media
+> rides a single `WebRtcServer` port pair on `MEDIA_PORT` (default `40000`).
+
 | Var | Default | Notes |
 | --- | --- | --- |
 | `MEDIASOUP_ANNOUNCED_IP` | `127.0.0.1` (dev) | **Required in prod** (#13) |

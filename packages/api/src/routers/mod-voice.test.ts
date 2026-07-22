@@ -12,9 +12,9 @@ import { call } from "@orpc/server";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import { PERMISSIONS } from "../permissions";
-import { asUser, asWsUser, collect, expectCode, ofType, stopCollectors, waitFor } from "../testing";
+import { asUser, asWsUser, collect, createTestWebRtcServer, expectCode, ofType, stopCollectors, waitFor } from "../testing";
 import { resetVoiceStateForTests, voicePeerForTests, voiceSnapshotFor } from "../voice/rooms";
-import { setSfuWorker } from "../voice/sfu";
+import { setSfuWorker, setWebRtcServer } from "../voice/sfu";
 import { appRouter } from "./index";
 
 /**
@@ -45,7 +45,9 @@ afterAll(() => {
 
 beforeAll(async () => {
   worker = await mediasoup.createWorker({ logLevel: "error" });
+  const webRtcServer = await createTestWebRtcServer(worker);
   setSfuWorker(() => worker);
+  setWebRtcServer(() => webRtcServer);
 
   await seedTestUser({ id: OWNER, username: OWNER });
   await seedTestUser({ id: MODERATOR, username: MODERATOR });
