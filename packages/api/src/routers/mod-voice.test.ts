@@ -14,7 +14,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { PERMISSIONS } from "../permissions";
 import { asUser, asWsUser, collect, expectCode, ofType, stopCollectors, waitFor } from "../testing";
 import { resetVoiceStateForTests, voicePeerForTests, voiceSnapshotFor } from "../voice/rooms";
-import { setSfuWorker } from "../voice/sfu";
+import { setSfuWorker, setWebRtcServer } from "../voice/sfu";
 import { appRouter } from "./index";
 
 /**
@@ -45,7 +45,15 @@ afterAll(() => {
 
 beforeAll(async () => {
   worker = await mediasoup.createWorker({ logLevel: "error" });
+  // Ports omitted → random free ports, so parallel vitest files never collide on a bind.
+  const webRtcServer = await worker.createWebRtcServer({
+    listenInfos: [
+      { protocol: "udp", ip: "127.0.0.1" },
+      { protocol: "tcp", ip: "127.0.0.1" },
+    ],
+  });
   setSfuWorker(() => worker);
+  setWebRtcServer(() => webRtcServer);
 
   await seedTestUser({ id: OWNER, username: OWNER });
   await seedTestUser({ id: MODERATOR, username: MODERATOR });

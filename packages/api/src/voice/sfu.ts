@@ -1,4 +1,3 @@
-import { env } from "@konus-la/env/server";
 import type { types } from "mediasoup";
 
 /**
@@ -21,6 +20,22 @@ export function sfuWorker(): types.Worker | null {
 }
 
 /**
+ * The worker's WebRtcServer — every transport multiplexes over its single UDP+TCP port
+ * pair (ADR 0009; ICE credentials demultiplex peers). Injected alongside the worker and
+ * shares its lifecycle: the server dies with the worker, so a null/closed server means
+ * the same thing a null worker does.
+ */
+let getServer: () => types.WebRtcServer | null = () => null;
+
+export function setWebRtcServer(provider: () => types.WebRtcServer | null): void {
+  getServer = provider;
+}
+
+export function getWebRtcServer(): types.WebRtcServer | null {
+  return getServer();
+}
+
+/**
  * Router codec menu (spec §Media policy): Opus with DTX + FEC (no bitrate cap), VP8 for
  * cam + screen. No simulcast in v1.
  */
@@ -34,18 +49,6 @@ export const MEDIA_CODECS: types.RouterRtpCodecCapability[] = [
   },
   { kind: "video", mimeType: "video/VP8", clockRate: 90_000 },
 ];
-
-/**
- * Per-transport listen config (spec §Env & config): udp + tcp on all interfaces with the
- * announced address from env, UDP preferred. Modern `listenInfos`/`announcedAddress` API.
- */
-export function transportListenInfos(): types.TransportListenInfo[] {
-  const announcedAddress = env.MEDIASOUP_ANNOUNCED_IP;
-  return [
-    { protocol: "udp", ip: "0.0.0.0", announcedAddress },
-    { protocol: "tcp", ip: "0.0.0.0", announcedAddress },
-  ];
-}
 
 /**
  * AudioLevelObserver tuning: the ~500 ms interval IS the activeSpeakers debounce

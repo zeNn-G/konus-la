@@ -15,7 +15,7 @@ import {
   voiceSnapshotFor,
   voiceWorkerDied,
 } from "../voice/rooms";
-import { setSfuWorker } from "../voice/sfu";
+import { setSfuWorker, setWebRtcServer } from "../voice/sfu";
 import { appRouter } from "./index";
 
 /**
@@ -29,6 +29,7 @@ import { appRouter } from "./index";
  */
 
 let worker: types.Worker;
+let webRtcServer: types.WebRtcServer;
 
 let guildId: string;
 let vcA: string;
@@ -37,7 +38,15 @@ const OWNER = "vm-owner"; // guild owner; sits in no room — asserts room-only 
 
 beforeAll(async () => {
   worker = await mediasoup.createWorker({ logLevel: "error" });
+  // Ports omitted → random free ports, so parallel vitest files never collide on a bind.
+  webRtcServer = await worker.createWebRtcServer({
+    listenInfos: [
+      { protocol: "udp", ip: "127.0.0.1" },
+      { protocol: "tcp", ip: "127.0.0.1" },
+    ],
+  });
   setSfuWorker(() => worker);
+  setWebRtcServer(() => webRtcServer);
 
   await seedTestUser({ id: OWNER, username: OWNER });
   guildId = (await createGuildWithOwner({ name: "Media", ownerUserId: OWNER })).id;
@@ -688,6 +697,29 @@ describe("producer replay on join", () => {
       userId: REMY,
       producerId: mic.producerId,
     });
+  });
+});
+
+describe("single-port media (WebRtcServer)", () => {
+  const UNA = "vm-una";
+  const VIC = "vm-vic";
+  beforeAll(async () => {
+    await seedMember(UNA);
+    await seedMember(VIC);
+  });
+
+  test("every transport's ICE candidates ride the WebRtcServer's one port pair", async () => {
+    const una = await ceremony(UNA, "sp-u", vcA);
+    const vic = await ceremony(VIC, "sp-v", vcA);
+
+    // ADR 0009: all transports of the worker multiplex over the server's single UDP+TCP
+    // pair — every candidate any browser is told to dial carries the same port.
+    const candidates = [una.send, una.recv, vic.send, vic.recv].flatMap((t) => t.iceCandidates);
+    const portsOf = (protocol: "udp" | "tcp") =>
+      new Set(candidates.filter((c) => c.protocol === protocol).map((c) => c.port));
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(portsOf("udp").size).toBe(1);
+    expect(portsOf("tcp").size).toBe(1);
   });
 });
 
