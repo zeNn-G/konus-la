@@ -18,27 +18,30 @@ const MIME_TYPES: Record<string, string> = {
   ".webmanifest": "application/manifest+json",
 };
 
+const IMMUTABLE = "public, max-age=31536000, immutable";
+
 /**
  * Same-origin SPA serving (phase-8 spec §SPA same-origin serving): static files from the
  * baked-in `apps/web/dist`, `index.html` fallback for any other GET so TanStack Router
  * deep links survive refresh. When `dist/` is absent every request falls through (null) —
  * dev keeps Vite on :3001, nothing changes locally.
  *
- * Cache headers follow the Vite contract: `/assets/*` is content-hashed, so immutable;
- * `index.html` and non-hashed root files must revalidate every load.
+ * Cache headers follow the Vite contract: files under `dist/assets/` are content-hashed,
+ * so immutable; `index.html` and non-hashed root files must revalidate every load.
  */
 export function createStaticHandler(
   distDir: string,
 ): (req: Request, url: URL) => Promise<Response | null> {
   const distRoot = path.resolve(distDir);
   const indexPath = path.join(distRoot, "index.html");
+  const assetsRoot = path.join(distRoot, "assets");
   const hasDist = existsSync(indexPath);
 
-  const serveIndex = async () =>
-    new Response(await readFile(indexPath), {
+  const serveFile = async (filePath: string) =>
+    new Response(await readFile(filePath), {
       headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "no-cache",
+        "Content-Type": MIME_TYPES[path.extname(filePath)] ?? "application/octet-stream",
+        "Cache-Control": filePath.startsWith(assetsRoot + path.sep) ? IMMUTABLE : "no-cache",
       },
     });
 
@@ -46,20 +49,22 @@ export function createStaticHandler(
     if (!hasDist) return null;
     if (req.method !== "GET") return null;
 
-    const filePath = path.resolve(distRoot, `.${decodeURIComponent(url.pathname)}`);
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      // Malformed percent-encoding can't name a dist file — treat as a router path.
+      return serveFile(indexPath);
+    }
+
+    const filePath = path.resolve(distRoot, `.${pathname}`);
     if (filePath !== distRoot && !filePath.startsWith(distRoot + path.sep)) {
-      return serveIndex();
+      return serveFile(indexPath);
     }
 
     const stat = statSync(filePath, { throwIfNoEntry: false });
-    if (!stat?.isFile()) return serveIndex();
+    if (!stat?.isFile()) return serveFile(indexPath);
 
-    const immutable = url.pathname.startsWith("/assets/");
-    return new Response(await readFile(filePath), {
-      headers: {
-        "Content-Type": MIME_TYPES[path.extname(filePath)] ?? "application/octet-stream",
-        "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
-      },
-    });
+    return serveFile(filePath);
   };
 }

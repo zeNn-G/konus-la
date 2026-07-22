@@ -5,7 +5,8 @@ Bun runtime (`Bun.serve`). Dispatches by URL path:
 - `/ws` — WebSocket upgrade for ORPC over WS (`@orpc/server/bun-ws`). **Authenticated at upgrade**: Origin check (CSWSH guard) → Better Auth session from the cookie → 401 before upgrading. `{ userId, headers, connectionId }` is stashed as `ws.data`; the upgrade headers plus the `connectionId` (minted at upgrade — voice's socket identity, what `voice.*` procedures gate on) become the per-message ORPC context so `requireAuth` works unchanged over WS. Socket `open`/`close` drive presence (`presenceConnectionOpened/Closed` from `@konus-la/api`) and the connection registry (`connectionOpened/Closed` — the handle itself, so `admin.banUser` can force-close a banned user's tabs); `close` also starts the voice seat grace (`voiceConnectionClosed`).
 - `/api/auth/*` — Better Auth handler.
 - `/rpc/*` — ORPC HTTP `RPCHandler`.
-- `/` — health probe.
+- `/health` — `200 {"status":"ok"}`, no DB ping (phase-8 spec §`/health`: `Bun.serve` only starts after migrations, so answering HTTP already means boot completed). The canonical probe path — the old bare `/` probe is gone; root serves the SPA.
+- everything else — same-origin SPA serving (`src/static.ts`): static files from the baked-in `apps/web/dist`, then `index.html` fallback for any other GET so router deep links survive refresh. `/assets/*` (content-hashed) ships `immutable`; `index.html` + root files ship `no-cache`. No `dist/` (dev) → falls through to 404; Vite serves the web app on :3001.
 
 Dev note: `bun --hot` only watches files inside `apps/server` — edits under `packages/*` need a server restart (and reset in-memory state: presence map, rate-limit windows, publisher retention buffer).
 

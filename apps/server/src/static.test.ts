@@ -106,10 +106,34 @@ describe("createStaticHandler", () => {
     writeFileSync(path.join(dist, "..", "secret.txt"), "top secret");
     const handler = createStaticHandler(dist);
 
-    for (const attempt of ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt"]) {
-      const url = new URL(`http://localhost:3000${attempt}`);
-      const response = await handler(new Request("http://localhost:3000/", { method: "GET" }), url);
+    // Raw `..` never reaches the handler (URL parsing normalizes dot segments), so the
+    // live vectors are the encoded ones that survive parsing and decode inside.
+    for (const attempt of ["/%2e%2e/secret.txt", "/assets/%2e%2e/%2e%2e/secret.txt", "/..%5csecret.txt"]) {
+      const response = await get(handler, attempt);
       expect(await response?.text()).not.toContain("top secret");
     }
+  });
+
+  test("serves the fallback for malformed percent-encoding instead of throwing", async () => {
+    const handler = createStaticHandler(builtDist());
+
+    for (const attempt of ["/%c0", "/%"]) {
+      const response = await get(handler, attempt);
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("Content-Type")).toContain("text/html");
+    }
+  });
+
+  test("keys the immutable header on the resolved file, not the raw path", async () => {
+    const handler = createStaticHandler(builtDist());
+
+    // %2e%2e dot segments die in URL parsing, but %5c survives it and decodes to a
+    // backslash — which path.resolve on Windows walks: /assets/..\favicon.svg resolves
+    // to the non-hashed root file, which must stay no-cache.
+    const response = await get(handler, "/assets/..%5cfavicon.svg");
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("Content-Type")).toBe("image/svg+xml");
+    expect(response?.headers.get("Cache-Control")).toBe("no-cache");
   });
 });
