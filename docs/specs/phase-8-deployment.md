@@ -109,6 +109,8 @@ server (dynamic-imports the current entry so env derivation precedes env validat
    migration is pending:
    - **Backup** — `VACUUM INTO '/data/backups/pre-migration-<UTC ISO timestamp>-v<appVersion>.db'`
      (single consistent snapshot regardless of WAL state; the server isn't serving yet).
+     The timestamp swaps `:`/`.` for `-` (filesystem-safe on Windows dev test runs;
+     lexicographic order stays chronological for pruning).
      `<appVersion>` = the image's root `package.json` version — the version you roll
      back *to*.
    - **Prune** — keep the newest `BACKUP_RETENTION` (default 5) by count, delete older.

@@ -9,6 +9,16 @@ Bun runtime (`Bun.serve`). Dispatches by URL path:
 
 Dev note: `bun --hot` only watches files inside `apps/server` — edits under `packages/*` need a server restart (and reset in-memory state: presence map, rate-limit windows, publisher retention buffer).
 
+## Boot (`src/boot.ts`) — phase-8 spec §Boot sequence
+
+Production entry (container CMD `bun apps/server/src/boot.ts`); dev (`bun run dev`) never touches it. Runs secret → derive → IP detect → conditional backup+prune → migrate, then dynamic-imports `src/index.ts` — so every derivation lands in `process.env` **before** `@konus-la/env/server` validates it. The env-free pieces live in `src/boot/`:
+
+- `secret.ts` — `BETTER_AUTH_SECRET`: env → `<data dir>/.auth-secret` → generate + persist `0600` (data dir = the directory of the `file:` `DATABASE_URL`).
+- `public-ip.ts` — `PUBLIC_IP`: env → HTTPS echo chain (ipify → amazonaws → icanhazip, ~3 s each, first well-formed IPv4) → production **boot fails** / dev `127.0.0.1`.
+- `sequence.ts` — orchestration (`runBoot`, dependency-injected for vitest); drizzle work comes from `@konus-la/db/migrate`. Backup only when a migration is pending: `VACUUM INTO <data dir>/backups/pre-migration-<UTC>-v<root package.json version>.db`, pruned to the newest `BACKUP_RETENTION` (default 5) by count. A failed migration exits 1 with a fatal line naming the migration, the error, the backup path, and the roll-back-a-tag recovery contract — the migrate batch is one atomic libsql transaction, so the data files stay untouched.
+
+One pino line per auto-decision (the smoke-test runbook greps them). `logger.ts` reads `NODE_ENV` raw — the one sanctioned exception to the env-package rule — so boot can log before env validation.
+
 ## SFU (`src/sfu/`) — phase-5 spec §Worker lifecycle
 
 One mediasoup worker boots with the server (`startSfu()` in `src/index.ts`) and lives for the process. Standing invariant: live worker, respawn in flight, or voice declared down.
