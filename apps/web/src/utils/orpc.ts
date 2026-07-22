@@ -1,10 +1,11 @@
 import type { AppRouterClient } from "@konus-la/api/routers/index";
-import { env } from "@konus-la/env/web";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+import { serverOrigin } from "@/lib/server-url";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,7 +30,7 @@ export const queryClient = new QueryClient({
 });
 
 export const link = new RPCLink({
-  url: `${env.VITE_SERVER_URL}/rpc`,
+  url: `${serverOrigin}/rpc`,
   fetch(url, options) {
     return fetch(url, {
       ...options,
