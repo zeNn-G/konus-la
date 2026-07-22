@@ -13,6 +13,8 @@ import { migrate } from "drizzle-orm/libsql/migrator";
  * out of consumers, same rule as the query helpers.
  */
 
+// Resolves beside this module wherever it lives — bundled consumers must ship
+// migrations/ next to their bundle.
 export const migrationsFolder = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "migrations",

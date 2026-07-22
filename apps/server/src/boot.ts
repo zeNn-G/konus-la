@@ -7,9 +7,16 @@ import { MigrationFailedError, runBoot } from "./boot/sequence";
 import { logger } from "./logger";
 
 /**
- * Production entry — the container CMD is `bun apps/server/src/boot.ts`. Runs the boot
- * sequence, then becomes the server by importing the normal entry. Dev keeps running
- * `src/index.ts` directly; nothing here is on the dev path.
+ * Production entry — the container CMD runs the `bun build` bundle of this file
+ * (`bun apps/server/dist/boot.js`). Runs the boot sequence, then becomes the server by
+ * importing the normal entry. Dev keeps running `src/index.ts` directly; nothing here
+ * is on the dev path.
+ *
+ * The package.json URL below resolves identically from `src/` and from the bundle in
+ * `dist/` — both sit three levels below the repo root. The dynamic `importServer`
+ * thunk is load-bearing: env validation must not run until the boot sequence has
+ * derived BETTER_AUTH_URL/CORS_ORIGIN/PUBLIC_IP (the Dockerfile bundles with
+ * --splitting to preserve it).
  */
 
 const rootPackage = JSON.parse(
