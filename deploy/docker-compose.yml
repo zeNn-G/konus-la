@@ -1,0 +1,56 @@
+# Konus on a raw VPS: copy this directory, `cp .env.example .env`, set DOMAIN,
+# then `docker compose up -d`.
+#
+# Firewall: open 80, 443, and 40000/tcp+udp — nothing else. The media port
+# bypasses Caddy entirely; browsers dial PUBLIC_IP:40000 directly.
+#
+# Updates: `docker compose pull && docker compose up -d`. For automatic
+# updates instead, uncomment the watchtower service below.
+
+services:
+  app:
+    image: ghcr.io/zenn-g/konus-la:latest
+    restart: unless-stopped
+    environment:
+      APP_URL: https://${DOMAIN}
+    ports:
+      # WebRTC media. The host port MUST equal MEDIA_PORT (default 40000):
+      # ICE candidates announce PUBLIC_IP:MEDIA_PORT, so a remapped host port
+      # is never reachable. To use a different port, set MEDIA_PORT in the
+      # environment above and change both sides of both mappings here — and
+      # your firewall.
+      - "40000:40000/udp"
+      - "40000:40000/tcp"
+    volumes:
+      - konus-data:/data
+    labels:
+      # Inert unless the watchtower service below is enabled.
+      com.centurylinklabs.watchtower.enable: "true"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # TLS certificates and ACME account state — must persist across
+      # restarts or Let's Encrypt rate limits will bite.
+      - caddy-data:/data
+
+  # Opt-in auto-updates. Uncomment to have Watchtower poll GHCR and restart
+  # the app on new images. --label-enable limits it to containers carrying
+  # the watchtower.enable label — only `app` above, never Caddy.
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   restart: unless-stopped
+  #   command: --label-enable --cleanup
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  konus-data:
+  caddy-data:
