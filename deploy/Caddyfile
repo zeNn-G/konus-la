@@ -1,0 +1,4 @@
+# Auto-TLS for DOMAIN; WebSockets are proxied natively, no extra config.
+{$DOMAIN} {
+	reverse_proxy app:3000
+}
