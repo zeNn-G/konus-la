@@ -1,3 +1,4 @@
+import type { types } from "mediasoup";
 import { ORPCError } from "@orpc/server";
 import { expect } from "vitest";
 
@@ -28,6 +29,19 @@ export function asWsUser(userId: string, connectionId: string): { context: Conte
   return {
     context: { headers: new Headers({ "x-test-user": userId }), connectionId },
   };
+}
+
+/**
+ * The worker's WebRtcServer for `setWebRtcServer` injection. Ports omitted → random free
+ * ports, so parallel vitest files never collide on a bind.
+ */
+export function createTestWebRtcServer(worker: types.Worker): Promise<types.WebRtcServer> {
+  return worker.createWebRtcServer({
+    listenInfos: [
+      { protocol: "udp", ip: "127.0.0.1" },
+      { protocol: "tcp", ip: "127.0.0.1" },
+    ],
+  });
 }
 
 /** Minimal stand-in for a Bun ServerWebSocket — the connection registry only calls close(). */

@@ -5,7 +5,7 @@ import type { types } from "mediasoup";
 import { call } from "@orpc/server";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
-import { asUser, asWsUser, collect, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
+import { asUser, asWsUser, collect, createTestWebRtcServer, expectCode, ofType, settle, stopCollectors, waitFor } from "../testing";
 import {
   resetVoiceStateForTests,
   updateSpeakingUserIds,
@@ -38,13 +38,7 @@ const OWNER = "vm-owner"; // guild owner; sits in no room — asserts room-only 
 
 beforeAll(async () => {
   worker = await mediasoup.createWorker({ logLevel: "error" });
-  // Ports omitted → random free ports, so parallel vitest files never collide on a bind.
-  webRtcServer = await worker.createWebRtcServer({
-    listenInfos: [
-      { protocol: "udp", ip: "127.0.0.1" },
-      { protocol: "tcp", ip: "127.0.0.1" },
-    ],
-  });
+  webRtcServer = await createTestWebRtcServer(worker);
   setSfuWorker(() => worker);
   setWebRtcServer(() => webRtcServer);
 

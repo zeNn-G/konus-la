@@ -41,7 +41,7 @@ async function spawnWorkerWithWebRtcServer(): Promise<types.Worker> {
       ],
     });
   } catch (error) {
-    // A rebind failure (EADDRINUSE) is a failed boot: close the half-booted worker so it
+    // A bind failure (EADDRINUSE) is a failed boot: close the half-booted worker so it
     // can't leak outside the manager's invariant, and let the crash-loop breaker judge.
     worker.close();
     throw error;
