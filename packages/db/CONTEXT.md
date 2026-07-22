@@ -1,6 +1,6 @@
 # DB
 
-Drizzle ORM over libSQL/Turso. Schema lives in `src/schema/`; migrations are generated from it via `drizzle-kit`.
+Drizzle ORM over libSQL/Turso. Schema lives in `src/schema/`; migrations are generated from it via `drizzle-kit`. `src/migrate.ts` holds the env-free boot-time helpers (pending-migration check mirroring the drizzle migrator's predicate, `VACUUM INTO` backup, count-based prune, `migrate()`), client passed in — used by `apps/server/src/boot.ts`, which runs before `@konus-la/env` may validate `process.env`.
 
 ## Language
 

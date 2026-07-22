@@ -1,10 +1,8 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/libsql/migrator";
 
 import { db } from "./index";
+import { migrationsFolder } from "./migrate";
 import { dmPairKeyFor } from "./queries/dm";
 import { user } from "./schema/auth";
 import { channel, channelParticipant } from "./schema/channel";
@@ -15,8 +13,6 @@ import { guildMembership, guildRole, memberRole } from "./schema/guild";
  * this package so consumers (e.g. `@konus-la/api` tests) stay free of a direct
  * `drizzle-orm` dependency, same rule as the query helpers.
  */
-
-const migrationsFolder = path.join(path.dirname(fileURLToPath(import.meta.url)), "migrations");
 
 /** Bring the test db up to the latest migration. */
 export async function applyMigrations(): Promise<void> {
