@@ -1,9 +1,9 @@
 import type { AppRouterClient } from "@konus-la/api/routers/index";
-import { env } from "@konus-la/env/web";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/websocket";
 import ReconnectingWebSocket from "partysocket/ws";
 
+import { wsUrl } from "@/lib/server-url";
 import { attachSessionWatchdog } from "@/lib/session-watchdog";
 
 /**
@@ -24,11 +24,9 @@ let handle: WsHandle | null = null;
 
 export function getWs(): WsHandle {
   if (!handle) {
-    const socket = new ReconnectingWebSocket(
-      `${env.VITE_SERVER_URL.replace(/^http/, "ws")}/ws`,
-      undefined,
-      { maxRetries: Number.POSITIVE_INFINITY },
-    );
+    const socket = new ReconnectingWebSocket(wsUrl, undefined, {
+      maxRetries: Number.POSITIVE_INFINITY,
+    });
     // partysocket types readyState as plain `number`; structurally it's a WebSocket.
     const link = new RPCLink({ websocket: socket as unknown as WebSocket });
     // Zombie-tab fix: dead-session recovery on socket drops (session-watchdog.ts).

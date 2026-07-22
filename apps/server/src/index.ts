@@ -14,8 +14,11 @@ import { RPCHandler as BunWSRPCHandler } from "@orpc/server/bun-ws";
 import { RPCHandler } from "@orpc/server/fetch";
 import { CORSPlugin } from "@orpc/server/plugins";
 
+import path from "node:path";
+
 import { logger } from "./logger";
 import { startSfu } from "./sfu";
+import { createStaticHandler } from "./static";
 
 // SFU worker boots with the server and lives for the process (phase-5 spec §Worker
 // lifecycle). Fire-and-forget: a failed boot goes through the manager's breaker instead
@@ -65,6 +68,8 @@ type WSData = {
   /** Socket identity for voice: `voice.*` procedures require it, seats/peers key on it. */
   connectionId: string;
 };
+
+const serveStatic = createStaticHandler(path.resolve(import.meta.dir, "../../web/dist"));
 
 const server = Bun.serve<WSData, string>({
   async fetch(req, server) {
@@ -119,9 +124,14 @@ const server = Bun.serve<WSData, string>({
       return new Response("Not Found", { status: 404 });
     }
 
-    if (url.pathname === "/") {
-      return new Response("OK");
+    // No DB ping: Bun.serve only starts after migrations succeed, so answering HTTP
+    // already means boot completed (phase-8 spec §/health).
+    if (url.pathname === "/health") {
+      return Response.json({ status: "ok" });
     }
+
+    const staticResponse = await serveStatic(req, url);
+    if (staticResponse) return staticResponse;
 
     return new Response("Not Found", { status: 404 });
   },
