@@ -13,7 +13,7 @@ requirement on the media port (step 4) and an open **HTTP/2 WebSocket** issue
 
 Project → **Create Application** → source type **Docker**. Image:
 
-```
+```text
 ghcr.io/zenn-g/konus-la:latest
 ```
 
@@ -24,7 +24,7 @@ anything; it pulls and runs this image.
 
 In the **Environment** section, set the one required variable:
 
-```
+```text
 APP_URL=https://chat.example.com
 ```
 

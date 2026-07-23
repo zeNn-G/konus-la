@@ -12,7 +12,7 @@ both before going live.
 
 **New Resource → Docker Image**. Image:
 
-```
+```text
 ghcr.io/zenn-g/konus-la
 ```
 
@@ -23,7 +23,7 @@ needed on the Coolify server.
 
 **Environment Variables** tab — set the one required variable:
 
-```
+```text
 APP_URL=https://chat.example.com
 ```
 
@@ -44,7 +44,7 @@ the boot log is wrong.
 Voice bypasses the proxy: browsers dial `PUBLIC_IP:40000` directly. In
 **Ports Mappings**, enter exactly:
 
-```
+```text
 40000:40000/tcp,40000:40000/udp
 ```
 
