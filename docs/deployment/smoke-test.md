@@ -31,8 +31,9 @@ verbatim.
 Same three `deploy/` files in a scratch directory, with two overrides on the
 `app` service: `PUBLIC_IP: 127.0.0.1` (skips echo detection, keeps voice
 same-box testable) and drop the `caddy` service / talk to `:3000` directly
-(set `APP_URL: http://localhost:3000` and publish `3000:3000`). Start from an
-**empty volume**.
+(set `APP_URL: http://localhost:3000` and publish `3000:3000` — Let's Encrypt
+can't issue for localhost, so the Caddyfile is only exercised by the VPS
+tier). Start from an **empty volume**.
 
 ## The pass
 

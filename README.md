@@ -20,7 +20,8 @@ This project was created with [Better-T-Stack](https://github.com/AmanVarshney01
 ## Self-Host
 
 One Docker image is the whole product: SPA, API, WebSocket realtime, and voice
-(mediasoup SFU) served from a single container. TLS comes from the bundled Caddy.
+(mediasoup SFU) served from a single container. TLS comes from the Caddy
+service in the shipped compose file.
 
 **Requirements**
 

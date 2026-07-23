@@ -37,7 +37,7 @@ one address. Check, in order:
    (that's WebSocket signalling, port 443) but hear nothing — that is
    precisely "signalling works, media doesn't": one of the three points above.
 
-If both public-IP detection providers are unreachable at boot, the container
+If every public-IP detection provider is unreachable at boot, the container
 exits rather than starting with a wrong announce address (up-but-broken voice
 is worse than down). Set `PUBLIC_IP` to boot without egress to those services.
 
