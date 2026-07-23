@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Queue, never cancel: an in-flight run may be mid-tag/mid-release.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
