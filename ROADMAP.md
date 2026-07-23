@@ -239,7 +239,7 @@ See the [phase-7 spec](docs/specs/phase-7-notifications.md). Client-only — no 
 - **Master output volume** (0–1, localStorage) scaling all app audio — voice via `element.volume` multiplier, effects via a master GainNode; **mic input volume** slider + AGC / noise-suppression / echo-cancellation toggles via a persistent Web Audio mic chain feeding the producer.
 - **Sound-effects system:** CC0 (Kenney) MP3 assets, Vite-hashed, preloaded into Web Audio buffers behind one shared AudioContext; notification ping + voice UX sounds (self join/leave, mute/deafen, peer join/leave), individually toggleable.
 
-### Phase 8 — Deployment
+### Phase 8 — Deployment ✅
 
 Spec: [phase-8-deployment.md](docs/specs/phase-8-deployment.md) ·
 [ADR 0009](docs/adr/0009-single-image-single-port-deployment.md) · wayfinder map
