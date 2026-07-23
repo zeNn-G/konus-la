@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Queue, never cancel: an in-flight run may be mid-tag/mid-release.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # changesets diffs against baseBranch history
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Version PR or tag release
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bun x changeset version
+          # release-tag.sh owns the v-tag + GitHub Release; createGithubReleases
+          # stays off so the action never pushes a konus-la@X.Y.Z tag of its own.
+          publish: bash scripts/release-tag.sh
+          createGithubReleases: false
+          commit: "chore: version packages"
+          title: "Version Packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Chained via workflow_call — the tag pushed above comes from GITHUB_TOKEN,
+  # which never triggers docker-image.yml's own push event.
+  build-image:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    uses: ./.github/workflows/docker-image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      ref: v${{ fromJson(needs.release.outputs.publishedPackages)[0].version }}

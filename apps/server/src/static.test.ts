@@ -129,11 +129,15 @@ describe("createStaticHandler", () => {
 
     // %2e%2e dot segments die in URL parsing, but %5c survives it and decodes to a
     // backslash — which path.resolve on Windows walks: /assets/..\favicon.svg resolves
-    // to the non-hashed root file, which must stay no-cache.
+    // to the non-hashed root file. On POSIX the backslash is a literal filename char,
+    // so the miss serves the fallback instead. Either way the resolved file is outside
+    // assets/, so the raw /assets/ prefix must never earn the immutable header.
     const response = await get(handler, "/assets/..%5cfavicon.svg");
 
     expect(response?.status).toBe(200);
-    expect(response?.headers.get("Content-Type")).toBe("image/svg+xml");
+    expect(response?.headers.get("Content-Type")).toBe(
+      process.platform === "win32" ? "image/svg+xml" : "text/html; charset=utf-8",
+    );
     expect(response?.headers.get("Cache-Control")).toBe("no-cache");
   });
 });

@@ -1,11 +1,12 @@
 {
   "name": "konus-la",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "workspaces": {
     "packages": [
       "apps/*",
-      "packages/*"
+      "packages/*",
+      "."
     ],
     "catalog": {
       "dotenv": "^17.2.2",
@@ -29,10 +30,10 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=!konus-la",
     "dev:lan": "bun scripts/dev-lan.ts",
-    "build": "turbo build",
-    "check-types": "turbo check-types",
+    "build": "turbo build --filter=!konus-la",
+    "check-types": "turbo check-types --filter=!konus-la",
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F server dev",
     "db:push": "turbo -F @konus-la/db db:push",
@@ -40,8 +41,8 @@
     "db:generate": "turbo -F @konus-la/db db:generate",
     "db:migrate": "turbo -F @konus-la/db db:migrate",
     "db:local": "turbo -F @konus-la/db db:local",
-    "test": "turbo test",
-    "test:e2e": "turbo test:e2e",
+    "test": "turbo test --filter=!konus-la",
+    "test:e2e": "turbo test:e2e --filter=!konus-la",
     "check": "oxlint && oxfmt --write"
   },
   "dependencies": {
@@ -50,6 +51,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.1",
     "@konus-la/config": "workspace:*",
     "@types/bun": "catalog:",
     "oxfmt": "^0.57.0",
