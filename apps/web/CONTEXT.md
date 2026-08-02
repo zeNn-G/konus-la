@@ -213,18 +213,20 @@ TanStack Query invalidation of `guild.list`.
   `producer.pause()`), and the AGC / echo-cancellation toggles (default on) re-capture
   through the chain's source swap — as do mic switches (`voiceSession.switchMicTrack`):
   the producer track never changes, no re-produce, no signaling. **Noise suppression is
-  a three-valued *mode*** (#122, [ADR 0010](../../docs/adr/0010-vendored-dtln-noise-suppression.md)):
-  `none` | `standard` (the browser's built-in gUM suppressor) | `dtln` (the vendored
-  wasm engine in an `AudioWorklet` on the mic chain) — one suppressor at a time by
-  construction. In dtln mode the per-call context is requested at 16 kHz (worklet
-  resamples internally where the browser refuses), the engine module is fetched lazily
-  at `addModule` time (hashed immutable asset, only when a dtln user joins voice), and
-  any init failure (load, 10 s ready timeout, processor error) degrades to a plain
-  hardware-rate chain with a single toast, preference unchanged. A mode change mid-call
-  rebuilds the chain and swaps the new destination track into the SAME producer via
-  `replaceTrack` (`voiceSession.rebuildMicChain` — no signaling, mute preserved),
-  unlike device/agc/echo changes which stay source-node swaps. Where AudioWorklet or a
-  secure context is missing, `dtln` behaves as `standard` wholesale and the option is
+  a three-valued *mode*** (#122, [ADR 0010](../../docs/adr/0010-dtln-noise-suppression-engine.md)):
+  `none` | `standard` (the browser's built-in gUM suppressor) | `dtln` (the
+  `@workadventure/noise-suppression` engine in an `AudioWorklet` on the mic chain) —
+  one suppressor at a time by construction. In dtln mode the per-call context MUST
+  genuinely run at 16 kHz (the engine has no resampler), the engine's worklet + model
+  assets are fetched lazily via its factory (hashed immutable assets, only when a dtln
+  user joins voice; the package's Vite plugin covers dev-server worklet loading), and
+  any init failure (factory rejection, 10 s ready timeout, processor error, wrong-rate
+  context) disposes the engine handle and degrades to a plain hardware-rate chain with
+  a single toast, preference unchanged. A mode change mid-call rebuilds the chain and
+  swaps the new destination track into the SAME producer via `replaceTrack`
+  (`voiceSession.rebuildMicChain` — no signaling, mute preserved), unlike
+  device/agc/echo changes which stay source-node swaps. Where AudioWorklet or a secure
+  context is missing, `dtln` behaves as `standard` wholesale and the option is
   disabled with a hint. All prefs persist in the device store (`voice:input-volume`,
   `voice:agc`, `voice:noise-suppression` — legacy boolean values migrate read-only,
   `"true"`→`standard`, `"false"`→`none` — and `voice:echo-cancellation`) and apply on

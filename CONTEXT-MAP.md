@@ -15,9 +15,3 @@ Turborepo monorepo. Each workspace below has its own `CONTEXT.md`.
 - [Env](./packages/env/CONTEXT.md) — Zod-validated env vars.
 - [UI](./packages/ui/CONTEXT.md) — Shared React components.
 - [Config](./packages/config/CONTEXT.md) — Shared TypeScript config.
-
-## Tools
-
-- [DTLN engine build](./tools/dtln/README.md) — Docker-pinned build of the vendored
-  noise-suppression wasm artifact (not a workspace; see
-  [ADR 0010](./docs/adr/0010-vendored-dtln-noise-suppression.md)).
