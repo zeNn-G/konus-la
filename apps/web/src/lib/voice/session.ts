@@ -213,6 +213,8 @@ export class VoiceSession {
 
   private device: DeviceLike | null = null;
   private micChain: MicChainLike | null = null;
+  /** Supersedes overlapping NS-mode rebuilds (#122) — the newest flip wins. */
+  private rebuildSeq = 0;
   private sendTransport: TransportLike | null = null;
   private recvTransport: TransportLike | null = null;
   private producers = new Map<ProducerSource, ProducerLike>();
@@ -407,6 +409,56 @@ export class VoiceSession {
   async switchMicTrack(): Promise<void> {
     if (!this.micChain || this.store().status !== "connected") return;
     await this.micChain.recapture();
+  }
+
+  /**
+   * Noise-suppression mode change (#122): build a fresh chain (the worklet swaps in or
+   * out with it) and swap its destination track into the EXISTING mic producer via
+   * `replaceTrack` — a pure RTCRtpSender operation: same producer id, same consumers,
+   * no re-produce, no signaling, and pause state (mute) persists. This relaxes the
+   * "producer track set once" invariant to once-per-suppression-mode. With no live mic
+   * producer (idle, listen-only, mid-join) there is nothing to swap — the preference
+   * simply applies at the next produce.
+   *
+   * Races: `rebuildSeq` supersedes overlapping mode flips (the newest wins), the epoch
+   * check catches teardown/rejoin across the awaits, and a failure at any step disposes
+   * the new chain and keeps the old one producing. Known accepted race: a device switch
+   * landing mid-rebuild targets the doomed old chain and is lost with it — the next
+   * capture re-reads the device preference, so it self-heals.
+   */
+  async rebuildMicChain(): Promise<void> {
+    const producer = this.producers.get("mic");
+    if (this.store().status !== "connected" || !producer || !this.micChain) return;
+    const epoch = this.epoch;
+    const seq = ++this.rebuildSeq;
+    const chain = this.deps.createMicChain();
+    let track: MediaStreamTrack;
+    try {
+      track = await chain.start();
+    } catch {
+      chain.dispose();
+      return;
+    }
+    if (this.epoch !== epoch || seq !== this.rebuildSeq) {
+      chain.dispose();
+      return;
+    }
+    try {
+      await producer.replaceTrack({ track });
+    } catch {
+      chain.dispose();
+      return;
+    }
+    if (this.epoch !== epoch || seq !== this.rebuildSeq) {
+      chain.dispose();
+      return;
+    }
+    const old = this.micChain;
+    this.micChain = chain;
+    // Dispose AFTER the swap — the producer is already reading from the new track.
+    old.dispose();
+    // The ui-model self-face and the teardown stop-list both read localTracks.mic.
+    this.patch({ localTracks: { ...this.store().localTracks, mic: track } });
   }
 
   async enableCam(): Promise<void> {
@@ -633,36 +685,34 @@ export class VoiceSession {
     const client = this.deps.getClient();
     type Callback<T> = (value: T) => void;
     type Errback = (error: Error) => void;
-    transport.on(
-      "connect",
-      ((
-        { dtlsParameters }: { dtlsParameters: unknown },
-        callback: Callback<void>,
+    transport.on("connect", ((
+      { dtlsParameters }: { dtlsParameters: unknown },
+      callback: Callback<void>,
+      errback: Errback,
+    ) => {
+      client
+        .connectTransport({ transportId: transport.id, dtlsParameters })
+        .then(() => callback(undefined), errback);
+    }) as never);
+    if (isSend) {
+      transport.on("produce", ((
+        params: {
+          kind: "audio" | "video";
+          rtpParameters: unknown;
+          appData?: { source?: ProducerSource };
+        },
+        callback: Callback<{ id: string }>,
         errback: Errback,
       ) => {
         client
-          .connectTransport({ transportId: transport.id, dtlsParameters })
-          .then(() => callback(undefined), errback);
-      }) as never,
-    );
-    if (isSend) {
-      transport.on(
-        "produce",
-        ((
-          params: { kind: "audio" | "video"; rtpParameters: unknown; appData?: { source?: ProducerSource } },
-          callback: Callback<{ id: string }>,
-          errback: Errback,
-        ) => {
-          client
-            .produce({
-              transportId: transport.id,
-              kind: params.kind,
-              rtpParameters: params.rtpParameters,
-              source: params.appData?.source ?? "mic",
-            })
-            .then(({ producerId }) => callback({ id: producerId }), errback);
-        }) as never,
-      );
+          .produce({
+            transportId: transport.id,
+            kind: params.kind,
+            rtpParameters: params.rtpParameters,
+            source: params.appData?.source ?? "mic",
+          })
+          .then(({ producerId }) => callback({ id: producerId }), errback);
+      }) as never);
     }
     // Belt-and-braces into the same single recovery path (spec §Client architecture).
     transport.on("connectionstatechange", ((state: string) => {
@@ -672,7 +722,8 @@ export class VoiceSession {
 
   /**
    * Mic denial degrades to listen-only (#17): the seat is taken either way. The chain's
-   * destination track is produced ONCE — every later re-capture swaps inside the chain.
+   * destination track is produced ONCE per suppression mode — re-captures swap inside
+   * the chain, and only an NS-mode change replaces the track (`rebuildMicChain`).
    */
   private async produceMic(epoch: number): Promise<void> {
     this.micChain?.dispose();
@@ -1093,6 +1144,7 @@ export const deviceManager = new DeviceManager({
   ...createRealDeviceDeps(),
   sessionActive: () => useVoiceStore.getState().status !== "idle",
   applyMicDevice: () => voiceSession.switchMicTrack(),
+  applyMicPipeline: () => voiceSession.rebuildMicChain(),
 });
 
 // Dev-only programmatic access — the phase-5 acceptance checks drive joins/leaves/
@@ -1101,4 +1153,8 @@ if (import.meta.env.DEV) {
   (globalThis as Record<string, unknown>).__voiceSession = voiceSession;
   (globalThis as Record<string, unknown>).__voiceStore = useVoiceStore;
   (globalThis as Record<string, unknown>).__deviceStore = useDeviceStore;
+  // #122 live verification: the active mic chain (private field, dev-only reach-in) —
+  // its context's sampleRate proves the 16 kHz path.
+  (globalThis as Record<string, unknown>).__micChain = () =>
+    (voiceSession as unknown as { micChain: unknown }).micChain;
 }

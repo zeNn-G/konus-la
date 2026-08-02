@@ -1,12 +1,16 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { MicChain, type MicStreamLike } from "./mic-chain";
+import type { NoiseSuppressionMode } from "./devices";
+import { MicChain, type DtlnFallbackReason, type MicStreamLike } from "./mic-chain";
 
 /**
- * The mic capture chain seam (#81): raw gUM track → source → gain → destination on a
- * dedicated context. Asserted here: the graph shape, the persistent destination track,
- * live clamped gain writes, source swaps on re-capture, and that disposal releases the
- * raw capture (the tab's mic indicator).
+ * The mic capture chain seam (#81, #122): raw gUM track → source → [dtln worklet] →
+ * gain → destination on a dedicated context. Asserted here: the graph shape, the
+ * persistent destination track, live clamped gain writes, source swaps on re-capture,
+ * disposal releasing the raw capture (the tab's mic indicator), and the DTLN paths —
+ * a genuinely-16 kHz context or bust, ready gating, every init failure collapsing to
+ * exactly one plain-chain fallback with the engine handle disposed, and none/standard
+ * touching the engine factory not at all (an optionless context, nothing else).
  */
 
 // --- fakes ----------------------------------------------------------------------------------
@@ -41,6 +45,41 @@ class FakeSource {
   }
 }
 
+class FakeWorkletNode {
+  onprocessorerror: (() => void) | null = null;
+  connected: unknown = null;
+
+  connect(node: unknown): unknown {
+    this.connected = node;
+    return node;
+  }
+}
+
+/** The package factory's handle: node + controllable readiness + dispose (#122 rev 2). */
+class FakeDtlnHandle {
+  node = new FakeWorkletNode();
+  disposed = false;
+  private resolveReady!: () => void;
+  private rejectReady!: (error: Error) => void;
+  ready = new Promise<void>((resolve, reject) => {
+    this.resolveReady = resolve;
+    this.rejectReady = reject;
+  });
+
+  dispose = (): void => {
+    this.disposed = true;
+  };
+  emitReady(): void {
+    this.resolveReady();
+  }
+  emitReadyRejection(): void {
+    this.rejectReady(new Error("engine init failed"));
+  }
+  emitProcessorError(): void {
+    this.node.onprocessorerror?.();
+  }
+}
+
 class FakeContext {
   gains: FakeGain[] = [];
   sources: FakeSource[] = [];
@@ -48,6 +87,15 @@ class FakeContext {
   destination = { stream: { getAudioTracks: () => [this.destinationTrack.asTrack()] } };
   resumed = false;
   closed = false;
+  sampleRate: number;
+
+  constructor(
+    harness: ChainHarness,
+    public options?: { sampleRate: number },
+  ) {
+    // ignore16k models browsers (iOS Safari) that accept the option but run at hardware rate.
+    this.sampleRate = options && !harness.ignore16k ? options.sampleRate : 48000;
+  }
 
   createGain(): FakeGain {
     const gain = new FakeGain();
@@ -73,11 +121,20 @@ class FakeContext {
 class ChainHarness {
   contexts: FakeContext[] = [];
   rawTracks: FakeTrack[] = [];
+  workletHandles: FakeDtlnHandle[] = [];
+  fallbacks: DtlnFallbackReason[] = [];
   denied = false;
   volume = 1;
   volumeListeners = new Set<(volume: number) => void>();
   /** When set, captures wait on it — for in-flight dispose/supersede races. */
   captureGate: Promise<void> | null = null;
+  nsMode: NoiseSuppressionMode = "standard";
+  dtlnSupported = true;
+  /** Simulates browsers that throw NotSupportedError on a 16 kHz context request. */
+  reject16k = false;
+  /** Simulates browsers that accept the 16 kHz option but ignore it (iOS Safari). */
+  ignore16k = false;
+  factoryError: Error | null = null;
 
   chain = new MicChain({
     captureTrack: async () => {
@@ -87,8 +144,11 @@ class ChainHarness {
       this.rawTracks.push(track);
       return track.asTrack();
     },
-    createContext: () => {
-      const context = new FakeContext();
+    createContext: (options) => {
+      if (options && this.reject16k) {
+        throw new DOMException("sample rate not supported", "NotSupportedError");
+      }
+      const context = new FakeContext(this, options);
       this.contexts.push(context);
       return context;
     },
@@ -97,6 +157,17 @@ class ChainHarness {
     onInputVolumeChange: (listener) => {
       this.volumeListeners.add(listener);
       return () => this.volumeListeners.delete(listener);
+    },
+    getNsMode: () => this.nsMode,
+    supportsDtln: () => this.dtlnSupported,
+    createDtlnWorklet: async () => {
+      if (this.factoryError) throw this.factoryError;
+      const handle = new FakeDtlnHandle();
+      this.workletHandles.push(handle);
+      return handle;
+    },
+    onDtlnFallback: (reason) => {
+      this.fallbacks.push(reason);
     },
   });
 
@@ -108,6 +179,17 @@ class ChainHarness {
   context(): FakeContext {
     return this.contexts[0]!;
   }
+}
+
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** Drive a dtln start to completion: let capture + the factory land, then signal ready. */
+async function startDtln(h: ChainHarness): Promise<MediaStreamTrack> {
+  h.nsMode = "dtln";
+  const starting = h.chain.start();
+  await flush();
+  h.workletHandles[0]?.emitReady();
+  return starting;
 }
 
 describe("start", () => {
@@ -255,6 +337,215 @@ describe("dispose", () => {
     const context = h.context();
     expect(context.sources).toHaveLength(2);
     expect(context.sources[1]?.stream.getAudioTracks()).toEqual([h.rawTracks[1]?.asTrack()]);
+  });
+});
+
+describe("dtln mode (#122)", () => {
+  test("happy path: 16 kHz context, source → worklet node → gain → destination", async () => {
+    const h = new ChainHarness();
+    const track = await startDtln(h);
+
+    const context = h.context();
+    expect(context.options).toEqual({ sampleRate: 16000 });
+    const handle = h.workletHandles[0]!;
+    expect(context.sources[0]?.connected).toBe(handle.node);
+    expect(handle.node.connected).toBe(context.gains[0]);
+    expect(context.gains[0]?.connected).toEqual([context.destination]);
+    expect(track).toBe(context.destinationTrack.asTrack());
+    expect(context.resumed).toBe(true);
+    expect(h.contexts).toHaveLength(1);
+    expect(handle.disposed).toBe(false);
+    expect(h.fallbacks).toEqual([]);
+  });
+
+  test("16 kHz context construction throws → exactly one fallback: plain chain", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    h.reject16k = true;
+    const track = await h.chain.start();
+
+    // The package has no internal resampler — a refused rate is an init failure.
+    expect(h.fallbacks).toEqual(["init"]);
+    expect(h.contexts).toHaveLength(1);
+    expect(h.context().options).toBeUndefined();
+    expect(h.workletHandles).toHaveLength(0);
+    // The already-captured raw track is reused — no second gUM.
+    expect(h.rawTracks).toHaveLength(1);
+    expect(h.rawTracks[0]?.stop).not.toHaveBeenCalled();
+    expect(h.context().sources[0]?.connected).toBe(h.context().gains[0]);
+    expect(track).toBe(h.context().destinationTrack.asTrack());
+  });
+
+  test("context accepts the option but runs at hardware rate → the same single fallback", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    h.ignore16k = true;
+    const track = await h.chain.start();
+
+    expect(h.fallbacks).toEqual(["init"]);
+    expect(h.contexts).toHaveLength(2);
+    expect(h.contexts[0]?.closed).toBe(true);
+    expect(h.contexts[1]?.options).toBeUndefined();
+    expect(h.workletHandles).toHaveLength(0);
+    expect(track).toBe(h.contexts[1]?.destinationTrack.asTrack());
+  });
+
+  test("factory rejection → exactly one fallback: plain chain, 16 kHz context closed", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    h.factoryError = new Error("network");
+    const track = await h.chain.start();
+
+    expect(h.fallbacks).toEqual(["init"]);
+    expect(h.contexts).toHaveLength(2);
+    expect(h.contexts[0]?.closed).toBe(true);
+    expect(h.contexts[1]?.options).toBeUndefined();
+    expect(h.rawTracks).toHaveLength(1);
+    expect(h.rawTracks[0]?.stop).not.toHaveBeenCalled();
+    expect(h.workletHandles).toHaveLength(0);
+    const plain = h.contexts[1]!;
+    expect(plain.sources[0]?.connected).toBe(plain.gains[0]);
+    expect(track).toBe(plain.destinationTrack.asTrack());
+  });
+
+  test("no ready signal within 10 s → the same single fallback, handle disposed", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = new ChainHarness();
+      h.nsMode = "dtln";
+      const starting = h.chain.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.workletHandles).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      const track = await starting;
+
+      expect(h.fallbacks).toEqual(["init"]);
+      expect(h.workletHandles[0]?.disposed).toBe(true);
+      expect(h.contexts).toHaveLength(2);
+      expect(h.contexts[0]?.closed).toBe(true);
+      expect(h.rawTracks).toHaveLength(1);
+      expect(track).toBe(h.contexts[1]?.destinationTrack.asTrack());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("readiness rejection → the same single fallback, handle disposed", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    const starting = h.chain.start();
+    await flush();
+    h.workletHandles[0]?.emitReadyRejection();
+    const track = await starting;
+
+    expect(h.fallbacks).toEqual(["init"]);
+    expect(h.workletHandles[0]?.disposed).toBe(true);
+    expect(h.contexts).toHaveLength(2);
+    expect(h.contexts[0]?.closed).toBe(true);
+    expect(track).toBe(h.contexts[1]?.destinationTrack.asTrack());
+  });
+
+  test("processor error before ready → the same single fallback, handle disposed", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    const starting = h.chain.start();
+    await flush();
+    h.workletHandles[0]?.emitProcessorError();
+    const track = await starting;
+
+    expect(h.fallbacks).toEqual(["init"]);
+    expect(h.workletHandles[0]?.disposed).toBe(true);
+    expect(h.contexts).toHaveLength(2);
+    expect(h.contexts[0]?.closed).toBe(true);
+    expect(track).toBe(h.contexts[1]?.destinationTrack.asTrack());
+  });
+
+  test("dispose during the ready wait → no fallback toast, handle disposed, raw stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = new ChainHarness();
+      h.nsMode = "dtln";
+      const starting = h.chain.start();
+      // Attached before the timer fires — the rejection must never sit unhandled.
+      const rejection = expect(starting).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.workletHandles).toHaveLength(1);
+
+      h.chain.dispose();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await rejection;
+
+      expect(h.fallbacks).toEqual([]);
+      expect(h.workletHandles[0]?.disposed).toBe(true);
+      expect(h.contexts).toHaveLength(1);
+      expect(h.contexts[0]?.closed).toBe(true);
+      expect(h.rawTracks[0]?.stop).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("chain dispose disposes the engine handle", async () => {
+    const h = new ChainHarness();
+    await startDtln(h);
+
+    h.chain.dispose();
+
+    expect(h.workletHandles[0]?.disposed).toBe(true);
+    expect(h.context().closed).toBe(true);
+  });
+
+  test("recapture swaps the new source onto the worklet node, not the gain", async () => {
+    const h = new ChainHarness();
+    await startDtln(h);
+
+    await h.chain.recapture();
+
+    const context = h.context();
+    expect(context.sources[0]?.disconnected).toBe(true);
+    expect(context.sources[1]?.connected).toBe(h.workletHandles[0]?.node);
+    expect(h.rawTracks[0]?.stop).toHaveBeenCalled();
+  });
+
+  test("post-ready processor fault bypasses the worklet in place — no rebuild", async () => {
+    const h = new ChainHarness();
+    const track = await startDtln(h);
+
+    h.workletHandles[0]?.emitProcessorError();
+
+    expect(h.fallbacks).toEqual(["runtime"]);
+    expect(h.workletHandles[0]?.disposed).toBe(true);
+    const context = h.context();
+    expect(context.sources[0]?.disconnected).toBe(true);
+    expect(context.sources[0]?.connected).toBe(context.gains[0]);
+    // Same context, same destination track — the producer is untouched.
+    expect(h.contexts).toHaveLength(1);
+    expect(track).toBe(context.destinationTrack.asTrack());
+
+    // A repeat fault must not toast again.
+    h.workletHandles[0]?.emitProcessorError();
+    expect(h.fallbacks).toEqual(["runtime"]);
+  });
+
+  test("standard mode: optionless context, zero factory interaction", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "standard";
+    await h.chain.start();
+
+    expect(h.context().options).toBeUndefined();
+    expect(h.workletHandles).toHaveLength(0);
+  });
+
+  test("dtln preference without worklet support behaves as standard, silently", async () => {
+    const h = new ChainHarness();
+    h.nsMode = "dtln";
+    h.dtlnSupported = false;
+    await h.chain.start();
+
+    expect(h.context().options).toBeUndefined();
+    expect(h.workletHandles).toHaveLength(0);
+    expect(h.fallbacks).toEqual([]);
   });
 });
 

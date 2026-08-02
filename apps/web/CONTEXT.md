@@ -205,17 +205,34 @@ TanStack Query invalidation of `guild.list`.
   `setSinkId` exists (Safari gets no output UX at all); it also owns the master output-volume
   slider (#78) and the per-cue voice-sound toggles (`konusLa.sound-prefs`, previews included);
   the chosen sink flows through the device store into `voice-audio-bridge.tsx`. The mic
-  rides a persistent Web Audio chain (`lib/voice/mic-chain.ts`, #81): raw gUM track →
-  source → gain → destination on a dedicated per-call `AudioContext` (NOT the shared
-  effects context), with the producer holding the destination track for the session's
-  life. The Voice section's input column drives it: the input-volume slider is a live
-  clamped gain write (0..1, attenuation-only, works while muted — mute stays
-  `producer.pause()`), and the AGC / noise-suppression / echo-cancellation toggles
-  (all default on) re-capture through the chain's source swap — as do mic switches
-  (`voiceSession.switchMicTrack`): the producer track never changes, no re-produce, no
-  signaling. All four prefs persist in the device store (`voice:input-volume`,
-  `voice:agc`, `voice:noise-suppression`, `voice:echo-cancellation`) and apply on the
-  next join when no session is live; disposal stops the RAW track so the tab's mic
+  rides a persistent Web Audio chain (`lib/voice/mic-chain.ts`, #81/#122): raw gUM track
+  → source → [DTLN worklet] → gain → destination on a dedicated per-call `AudioContext`
+  (NOT the shared effects context), with the producer holding the destination track for
+  the chain's life. The Voice section's input column drives it: the input-volume slider
+  is a live clamped gain write (0..1, attenuation-only, works while muted — mute stays
+  `producer.pause()`), and the AGC / echo-cancellation toggles (default on) re-capture
+  through the chain's source swap — as do mic switches (`voiceSession.switchMicTrack`):
+  the producer track never changes, no re-produce, no signaling. **Noise suppression is
+  a three-valued *mode*** (#122, [ADR 0010](../../docs/adr/0010-dtln-noise-suppression-engine.md)):
+  `none` | `standard` (the browser's built-in gUM suppressor) | `dtln` (the
+  `@workadventure/noise-suppression` engine in an `AudioWorklet` on the mic chain) —
+  one suppressor at a time by construction. In dtln mode the per-call context MUST
+  genuinely run at 16 kHz (the engine has no resampler), the engine's worklet + model
+  assets are fetched lazily via its factory (hashed immutable assets, only when a dtln
+  user joins voice; in dev the worklet loads raw from the package Vite plugin's
+  middleware via an explicit `moduleUrl` — the plugin's own URL rewrite misses on
+  Windows), and
+  any init failure (factory rejection, 10 s ready timeout, processor error, wrong-rate
+  context) disposes the engine handle and degrades to a plain hardware-rate chain with
+  a single toast, preference unchanged. A mode change mid-call rebuilds the chain and
+  swaps the new destination track into the SAME producer via `replaceTrack`
+  (`voiceSession.rebuildMicChain` — no signaling, mute preserved), unlike
+  device/agc/echo changes which stay source-node swaps. Where AudioWorklet or a secure
+  context is missing, `dtln` behaves as `standard` wholesale and the option is
+  disabled with a hint. All prefs persist in the device store (`voice:input-volume`,
+  `voice:agc`, `voice:noise-suppression` — legacy boolean values migrate read-only,
+  `"true"`→`standard`, `"false"`→`none` — and `voice:echo-cancellation`) and apply on
+  the next join when no session is live; disposal stops the RAW track so the tab's mic
   indicator goes dark on leave.
   The share button opens the quality-preset popover (720p / 1080p / 1080p60) BEFORE
   `getDisplayMedia` — one call for both halves of a share: video always, audio only when the user

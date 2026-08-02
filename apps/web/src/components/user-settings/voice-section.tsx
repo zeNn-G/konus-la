@@ -20,9 +20,11 @@ import {
   type SoundCue,
 } from "@/lib/sound-effects";
 import {
+  supportsDtln,
   useDeviceStore,
   type DeviceInfo,
   type MicProcessingSetting,
+  type NoiseSuppressionMode,
 } from "@/lib/voice/devices";
 import { deviceManager } from "@/lib/voice/session";
 
@@ -62,6 +64,7 @@ export function VoiceSection() {
             onSelect={(deviceId) => void deviceManager.setMicPreference(deviceId)}
           />
           <VolumeSlider label="Input volume" volume={inputVolume} onChange={setInputVolume} />
+          <NoiseSuppressionSelect />
           <MicProcessingToggles />
         </div>
 
@@ -105,9 +108,7 @@ function VolumeSlider({
         min={0}
         max={100}
         value={Math.round(volume * 100)}
-        onValueChange={(value) =>
-          onChange((Array.isArray(value) ? (value[0] ?? 0) : value) / 100)
-        }
+        onValueChange={(value) => onChange((Array.isArray(value) ? (value[0] ?? 0) : value) / 100)}
       />
     </div>
   );
@@ -174,9 +175,60 @@ function DeviceSelect({
   );
 }
 
+const NS_OPTIONS: Array<{ value: NoiseSuppressionMode; label: string }> = [
+  { value: "none", label: "None" },
+  { value: "standard", label: "Standard" },
+  { value: "dtln", label: "DTLN" },
+];
+
+/**
+ * The three-way noise-suppression mode (#122): None, the browser's built-in (Standard),
+ * or the DTLN worklet — one suppressor at a time by construction. A change mid-call
+ * rebuilds the mic chain seamlessly (producer track swap, no re-join). DTLN needs an
+ * AudioWorklet in a secure context; where that's missing the option is disabled with a
+ * hint and a stored dtln preference behaves as Standard.
+ */
+function NoiseSuppressionSelect() {
+  const mode = useDeviceStore((s) => s.noiseSuppression);
+  const dtlnAvailable = supportsDtln();
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>Noise suppression</Label>
+      <Select
+        items={NS_OPTIONS}
+        value={mode}
+        onValueChange={(next) =>
+          void deviceManager.setNoiseSuppression(next as NoiseSuppressionMode)
+        }
+      >
+        <SelectTrigger aria-label="Noise suppression" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {NS_OPTIONS.map((option) => {
+              const unavailable = option.value === "dtln" && !dtlnAvailable;
+              return (
+                <SelectItem key={option.value} value={option.value} disabled={unavailable}>
+                  {option.label}
+                  {unavailable && (
+                    <span className="text-muted-foreground">
+                      requires AudioWorklet in a secure context
+                    </span>
+                  )}
+                </SelectItem>
+              );
+            })}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 const PROCESSING_ROWS: Array<{ setting: MicProcessingSetting; label: string }> = [
   { setting: "agc", label: "Automatic gain control" },
-  { setting: "noiseSuppression", label: "Noise suppression" },
   { setting: "echoCancellation", label: "Echo cancellation" },
 ];
 
@@ -186,9 +238,8 @@ const PROCESSING_ROWS: Array<{ setting: MicProcessingSetting; label: string }> =
  */
 function MicProcessingToggles() {
   const agc = useDeviceStore((s) => s.agc);
-  const noiseSuppression = useDeviceStore((s) => s.noiseSuppression);
   const echoCancellation = useDeviceStore((s) => s.echoCancellation);
-  const enabled = { agc, noiseSuppression, echoCancellation };
+  const enabled = { agc, echoCancellation };
 
   return (
     <div className="flex flex-col">

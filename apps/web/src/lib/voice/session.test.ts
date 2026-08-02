@@ -55,6 +55,7 @@ class FakeMicChain {
   recaptures = 0;
   constructor(private harness: Harness) {}
   async start(): Promise<MediaStreamTrack> {
+    await this.harness.chainStartGate;
     if (this.harness.micDenied) throw new DOMException("denied", "NotAllowedError");
     this.raw = new FakeTrack("audio");
     this.harness.micTracks.push(this.raw);
@@ -157,7 +158,11 @@ class FakeTransport implements TransportLike {
     ) => void;
     const { id } = await new Promise<{ id: string }>((resolve, reject) =>
       produce(
-        { kind: (options.track as { kind?: string }).kind ?? "audio", rtpParameters: {}, appData: options.appData },
+        {
+          kind: (options.track as { kind?: string }).kind ?? "audio",
+          rtpParameters: {},
+          appData: options.appData,
+        },
         resolve,
         reject,
       ),
@@ -217,6 +222,8 @@ class Harness {
   onJoin: (() => void) | null = null;
 
   micDenied = false;
+  /** When set, chain starts wait on it — for teardown/supersede races mid-rebuild (#122). */
+  chainStartGate: Promise<void> | null = null;
   /** Mirrors the picker's "also share tab audio" tick — off by default, like the browser. */
   shareAudio = false;
   device: FakeDevice | null = null;
@@ -275,7 +282,8 @@ class Harness {
             return { seatSessionId: `seat-${++this.seatCounter}` };
           }),
         leave: () => this.invoke("leave", undefined, () => undefined),
-        setSelfMute: (input: { muted: boolean }) => this.invoke("setSelfMute", input, () => undefined),
+        setSelfMute: (input: { muted: boolean }) =>
+          this.invoke("setSelfMute", input, () => undefined),
         setSelfDeaf: (input: { deafened: boolean }) =>
           this.invoke("setSelfDeaf", input, () => undefined),
         getRouterRtpCapabilities: () =>
@@ -543,9 +551,122 @@ describe("mic device switching & re-capture (#25/#81)", () => {
     await harness.session.switchMicTrack();
 
     expect(oldRaw.stop).not.toHaveBeenCalled();
-    expect(useVoiceStore.getState().localTracks.mic).toBe(
-      harness.chains[0]!.destination.asTrack(),
-    );
+    expect(useVoiceStore.getState().localTracks.mic).toBe(harness.chains[0]!.destination.asTrack());
+  });
+});
+
+describe("noise-suppression mode change (#122)", () => {
+  test("rebuild swaps the new chain's track into the SAME producer — no re-produce", async () => {
+    await joined();
+    const first = harness.chains[0]!;
+    const producer = harness.device!.sendTransport!.producers[0]!;
+
+    await harness.session.rebuildMicChain();
+
+    expect(harness.chains).toHaveLength(2);
+    const second = harness.chains[1]!;
+    // replaceTrack is a pure RTCRtpSender operation: same producer, zero signaling.
+    expect(producer.track).toBe(second.destination.asTrack());
+    expect(harness.callsOf("produce")).toHaveLength(1);
+    expect(first.disposed).toBe(true);
+    expect(second.disposed).toBe(false);
+    expect(useVoiceStore.getState().localTracks.mic).toBe(second.destination.asTrack());
+  });
+
+  test("a muted mic stays paused across the rebuild", async () => {
+    await joined();
+    await harness.session.setSelfMute(true);
+
+    await harness.session.rebuildMicChain();
+
+    expect(harness.device?.sendTransport?.producers[0]?.paused).toBe(true);
+    expect(useVoiceStore.getState().selfMute).toBe(true);
+  });
+
+  test("not connected → no-op, the preference applies at the next produce", async () => {
+    await harness.session.rebuildMicChain();
+    expect(harness.chains).toHaveLength(0);
+  });
+
+  test("listen-only (no mic producer) → no-op", async () => {
+    harness.micDenied = true;
+    await joined();
+    harness.micDenied = false;
+
+    await harness.session.rebuildMicChain();
+
+    expect(harness.chains).toHaveLength(1);
+  });
+
+  test("a failed new-chain start keeps the old chain producing", async () => {
+    await joined();
+    const first = harness.chains[0]!;
+    const producer = harness.device!.sendTransport!.producers[0]!;
+    harness.micDenied = true;
+
+    await harness.session.rebuildMicChain();
+
+    expect(harness.chains[1]?.disposed).toBe(true);
+    expect(first.disposed).toBe(false);
+    expect(producer.track).toBe(first.destination.asTrack());
+    expect(useVoiceStore.getState().localTracks.mic).toBe(first.destination.asTrack());
+  });
+
+  test("a failed replaceTrack keeps the old chain producing", async () => {
+    await joined();
+    const first = harness.chains[0]!;
+    const producer = harness.device!.sendTransport!.producers[0]!;
+    producer.replaceTrack = async () => {
+      throw new Error("sender gone");
+    };
+
+    await harness.session.rebuildMicChain();
+
+    expect(harness.chains[1]?.disposed).toBe(true);
+    expect(first.disposed).toBe(false);
+    expect(useVoiceStore.getState().localTracks.mic).toBe(first.destination.asTrack());
+  });
+
+  test("teardown mid-rebuild disposes the late-arriving chain", async () => {
+    await joined();
+    let release!: () => void;
+    harness.chainStartGate = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    const rebuilding = harness.session.rebuildMicChain();
+    await harness.session.leave();
+    release();
+    await rebuilding;
+
+    expect(harness.chains[1]?.disposed).toBe(true);
+  });
+
+  test("overlapping rebuilds: the newest wins, the superseded chain is disposed", async () => {
+    await joined();
+
+    let releaseFirst!: () => void;
+    harness.chainStartGate = new Promise((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = harness.session.rebuildMicChain();
+
+    let releaseSecond!: () => void;
+    harness.chainStartGate = new Promise((resolve) => {
+      releaseSecond = resolve;
+    });
+    const second = harness.session.rebuildMicChain();
+
+    releaseSecond();
+    await second;
+    releaseFirst();
+    await first;
+
+    const producer = harness.device!.sendTransport!.producers[0]!;
+    expect(producer.track).toBe(harness.chains[2]!.destination.asTrack());
+    expect(harness.chains[1]?.disposed).toBe(true);
+    expect(harness.chains[2]?.disposed).toBe(false);
+    expect(useVoiceStore.getState().localTracks.mic).toBe(harness.chains[2]!.destination.asTrack());
   });
 });
 

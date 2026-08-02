@@ -22,11 +22,18 @@ function onlyTrack(stream: MediaStream, kind: "audio" | "video"): MediaStreamTra
   return track;
 }
 
-/** The browser's built-in speech processing stages, each a user toggle (#81). */
+/**
+ * The browser's built-in speech processing stages, each a user toggle (#81), plus the
+ * optional capture hints DTLN mode adds (#122): 16 kHz mono so the browser resamples at
+ * capture and the worklet runs its native path. Hints are strictly dtln-only — other
+ * modes' constraint objects must not grow extra keys.
+ */
 export interface MicProcessing {
   echoCancellation: boolean;
   noiseSuppression: boolean;
   autoGainControl: boolean;
+  sampleRate?: number;
+  channelCount?: number;
 }
 
 /**

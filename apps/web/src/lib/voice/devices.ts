@@ -32,13 +32,22 @@ const OUTPUT_VOLUME_STORAGE_KEY = "voice:output-volume";
 const INPUT_VOLUME_STORAGE_KEY = "voice:input-volume";
 
 /** The browser's built-in mic processing stages (#81) — store flag → its voice:* key. */
-export type MicProcessingSetting = "agc" | "noiseSuppression" | "echoCancellation";
+export type MicProcessingSetting = "agc" | "echoCancellation";
 
 const PROCESSING_STORAGE_KEYS: Record<MicProcessingSetting, string> = {
   agc: "voice:agc",
-  noiseSuppression: "voice:noise-suppression",
   echoCancellation: "voice:echo-cancellation",
 };
+
+/**
+ * Noise suppression is a three-way *mode* (#122): none, the browser's built-in
+ * (`standard`), or the DTLN worklet (`dtln`) — mutually exclusive by construction, so
+ * cascaded-suppressor artifacts cannot occur. agc/echo stay independent switches.
+ */
+export type NoiseSuppressionMode = "none" | "standard" | "dtln";
+
+const NOISE_SUPPRESSION_STORAGE_KEY = "voice:noise-suppression";
+const DTLN_SAMPLE_RATE = 16000;
 
 function loadPreference(key: string): string | null {
   try {
@@ -72,6 +81,38 @@ export function parseProcessingPref(raw: string | null): boolean {
   return raw !== "false";
 }
 
+/**
+ * The persisted NS mode, migrating the pre-#122 boolean switch in place: the same
+ * voice:noise-suppression key used to hold "true"/"false". Read-only migration — the
+ * widened value is only written back when the user next changes the setting. Absent or
+ * garbage defaults to standard (today's behavior).
+ */
+export function parseNsModePref(raw: string | null): NoiseSuppressionMode {
+  switch (raw) {
+    case "false":
+    case "none":
+      return "none";
+    case "dtln":
+      return "dtln";
+    default:
+      return "standard";
+  }
+}
+
+/**
+ * Whether the DTLN engine can run here at all: it lives in an AudioWorklet, which
+ * needs a secure context (dev:lan over plain http has neither). When false, a `dtln`
+ * preference behaves as `standard` wholesale — capture constraints included — and the
+ * option is disabled in Voice settings.
+ */
+export function supportsDtln(): boolean {
+  return (
+    typeof AudioWorkletNode !== "undefined" &&
+    typeof isSecureContext !== "undefined" &&
+    isSecureContext
+  );
+}
+
 export interface DeviceStoreState {
   /** Persisted selections; null = system default. Never overwritten by a fallback. */
   micId: string | null;
@@ -96,10 +137,11 @@ export interface DeviceStoreState {
    */
   inputVolume: number;
   setInputVolume: (volume: number) => void;
-  /** The three gUM processing stages (#81), all defaulting on. Flips re-capture. */
+  /** The agc/echo gUM stages (#81), defaulting on. Flips re-capture. */
   agc: boolean;
-  noiseSuppression: boolean;
   echoCancellation: boolean;
+  /** The noise-suppression mode (#122), default standard. Changes rebuild the mic chain. */
+  noiseSuppression: NoiseSuppressionMode;
 }
 
 export const useDeviceStore = create<DeviceStoreState>()((set) => ({
@@ -122,14 +164,26 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
     set({ inputVolume: clamped });
   },
   agc: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.agc)),
-  noiseSuppression: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.noiseSuppression)),
   echoCancellation: parseProcessingPref(loadPreference(PROCESSING_STORAGE_KEYS.echoCancellation)),
+  noiseSuppression: parseNsModePref(loadPreference(NOISE_SUPPRESSION_STORAGE_KEY)),
 }));
 
-/** The store flags in gUM constraint terms — what mic capture should apply right now. */
-export function micProcessing(): MicProcessing {
+/**
+ * The store prefs in gUM constraint terms — what mic capture should apply right now.
+ * The browser suppressor runs only in `standard` mode (dtln replaces it — exactly one
+ * suppressor). `dtln` adds 16 kHz mono capture hints so the browser does the high-quality
+ * resampling; the hints are strictly dtln-only — none/standard constraint objects never
+ * carry them.
+ */
+export function micProcessing(dtlnSupported: boolean = supportsDtln()): MicProcessing {
   const { agc, noiseSuppression, echoCancellation } = useDeviceStore.getState();
-  return { autoGainControl: agc, noiseSuppression, echoCancellation };
+  const mode = noiseSuppression === "dtln" && !dtlnSupported ? "standard" : noiseSuppression;
+  return {
+    autoGainControl: agc,
+    noiseSuppression: mode === "standard",
+    echoCancellation,
+    ...(mode === "dtln" ? { sampleRate: DTLN_SAMPLE_RATE, channelCount: 1 } : {}),
+  };
 }
 
 /**
@@ -151,8 +205,10 @@ export interface DeviceManagerDeps {
   supportsOutput: () => boolean;
   /** Announcements only make sense mid-call. */
   sessionActive: () => boolean;
-  /** Re-capture the mic on the current effective device and swap the producer track. */
+  /** Re-capture the mic on the current effective device and swap the source node. */
   applyMicDevice: () => Promise<void>;
+  /** Rebuild the whole mic chain (#122) — an NS-mode change swaps the worklet in/out. */
+  applyMicPipeline: () => Promise<void>;
   notify: (notice: DeviceNotice) => void;
 }
 
@@ -167,8 +223,7 @@ function hasDevice(devices: ReadonlyArray<{ deviceId: string }>, deviceId: strin
 
 /** The label a fallback lands on — the browser's "default" entry, else the first device. */
 function defaultLabel(devices: EnumeratedDevice[]): string {
-  const label =
-    devices.find((device) => device.deviceId === "default")?.label ?? devices[0]?.label;
+  const label = devices.find((device) => device.deviceId === "default")?.label ?? devices[0]?.label;
   return label || "system default";
 }
 
@@ -217,6 +272,18 @@ export class DeviceManager {
     persistPreference(PROCESSING_STORAGE_KEYS[setting], String(enabled));
     useDeviceStore.setState({ [setting]: enabled });
     await this.deps.applyMicDevice();
+  }
+
+  /**
+   * Change the noise-suppression mode (#122): persist the widened value, then re-apply.
+   * Unlike agc/echo (a source-node re-capture), a mode change swaps the worklet in or
+   * out — a full chain rebuild with a producer-track swap. With no live session the
+   * rebuild no-ops and the mode applies at the next capture.
+   */
+  async setNoiseSuppression(mode: NoiseSuppressionMode): Promise<void> {
+    persistPreference(NOISE_SUPPRESSION_STORAGE_KEY, mode);
+    useDeviceStore.setState({ noiseSuppression: mode });
+    await this.deps.applyMicPipeline();
   }
 
   /** Pick an output (null = system default): the sink follows while it is present. */
@@ -292,10 +359,10 @@ const NOTICE_COPY: Record<DeviceNotice["kind"], (name: string) => string> = {
   "output-restored": (name) => `${name} reconnected — switched back`,
 };
 
-/** Everything but the two session-coupled deps — session.ts wires those (no import cycle). */
+/** Everything but the session-coupled deps — session.ts wires those (no import cycle). */
 export function createRealDeviceDeps(): Omit<
   DeviceManagerDeps,
-  "sessionActive" | "applyMicDevice"
+  "sessionActive" | "applyMicDevice" | "applyMicPipeline"
 > {
   return {
     enumerate: async () =>
