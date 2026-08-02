@@ -5,6 +5,7 @@
     "correctness": "error"
   },
   "rules": {},
+  "ignorePatterns": ["apps/web/src/assets/dtln/**", "tools/dtln/postscript.js"],
   "env": {
     "builtin": true
   }
