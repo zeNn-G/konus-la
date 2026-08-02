@@ -1,6 +1,5 @@
+import { createNoiseSuppressionAudioWorklet } from "@workadventure/noise-suppression/audio-worklet";
 import { toast } from "sonner";
-
-import dtlnModuleUrl from "@/assets/dtln/dtln-processor.js?url";
 
 import { effectiveMicDeviceId, micProcessing, supportsDtln, useDeviceStore } from "./devices";
 import { getMicTrack } from "./media-sources";
@@ -16,13 +15,15 @@ import { getMicTrack } from "./media-sources";
  * the shared effects context (`sound-effects.ts`), whose lifetime is the app session,
  * not the call.
  *
- * In dtln mode the context is requested at 16 kHz (the model's native rate — the browser
- * then does the high-quality capture resampling); browsers that refuse the rate get a
- * hardware-rate context and the worklet resamples internally. Any DTLN init failure
- * (module load, no ready signal within 10 s, processor error) collapses to the plain
+ * The DTLN engine is `@workadventure/noise-suppression` (ADR 0010): its factory yields
+ * the worklet node, a readiness promise, and a dispose handle. The engine has no
+ * internal resampler, so dtln mode REQUIRES a context genuinely running at 16 kHz — a
+ * construction throw or a browser that ignores the rate hint (iOS Safari) is an init
+ * failure, not a degraded success. Any init failure (factory rejection, no readiness
+ * within 10 s, processor error before ready, wrong-rate context) collapses to the plain
  * chain on a hardware-rate context with a single fallback notice, reusing the raw track
  * already captured. In none/standard modes the chain is bit-identical to pre-DTLN
- * behavior: an optionless context and zero worklet interaction.
+ * behavior: an optionless context and zero engine interaction.
  *
  * The input-volume pref drives the gain live (clamped 0..1 — attenuation-only, boost
  * would clip at the encoder) with no signaling; it applies even while muted, since mute
@@ -50,15 +51,22 @@ export interface MicGainNodeLike {
 }
 
 export interface MicWorkletNodeLike {
-  port: { onmessage: ((event: { data: unknown }) => void) | null };
   onprocessorerror: (() => void) | null;
   connect(node: unknown): unknown;
-  disconnect(): void;
+}
+
+/** The engine factory's handle: what `createNoiseSuppressionAudioWorklet` resolves to,
+ * reduced to the surface the chain touches. `dispose()` disconnects the node and stops
+ * the denoiser instance — the chain owns calling it on every path that abandons the
+ * worklet (fallback, supersede, bypass, chain disposal). */
+export interface DtlnWorkletHandle {
+  node: MicWorkletNodeLike;
+  ready: Promise<unknown>;
+  dispose(): void;
 }
 
 export interface MicContextLike {
   sampleRate: number;
-  audioWorklet: { addModule(url: string): Promise<void> };
   createMediaStreamSource(stream: MicStreamLike): MicSourceNodeLike;
   createGain(): MicGainNodeLike;
   createMediaStreamDestination(): { stream: MicStreamLike };
@@ -83,8 +91,9 @@ export interface MicChainDeps {
   onInputVolumeChange(listener: (volume: number) => void): () => void;
   getNsMode(): "none" | "standard" | "dtln";
   supportsDtln(): boolean;
-  getDtlnModuleUrl(): string;
-  createWorkletNode(context: MicContextLike): MicWorkletNodeLike;
+  /** The engine's worklet factory on the given (16 kHz) context; rejects on load/init
+   * failure. Real: `createNoiseSuppressionAudioWorklet`. */
+  createDtlnWorklet(context: MicContextLike): Promise<DtlnWorkletHandle>;
   onDtlnFallback(reason: DtlnFallbackReason): void;
 }
 
@@ -93,7 +102,7 @@ export class MicChain {
   private context: MicContextLike | null = null;
   private source: MicSourceNodeLike | null = null;
   private gain: MicGainNodeLike | null = null;
-  private worklet: MicWorkletNodeLike | null = null;
+  private dtln: DtlnWorkletHandle | null = null;
   /** Where a (re)captured source connects: the worklet while DTLN runs, else the gain. */
   private inputSink: MicWorkletNodeLike | MicGainNodeLike | null = null;
   private rawTrack: MediaStreamTrack | null = null;
@@ -116,9 +125,9 @@ export class MicChain {
       throw new Error("mic chain disposed during capture");
     }
     this.rawTrack = raw;
-    let worklet: MicWorkletNodeLike | null = null;
+    let dtln: DtlnWorkletHandle | null = null;
     if (this.deps.getNsMode() === "dtln" && this.deps.supportsDtln()) {
-      worklet = await this.initDtln(seq);
+      dtln = await this.initDtln(seq);
     } else {
       this.context = this.deps.createContext();
       // Belt-and-braces vs autoplay policy: a suspended context would capture silence.
@@ -130,13 +139,13 @@ export class MicChain {
     const destination = context.createMediaStreamDestination();
     // Future mic test / level meter (#81 leftover): an AnalyserNode taps the gain here.
     this.gain.connect(destination);
-    if (worklet) {
-      worklet.connect(this.gain);
+    if (dtln) {
+      dtln.node.connect(this.gain);
       // From here on a processor fault is mid-call: bypass in place, keep audio flowing.
-      worklet.onprocessorerror = () => this.bypassWorklet();
+      dtln.node.onprocessorerror = () => this.bypassWorklet();
     }
-    this.worklet = worklet;
-    this.inputSink = worklet ?? this.gain;
+    this.dtln = dtln;
+    this.inputSink = dtln?.node ?? this.gain;
     this.source = context.createMediaStreamSource(this.deps.createSourceStream(raw));
     this.source.connect(this.inputSink);
     this.unsubscribeVolume = this.deps.onInputVolumeChange((volume) => {
@@ -175,8 +184,9 @@ export class MicChain {
   }
 
   /**
-   * Stop the RAW track — anything less leaves the tab's mic indicator lit — and close
-   * the dedicated context. Idempotent; supersedes any in-flight capture.
+   * Stop the RAW track — anything less leaves the tab's mic indicator lit — dispose the
+   * engine handle, and close the dedicated context. Idempotent; supersedes any in-flight
+   * capture.
    */
   dispose(): void {
     if (this.disposed) return;
@@ -186,11 +196,12 @@ export class MicChain {
     this.unsubscribeVolume = null;
     this.rawTrack?.stop();
     this.rawTrack = null;
+    this.dtln?.dispose();
+    this.dtln = null;
     void this.context?.close().catch(() => {});
     this.context = null;
     this.source = null;
     this.gain = null;
-    this.worklet = null;
     this.inputSink = null;
   }
 
@@ -199,34 +210,34 @@ export class MicChain {
   }
 
   /**
-   * Bring the DTLN worklet up: 16 kHz context (hardware rate where refused), module
-   * load, node construction, then the ready gate — the wasm's `ready:` signal raced
-   * against a 10 s timeout and pre-ready processor errors. Success returns the node with
-   * `this.context` set; any genuine failure closes the attempted context, notifies once,
-   * and falls back to a fresh optionless context with no worklet (null). A disposal
-   * detected after an await throws instead — no notice, dispose() already cleaned up.
+   * Bring the DTLN worklet up: a context genuinely at 16 kHz (anything else is a
+   * failure — the engine cannot resample), the factory, then the ready gate — the
+   * handle's readiness promise raced against a 10 s timeout and pre-ready processor
+   * errors. Success returns the handle with `this.context` set; any genuine failure
+   * disposes the handle, closes the attempted context, notifies once, and falls back to
+   * a fresh optionless context with no worklet (null). A disposal detected after an
+   * await throws instead — no notice, dispose() already cleaned up (including the
+   * handle, via the catch below).
    */
-  private async initDtln(seq: number): Promise<MicWorkletNodeLike | null> {
-    let context: MicContextLike;
+  private async initDtln(seq: number): Promise<DtlnWorkletHandle | null> {
+    let context: MicContextLike | null = null;
+    let handle: DtlnWorkletHandle | null = null;
     try {
       context = this.deps.createContext({ sampleRate: DTLN_CONTEXT_SAMPLE_RATE });
-    } catch {
-      // NotSupportedError (e.g. iOS Safari): the worklet's internal resampler covers
-      // hardware-rate contexts — this is not a fallback, DTLN still runs.
-      context = this.deps.createContext();
-    }
-    this.context = context;
-    void context.resume().catch(() => {});
-    try {
-      await context.audioWorklet.addModule(this.deps.getDtlnModuleUrl());
+      this.context = context;
+      void context.resume().catch(() => {});
+      if (context.sampleRate !== DTLN_CONTEXT_SAMPLE_RATE) {
+        throw new Error("browser ignored the 16 kHz context request");
+      }
+      handle = await this.deps.createDtlnWorklet(context);
       if (this.stale(seq)) throw new Error("mic chain disposed during dtln init");
-      const worklet = this.deps.createWorkletNode(context);
-      await this.awaitWorkletReady(worklet);
+      await this.awaitWorkletReady(handle);
       if (this.stale(seq)) throw new Error("mic chain disposed during dtln init");
-      return worklet;
+      return handle;
     } catch (error) {
+      handle?.dispose();
       if (this.stale(seq)) throw error instanceof Error ? error : new Error(String(error));
-      void context.close().catch(() => {});
+      void context?.close().catch(() => {});
       this.deps.onDtlnFallback("init");
       const plain = this.deps.createContext();
       this.context = plain;
@@ -235,19 +246,23 @@ export class MicChain {
     }
   }
 
-  private awaitWorkletReady(worklet: MicWorkletNodeLike): Promise<void> {
+  private awaitWorkletReady(handle: DtlnWorkletHandle): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new Error("no DTLN ready signal within timeout")),
         DTLN_READY_TIMEOUT_MS,
       );
-      worklet.port.onmessage = (event) => {
-        if (typeof event.data === "string" && event.data.startsWith("ready:")) {
+      handle.ready.then(
+        () => {
           clearTimeout(timer);
           resolve();
-        }
-      };
-      worklet.onprocessorerror = () => {
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+      handle.node.onprocessorerror = () => {
         clearTimeout(timer);
         reject(new Error("DTLN processor failed before ready"));
       };
@@ -257,12 +272,13 @@ export class MicChain {
   /**
    * Post-ready processor fault: reconnect the source straight to the gain so audio
    * keeps flowing (unsuppressed) — same context, same destination track, no producer
-   * churn. One notice; repeat faults are silent no-ops.
+   * churn. The handle's dispose disconnects the node and stops the denoiser. One
+   * notice; repeat faults are silent no-ops.
    */
   private bypassWorklet(): void {
-    if (this.disposed || !this.worklet || !this.gain || !this.source) return;
-    this.worklet.disconnect();
-    this.worklet = null;
+    if (this.disposed || !this.dtln || !this.gain || !this.source) return;
+    this.dtln.dispose();
+    this.dtln = null;
     this.inputSink = this.gain;
     this.source.disconnect();
     this.source.connect(this.gain);
@@ -293,11 +309,16 @@ export function createRealMicChain(): MicChain {
       }),
     getNsMode: () => useDeviceStore.getState().noiseSuppression,
     supportsDtln,
-    getDtlnModuleUrl: () => dtlnModuleUrl,
-    createWorkletNode: (context) =>
-      new AudioWorkletNode(context as unknown as AudioContext, "dtln-processor", {
-        outputChannelCount: [1],
-      }) as unknown as MicWorkletNodeLike,
+    createDtlnWorklet: async (context) => {
+      const handle = await createNoiseSuppressionAudioWorklet(context as unknown as AudioContext, {
+        readyTimeoutMs: DTLN_READY_TIMEOUT_MS,
+      });
+      return {
+        node: handle.node as unknown as MicWorkletNodeLike,
+        ready: handle.ready,
+        dispose: () => handle.dispose(),
+      };
+    },
     // setTimeout-0: a fallback can fire during join, before the root Toaster subscribes.
     onDtlnFallback: (reason) => setTimeout(() => toast(FALLBACK_COPY[reason]), 0),
   });

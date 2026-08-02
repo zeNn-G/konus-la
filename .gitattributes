@@ -1,2 +1,1 @@
 *.sh text eol=lf
-apps/web/src/assets/dtln/dtln-processor.js -text -diff linguist-generated=true

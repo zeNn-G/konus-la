@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+import { noiseSuppressionAudioWorkletVitePlugin } from "@workadventure/noise-suppression/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -13,6 +14,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   plugins: [
+    noiseSuppressionAudioWorkletVitePlugin(),
     tailwindcss(),
     tanstackRouter({
       target: "react",
