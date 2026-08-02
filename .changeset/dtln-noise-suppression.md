@@ -1,5 +1,5 @@
 ---
-"konus-la": minor
+"konus-la": patch
 ---
 
 DTLN noise suppression before send: Voice settings gain a three-way noise-suppression
