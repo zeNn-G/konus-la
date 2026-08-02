@@ -7,6 +7,7 @@ import {
   type EnumeratedDevice,
   effectiveMicDeviceId,
   micProcessing,
+  parseNsModePref,
   parseProcessingPref,
   parseVolumePref,
   useDeviceStore,
@@ -57,6 +58,7 @@ class FakeDeps {
   devices: EnumeratedDevice[] = [MIC_DEFAULT, MIC_USB, OUT_DEFAULT, OUT_HEADSET, CAMERA];
   notices: DeviceNotice[] = [];
   applyMicCalls = 0;
+  applyPipelineCalls = 0;
   outputSupported = true;
   sessionActive = true;
   listeners = new Set<() => void>();
@@ -72,6 +74,9 @@ class FakeDeps {
       sessionActive: () => this.sessionActive,
       applyMicDevice: async () => {
         this.applyMicCalls += 1;
+      },
+      applyMicPipeline: async () => {
+        this.applyPipelineCalls += 1;
       },
       notify: (notice) => {
         this.notices.push(notice);
@@ -94,7 +99,7 @@ beforeEach(() => {
     outputVolume: 1,
     inputVolume: 1,
     agc: true,
-    noiseSuppression: true,
+    noiseSuppression: "standard",
     echoCancellation: true,
   });
   fake = new FakeDeps();
@@ -317,31 +322,90 @@ describe("mic processing toggles (#81)", () => {
     expect(stored.get("voice:agc")).toBe("false");
     expect(fake.applyMicCalls).toBe(1);
 
-    await manager.setMicProcessing("noiseSuppression", false);
-    expect(stored.get("voice:noise-suppression")).toBe("false");
-
     await manager.setMicProcessing("echoCancellation", false);
     expect(stored.get("voice:echo-cancellation")).toBe("false");
-    expect(fake.applyMicCalls).toBe(3);
+    expect(fake.applyMicCalls).toBe(2);
 
     await manager.setMicProcessing("agc", true);
     expect(useDeviceStore.getState().agc).toBe(true);
     expect(stored.get("voice:agc")).toBe("true");
   });
 
-  test("hydration parsing: only the literal \"false\" disables, everything else defaults on", () => {
+  test('hydration parsing: only the literal "false" disables, everything else defaults on', () => {
     expect(parseProcessingPref(null)).toBe(true);
     expect(parseProcessingPref("false")).toBe(false);
     expect(parseProcessingPref("true")).toBe(true);
     expect(parseProcessingPref("garbage")).toBe(true);
   });
+});
 
-  test("micProcessing maps the store flags onto gUM constraint names", () => {
-    useDeviceStore.setState({ agc: false, noiseSuppression: true, echoCancellation: false });
-    expect(micProcessing()).toEqual({
-      autoGainControl: false,
+describe("noise-suppression mode (#122)", () => {
+  const stored = useFakeLocalStorage();
+
+  test("stored preference migration: old booleans map, garbage defaults to standard", () => {
+    expect(parseNsModePref(null)).toBe("standard");
+    // The pre-#122 boolean switch persisted "true"/"false" under the same key.
+    expect(parseNsModePref("true")).toBe("standard");
+    expect(parseNsModePref("false")).toBe("none");
+    expect(parseNsModePref("none")).toBe("none");
+    expect(parseNsModePref("standard")).toBe("standard");
+    expect(parseNsModePref("dtln")).toBe("dtln");
+    expect(parseNsModePref("garbage")).toBe("standard");
+  });
+
+  test("setNoiseSuppression persists the mode, updates the store, and rebuilds the chain", async () => {
+    await manager.start();
+
+    await manager.setNoiseSuppression("dtln");
+    expect(useDeviceStore.getState().noiseSuppression).toBe("dtln");
+    expect(stored.get("voice:noise-suppression")).toBe("dtln");
+    // A mode change is a full pipeline rebuild — never the agc/echo re-capture path.
+    expect(fake.applyPipelineCalls).toBe(1);
+    expect(fake.applyMicCalls).toBe(0);
+
+    await manager.setNoiseSuppression("none");
+    expect(useDeviceStore.getState().noiseSuppression).toBe("none");
+    expect(stored.get("voice:noise-suppression")).toBe("none");
+    expect(fake.applyPipelineCalls).toBe(2);
+  });
+
+  test("standard mode: browser noiseSuppression on, no capture hints", () => {
+    useDeviceStore.setState({ agc: true, noiseSuppression: "standard", echoCancellation: false });
+    // toEqual is exact — asserting the absence of sampleRate/channelCount keys keeps
+    // the none/standard constraint objects byte-identical to pre-#122 behavior.
+    expect(micProcessing(true)).toEqual({
+      autoGainControl: true,
       noiseSuppression: true,
       echoCancellation: false,
+    });
+  });
+
+  test("none mode: browser noiseSuppression off, no capture hints", () => {
+    useDeviceStore.setState({ agc: false, noiseSuppression: "none", echoCancellation: true });
+    expect(micProcessing(true)).toEqual({
+      autoGainControl: false,
+      noiseSuppression: false,
+      echoCancellation: true,
+    });
+  });
+
+  test("dtln mode: browser suppressor off (exactly one suppressor), 16 kHz mono hints", () => {
+    useDeviceStore.setState({ agc: true, noiseSuppression: "dtln", echoCancellation: true });
+    expect(micProcessing(true)).toEqual({
+      autoGainControl: true,
+      noiseSuppression: false,
+      echoCancellation: true,
+      sampleRate: 16000,
+      channelCount: 1,
+    });
+  });
+
+  test("dtln preference on an unsupported browser captures exactly like standard", () => {
+    useDeviceStore.setState({ agc: true, noiseSuppression: "dtln", echoCancellation: true });
+    expect(micProcessing(false)).toEqual({
+      autoGainControl: true,
+      noiseSuppression: true,
+      echoCancellation: true,
     });
   });
 });
