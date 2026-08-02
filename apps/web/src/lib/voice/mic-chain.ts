@@ -312,6 +312,17 @@ export function createRealMicChain(): MicChain {
     createDtlnWorklet: async (context) => {
       const handle = await createNoiseSuppressionAudioWorklet(context as unknown as AudioContext, {
         readyTimeoutMs: DTLN_READY_TIMEOUT_MS,
+        // Dev only: the processor must reach the worklet untransformed, from the package
+        // Vite plugin's raw-serving middleware. The plugin's own URL rewrite misses on
+        // Windows (its transform compares a backslash fileURLToPath id against Vite's
+        // forward-slash ids), which would leave a Vite-transformed module whose injected
+        // helpers reference `URL` — undefined in AudioWorkletGlobalScope.
+        ...(import.meta.env.DEV
+          ? {
+              moduleUrl:
+                "/node_modules/@workadventure/noise-suppression/dist/assets/audio-worklet-processor.js",
+            }
+          : {}),
       });
       return {
         node: handle.node as unknown as MicWorkletNodeLike,
