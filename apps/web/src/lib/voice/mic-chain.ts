@@ -1,7 +1,13 @@
 import { createNoiseSuppressionAudioWorklet } from "@workadventure/noise-suppression/audio-worklet";
 import { toast } from "sonner";
 
-import { effectiveMicDeviceId, micProcessing, supportsDtln, useDeviceStore } from "./devices";
+import {
+  effectiveMicDeviceId,
+  micProcessing,
+  supportsDtln,
+  useDeviceStore,
+  type NoiseSuppressionMode,
+} from "./devices";
 import { getMicTrack } from "./media-sources";
 
 /**
@@ -22,8 +28,8 @@ import { getMicTrack } from "./media-sources";
  * failure, not a degraded success. Any init failure (factory rejection, no readiness
  * within 10 s, processor error before ready, wrong-rate context) collapses to the plain
  * chain on a hardware-rate context with a single fallback notice, reusing the raw track
- * already captured. In none/standard modes the chain is bit-identical to pre-DTLN
- * behavior: an optionless context and zero engine interaction.
+ * already captured. In none/standard modes the chain runs an optionless context with
+ * zero engine interaction — the DTLN feature must be unobservable there.
  *
  * The input-volume pref drives the gain live (clamped 0..1 — attenuation-only, boost
  * would clip at the encoder) with no signaling; it applies even while muted, since mute
@@ -89,7 +95,7 @@ export interface MicChainDeps {
   getInputVolume(): number;
   /** Subscribe to input-volume pref changes; returns an unsubscribe. */
   onInputVolumeChange(listener: (volume: number) => void): () => void;
-  getNsMode(): "none" | "standard" | "dtln";
+  getNsMode(): NoiseSuppressionMode;
   supportsDtln(): boolean;
   /** The engine's worklet factory on the given (16 kHz) context; rejects on load/init
    * failure. Real: `createNoiseSuppressionAudioWorklet`. */
@@ -129,9 +135,7 @@ export class MicChain {
     if (this.deps.getNsMode() === "dtln" && this.deps.supportsDtln()) {
       dtln = await this.initDtln(seq);
     } else {
-      this.context = this.deps.createContext();
-      // Belt-and-braces vs autoplay policy: a suspended context would capture silence.
-      void this.context.resume().catch(() => {});
+      this.usePlainContext();
     }
     const context = this.context!;
     this.gain = context.createGain();
@@ -209,6 +213,15 @@ export class MicChain {
     return this.disposed || seq !== this.captureSeq;
   }
 
+  /** An optionless hardware-rate context as the chain's context — the none/standard
+   * path and the DTLN-fallback landing spot. */
+  private usePlainContext(): void {
+    const context = this.deps.createContext();
+    this.context = context;
+    // Belt-and-braces vs autoplay policy: a suspended context would capture silence.
+    void context.resume().catch(() => {});
+  }
+
   /**
    * Bring the DTLN worklet up: a context genuinely at 16 kHz (anything else is a
    * failure — the engine cannot resample), the factory, then the ready gate — the
@@ -239,9 +252,7 @@ export class MicChain {
       if (this.stale(seq)) throw error instanceof Error ? error : new Error(String(error));
       void context?.close().catch(() => {});
       this.deps.onDtlnFallback("init");
-      const plain = this.deps.createContext();
-      this.context = plain;
-      void plain.resume().catch(() => {});
+      this.usePlainContext();
       return null;
     }
   }

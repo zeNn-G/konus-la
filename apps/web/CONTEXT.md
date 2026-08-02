@@ -219,7 +219,9 @@ TanStack Query invalidation of `guild.list`.
   one suppressor at a time by construction. In dtln mode the per-call context MUST
   genuinely run at 16 kHz (the engine has no resampler), the engine's worklet + model
   assets are fetched lazily via its factory (hashed immutable assets, only when a dtln
-  user joins voice; the package's Vite plugin covers dev-server worklet loading), and
+  user joins voice; in dev the worklet loads raw from the package Vite plugin's
+  middleware via an explicit `moduleUrl` — the plugin's own URL rewrite misses on
+  Windows), and
   any init failure (factory rejection, 10 s ready timeout, processor error, wrong-rate
   context) disposes the engine handle and degrades to a plain hardware-rate chain with
   a single toast, preference unchanged. A mode change mid-call rebuilds the chain and

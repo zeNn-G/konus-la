@@ -213,7 +213,9 @@ function NoiseSuppressionSelect() {
                 <SelectItem key={option.value} value={option.value} disabled={unavailable}>
                   {option.label}
                   {unavailable && (
-                    <span className="text-muted-foreground">requires AudioWorklet support</span>
+                    <span className="text-muted-foreground">
+                      requires AudioWorklet in a secure context
+                    </span>
                   )}
                 </SelectItem>
               );

@@ -172,7 +172,8 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
  * The store prefs in gUM constraint terms — what mic capture should apply right now.
  * The browser suppressor runs only in `standard` mode (dtln replaces it — exactly one
  * suppressor). `dtln` adds 16 kHz mono capture hints so the browser does the high-quality
- * resampling; none/standard constraint objects stay byte-identical to pre-#122.
+ * resampling; the hints are strictly dtln-only — none/standard constraint objects never
+ * carry them.
  */
 export function micProcessing(dtlnSupported: boolean = supportsDtln()): MicProcessing {
   const { agc, noiseSuppression, echoCancellation } = useDeviceStore.getState();

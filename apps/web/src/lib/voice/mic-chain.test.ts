@@ -10,7 +10,7 @@ import { MicChain, type DtlnFallbackReason, type MicStreamLike } from "./mic-cha
  * disposal releasing the raw capture (the tab's mic indicator), and the DTLN paths —
  * a genuinely-16 kHz context or bust, ready gating, every init failure collapsing to
  * exactly one plain-chain fallback with the engine handle disposed, and none/standard
- * staying bit-identical to pre-DTLN behavior (zero factory interaction).
+ * touching the engine factory not at all (an optionless context, nothing else).
  */
 
 // --- fakes ----------------------------------------------------------------------------------
