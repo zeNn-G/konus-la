@@ -19,7 +19,7 @@ forced the following amendments:
 - **No `VoiceState` table — the term is retired** (#12). The server is single-process; a
   restart kills every socket → every peer → every room, so a persisted row can only ever be
   stale or redundant. In-memory **Room / Seat / Peer** (vocabulary in
-  `packages/api/CONTEXT.md`) are the sole truth; occupancy is a *published view* of that
+  `packages/api/GLOSSARY.md`) are the sole truth; occupancy is a *published view* of that
   memory, never a stored entity.
 - **Voice signaling rides the existing `/ws` connection exclusively** (#9). The joining
   tab's socket owns the voice peer (connection-level liveness, not user-level presence), so

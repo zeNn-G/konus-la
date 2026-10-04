@@ -18,7 +18,7 @@ push-to-talk (parked) · deployment/firewall & socket-level WS flood breaker (Ph
 
 ## Domain model (in-memory only — no DB change) — #12
 
-Vocabulary also in `packages/api/CONTEXT.md`. There is **no voice table**; the ROADMAP's
+Vocabulary also in `packages/api/GLOSSARY.md`. There is **no voice table**; the ROADMAP's
 "VoiceState" is retired. A server restart empties every room by definition.
 
 ```ts

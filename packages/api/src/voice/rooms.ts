@@ -7,7 +7,7 @@ import { AUDIO_LEVEL_OBSERVER_OPTIONS, MEDIA_CODECS, sfuWorker } from "./sfu";
 
 /**
  * In-memory voice state — Room/Seat/Peer per the phase-5 spec §Domain model (vocabulary
- * in ../../CONTEXT.md). Never persisted: a restart empties every room by definition, and
+ * in ../../GLOSSARY.md). Never persisted: a restart empties every room by definition, and
  * occupancy is only ever a published view of this memory.
  *
  * The Peer carries the mediasoup half (transports/producers/consumers) and its
