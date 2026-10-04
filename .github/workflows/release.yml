@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -24,11 +25,6 @@ jobs:
           fetch-depth: 0 # changesets diffs against baseBranch history
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - name: Version PR or tag release
         id: changesets
         uses: changesets/action@v1
@@ -40,16 +36,11 @@ jobs:
           createGithubReleases: false
           commit: "chore: version packages"
           title: "Version Packages"
-          commitMode: github-api
         env:
-          # App token: a GITHUB_TOKEN-authored release branch/PR never triggers
-          # ci.yml, leaving the required `check` unreported.
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_TOKEN: ${{ github.token }} # release-tag.sh's `gh release create`
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Chained via workflow_call — release-tag.sh pushes the tag with checkout's
-  # persisted GITHUB_TOKEN, which never triggers docker-image.yml's own push
-  # event. Keep the app token out of actions/checkout or the image builds twice.
+  # Chained via workflow_call — the tag pushed above comes from GITHUB_TOKEN,
+  # which never triggers docker-image.yml's own push event.
   build-image:
     needs: release
     if: needs.release.outputs.published == 'true'
