@@ -253,8 +253,11 @@ Adopted verbatim from the [changesets research](../research/changesets-release-f
 - **`.github/workflows/release.yml`** — `changesets/action@v1` maintains the "Version
   Packages" PR; on merge the publish script tags, then the image build is **chained via
   `workflow_call`** (`build-image` job gated on `published == 'true'`). Never rely on the
-  tag event: `GITHUB_TOKEN`-pushed tags don't trigger workflows. Requires the repo
-  setting *Allow GitHub Actions to create and approve pull requests*.
+  tag event: `GITHUB_TOKEN`-pushed tags don't trigger workflows. The Version Packages
+  branch + PR are the exception: the action writes them via the API
+  (`commitMode: github-api`) with a GitHub App installation token, so the required
+  `check` runs on that PR. Requires a GitHub App installed on the repo (Contents +
+  Pull requests read/write) and the secrets `RELEASE_APP_CLIENT_ID` / `RELEASE_APP_PRIVATE_KEY`.
 - **`.github/workflows/docker-image.yml`** — triggers on both `push: tags: [v*]`
   (manual-push path) and `workflow_call`; buildx **QEMU single job**
   (`docker/setup-qemu-action` with `docker/build-push-action`) building
