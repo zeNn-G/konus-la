@@ -142,7 +142,7 @@ and the [Phase 8 spec](docs/specs/phase-8-deployment.md), which supersede the ea
 
 ---
 
-## Domain language (additions to existing `CONTEXT.md` vocabulary)
+## Domain language (additions to existing `GLOSSARY.md` vocabulary)
 
 - **Guild** — a self-contained server people belong to; owns channels and memberships.
 - **GuildMembership** — a user's membership in one guild (+ `serverMuted` flag). Roles live in `GuildRole` (per-guild role: `permissions` bitfield, `position`, `color`; one seeded `@everyone` per guild) and `MemberRole` (assignments; membership alone = `@everyone`).

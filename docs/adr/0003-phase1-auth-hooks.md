@@ -6,7 +6,7 @@ The invite-code signup gate, the first-user-becomes-Instance-Owner bootstrap, an
 
 ## Context
 
-`packages/auth/CONTEXT.md` says authorization rules live in the API procedures, so a reader might expect
+`packages/auth/GLOSSARY.md` says authorization rules live in the API procedures, so a reader might expect
 signup-code validation to live there too. It doesn't, and that is a deliberate trade-off worth recording.
 
 A custom ORPC `auth.signup` procedure could wrap code-validation, code-consumption, and user-creation in a
